@@ -10,7 +10,7 @@ Reference:
 
 Description:
   This script is made to emulate the note repeating function in Native Instrument Maschine hardware.
-  I have never used maschine myself, thus I do not know how it really works.
+  I have never used Maschine myself, thus I do not know how it really works.
   However, I did watch some video that demonstrated great workflow for inputting hihat patterns.
 
 How to use:
@@ -21,7 +21,7 @@ How to use:
   2. Insert as a normal FX before your sampler. Write the trigger note for the desired sample, and use envelop to control
     the parameters. You can even insert another track and record MIDI output of the original track, which allows you to
     edit the generated pattern.
-  The Normal Type Lock slider(3) is great for drill type patterns where you have a steady 8th note groove with occational
+  The Normal Type Lock slider(3) is great for drill type patterns where you have a steady 8th note groove with occasional
     8th or 16th note triplet variations. This setting will free you from alternating the type slider from triplet to normal 
     constantly.
   Channel Pressure is used to vary the velocity of repeated notes: output Velocity = Channel Pressure.
