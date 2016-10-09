@@ -141,9 +141,9 @@ i_noteCnt && on ? (
   
   // Check if Note-On trigger happens in this samplesblock based on sync/play setting
   b_onTrigger = b_syncChk ? (
-    div_next_block > div_this_block ? 1 : 0;
+    beat_position == 0 || div_next_block > div_this_block ? 1 : 0;
     ) : (
-    samplesTrigger == 0 || floor((samplesTrigger + samplesblock) / i_divSample) > floor(samplesTrigger / i_divSample) ? 1 : 0;
+    samplesTrigger < samplesblock || floor((samplesTrigger + samplesblock) / i_divSample) > floor(samplesTrigger / i_divSample) ? 1 : 0;
   );
 
   // If note(s) is already being triggered
