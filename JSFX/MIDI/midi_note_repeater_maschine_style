@@ -1,12 +1,12 @@
 /*
-MIDI Note Repeater Maschine Style
-JS Plugin by RCJacH Jul 2016
+MIDI Note Beat Repeater
+JS Plugin by RCJacH Oct 2016
 Blog: RCJacH.lofter.com
 Github: github.com/RCJacH/ReaperScript
-Version: 1.0
+Version: 1.1
 Reference: 
-	MIDI Note Repeater
-	Native Instrument Maschine
+  MIDI Note Repeater
+  Native Instrument Maschine
 
 Description:
   This script is made to emulate the note repeating function in Native Instrument Maschine hardware.
@@ -15,31 +15,44 @@ Description:
 
 How to use:
   You can use this script in two ways:
-  1. Insert as an input FX of your track. Assign MIDI CCs to all of the 4 parameters, trigger slider4 and press a note,
+  1. Insert as an input FX of your track. Assign MIDI CCs to all of the parameters, trigger slider11(On/Off) and press a note,
     the pressed note will repeat itself at an interval set using slider1(Rate), while slider2(Type) determines the type of
     rhythm it generates.
   2. Insert as a normal FX before your sampler. Write the trigger note for the desired sample, and use envelop to control
     the parameters. You can even insert another track and record MIDI output of the original track, which allows you to
     edit the generated pattern.
   The Normal Type Lock slider(3) is great for drill type patterns where you have a steady 8th note groove with occasional
-    8th or 16th note triplet variations. This setting will free you from alternating the type slider from triplet to normal 
-    constantly.
+    8th or 16th note triplet variations. This setting will free you from constantly alternating the type slider from triplet
+     to normal.
   Channel Pressure is used to vary the velocity of repeated notes: output Velocity = Channel Pressure.
 
+Changelog:
+ * v1.1 (2016-10-09)
+  + Renamed
+  + Added Gate Function (Note Length)
+  + Added Sync to grid function
+  # Fixed Note On accuracy
+ * v1.0 (2016-07-24)
+  + Initial Release
+
 Potential Addition:
-	1. Grid syncing, Right now, output notes are following the position of the pressed note.
-  2. Gating.
-  3. Aftertouch %.
-  4. Native CC sliders.
+  1. Velocity and Timing Humanization
+  2. Aftertouch %.
+  3. Native CC sliders.
+  4. Work with pause play_state.
 */
 
-desc:MIDI Note Repeater Maschine Style
+desc:MIDI Note Beat Repeater
 //tags: MIDI processing
 
 slider1:5<0,9,1{4,2,1,1/2,1/4,1/8,1/16,1/32,1/64,1/128}>Rate (fraction of whole note)
 slider2:0<0,2,1{NORMAL,TRIPLET,DOTTED}>Type
-slider3:2<0,4,1{off, 1/2,1/4,1/8,1/16}> Normal Type lock
-slider4:1<0,1,1{Off,On}> On/Off
+slider3:2<0,4,1{off,1/2,1/4,1/8,1/16}> Normal Type lock
+slider4:0<0,127,1> Aftertouch
+slider5:100<10,100,10> Gate
+slider10:1<0,1,1{Off,On}> Sync to Beat
+slider11:1<0,1,1{Off,On}> On/Off
+
 
 in_pin:none
 out_pin:none
@@ -51,14 +64,13 @@ NUM_NOTES               = 128;
 
 STATUS_NOTE_ON          = $x90; // Note On Message
 STATUS_NOTE_OFF         = $x80; // Note Off Message
-STATUS_AFTERTOUCH       = $xA0; // Aftertouch Message
+STATUS_AFTERTOUCH       = $xA0; // AfterTouch Message
 STATUS_CC               = $xB0; // Control Change Message
-STATUS_CHANNEL_PRESSURE = $xD0; //Channel Pressure Message
+STATUS_CHANNEL_PRESSURE = $xD0; // Channel Pressure Message
 STATUS_PITCH_WHEEL      = $xE0; // Pitch Wheel Message
 
-i_noteCount             = 0;
-i_AT            = 0;
-outOfs                  = 0;
+i_noteCnt               = 0;
+i_AT                    = 0;
 active                  = 0;
 
 // List of notes that are pressed
@@ -80,12 +92,13 @@ slider3 ? i_divlock = 2 / (2 ^ (slider3 - 1)):16;
 slider2 == 1 ? i_div < i_divlock ? i_div *= 2/3;
 // Dotted
 slider2 == 2 ? i_div *= 3/2;
-slider4 != on ? on = slider4;
+i_AT = slider4;
+i_gate = slider5 / 100;
+i_divGate = i_div * i_gate;
+b_sync = slider10;
+on = slider11;
 
 @block
-// rate to sample
-sampPerBeat = srate * 60 / tempo;
-i_rateSample = (i_div * sampPerBeat) | 0;
 
 while(midirecv(offset,msg1,msg2,msg3)) (
   // Break up the MIDI message into its component parameters.
@@ -96,15 +109,18 @@ while(midirecv(offset,msg1,msg2,msg3)) (
   block = 0;
 
   (in_type == STATUS_NOTE_ON || in_type == STATUS_NOTE_OFF) ? (
-    i_noteCount += (in_type == STATUS_NOTE_ON || in_vel > 0) ? 1:-1;
+    in_type == STATUS_NOTE_ON ? samplesTrigger = offset;
+    i_noteCnt += (in_type == STATUS_NOTE_ON && in_vel > 0) ? 1:-1;
     a_NotesPressed[in_pit*i_NotesPressedBit] = in_ch;
     a_NotesPressed[in_pit*i_NotesPressedBit + 1] = in_vel;
-    // Pressed Note are NOT blocked.
+    block = on ? 1:0;
+    // Pressed Note are blocked if script is active.
   ); // Note ON/OFF
 
   (in_type == STATUS_CHANNEL_PRESSURE) ? (
     i_AT = in_pit;
-    block = 1; // DO not output Channel Pressure
+    slider4 = i_AT;
+    block = 1; // Do not output Channel Pressure
   );
   // Pass Original MIDI Data
   !block?midisend(offset, msg1, msg2, msg3);
@@ -112,20 +128,59 @@ while(midirecv(offset,msg1,msg2,msg3)) (
 ); //while MIDI in
 
 // Calculate Repeated Notes
-i_noteCount && on ? (
+i_noteCnt && on ? (
   // If keys are pressed while triggered
-  outOfs + samplesblock > i_rateSample ? (
-    loopPit=0; loopOut = 0; loop(NUM_NOTES,
+  b_syncChk = b_sync && (play_state&1 || play_state&5) ? 1 : 0;
+  // rate to sample
+  samples_per_beat = srate * 60 / tempo;
+  beats_per_sample = ( tempo / 60 ) / srate;
+  beats_per_block = samplesblock * beats_per_sample;
+  div_next_block = floor((beat_position + beats_per_block) / i_div);
+  div_this_block = floor((beat_position) / i_div);
+  i_divSample = i_div * samples_per_beat;
+  
+  // Check if Note-On trigger happens in this samplesblock based on sync/play setting
+  b_onTrigger = b_syncChk ? (
+    div_next_block > div_this_block ? 1 : 0;
+    ) : (
+    samplesTrigger == 0 || floor((samplesTrigger + samplesblock) / i_divSample) > floor(samplesTrigger / i_divSample) ? 1 : 0;
+  );
+
+  // If note(s) is already being triggered
+  active ? (
+    b_offTrigger = b_syncChk ? ( 
+      beat_position + beats_per_block > active_pos + i_divGate ? 1 : 0;
+      ):(
+      (samplesTrigger + samplesblock) % i_divSample > i_divSample * i_gate ? 1 : 0;
+    );
+    b_offTrigger ? (
+      ofs = b_syncChk ? (active_pos + i_divGate - beat_position) * samples_per_beat : 
+      i_divSample * i_gate - samplesTrigger % i_divSample;
+      // Note-Off all pressed notes
+      loopOut = 0; loop(active,
+        a_NotesOut[loopOut + 2] ? (
+          outCh = a_NotesOut[loopOut];
+          outPit = a_NotesOut[loopOut + 1];
+          midisend(ofs, STATUS_NOTE_OFF|outCh, outPit);
+        );
+        loopOut += i_NotesOutBit;
+      ); // loopOut 
+      active = 0;
+    ); //offTrigger
+  ); //active?
+
+  // If Note-On triggers
+  b_onTrigger ? (
+    ofs = b_syncChk ? (ceil(beat_position / i_div) * i_div - beat_position) * samples_per_beat :
+      ceil(samplesTrigger / i_divSample) * samples_per_beat - samplesTrigger;
+    // Note-On all pressed notes
+    loopPit = 0; loopOut = 0; loop(NUM_NOTES,
       outCh = a_NotesPressed[loopPit];
       outPit = loopPit/i_NotesPressedBit;
-      outVel = a_NotesPressed[loopPit+1];
+      outVel = a_NotesPressed[loopPit + 1];
       outVel ? (
-        active ? (
-          midisend(outOfs, STATUS_NOTE_OFF|outCh, outPit);
-          active = 0;
-        );
         i_AT ? outVel = i_AT;
-        midisend(outOfs, STATUS_NOTE_ON|outCh, outPit, outVel);
+        midisend(ofs, STATUS_NOTE_ON|outCh, outPit, outVel);
         a_NotesOut[loopOut] = outCh;
         a_NotesOut[loopOut + 1] = outPit;
         a_NotesOut[loopOut + 2] = outVel;
@@ -134,27 +189,22 @@ i_noteCount && on ? (
       ); //outVel
       loopPit += i_NotesPressedBit;
     ); //loopPit
-    outOfs -= i_rateSample;
-  ); // >rate
-  outOfs += samplesblock;
+    // Mark position of last Note-On
+    active_pos = beat_position + ofs * beats_per_sample;
+  ); // b_onTrigger
+  samplesTrigger += samplesblock;
 ); //on
 
-active && (!i_noteCount || !on) ? (
+
+active && (!i_noteCnt || !on) ? (
   loopOut = 0; loop(active,
     a_NotesOut[loopOut + 2] ? (
       outCh = a_NotesOut[loopOut];
       outPit = a_NotesOut[loopOut + 1];
-      midisend(i_rateSample - outOfs, STATUS_NOTE_OFF|outCh, outPit);
-      a_NotesOut[loopOut + 2];
+      midisend(0, STATUS_NOTE_OFF|outCh, outPit);
     );
-    // loopOut += 1;
     loopOut += i_NotesOutBit;
   ); // loopOut 
   memset(a_NotesOut, 0, NUM_NOTES * i_NotesOutBit);
   active = 0;
-); //on
-
-@sample
-
-
-
+); //active
