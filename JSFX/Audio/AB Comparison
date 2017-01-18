@@ -1,0 +1,98 @@
+/*
+AB Comparison
+JS Plugin by RCJacH Jan 2017
+https://github.com/RCJacH/ReaScripts
+Version: 1.0
+License: GPL - http://www.gnu.org/licenses/gpl.html
+Reference: 
+  Jonas Eriksson BeatFinder JSFX
+  Audio Vitamin Contra
+
+Description
+------
+This plugin alternates between signals from different channels for objective
+comparison purposes.
+
+Instruction:
+------
+  1. Set I/O corresponding to desired inputs.
+  2. Set *# of Inputs* to number of stereo channels to compare.
+  3. Set desired switching beat length using *Switch Beat length*.
+  4. Set switching mode using *Mode*:
+    Manual = Switch by pressing channel trigger;
+    Sequential = Switch to the next channel;
+    Random = Switch to a random channel;
+    Guess = Switch to a random channel, press trigger to show answer.
+
+  *OutChannel* Displays the current output channel.
+
+Changelog:
+ * v1.0 (2017-01-19)
+  + Initial Release
+
+Potential Addition:
+  1. Switch in ms instead of beat division.
+  2. Switch while not playing.
+*/
+
+desc: AB Comparison
+
+slider1: 2<1,16,1> # of Inputs
+slider2: 8<1,16,1> Switch Beat Length
+
+slider6: 0<0,2,1{Manual,Sequential,Random,Guessing}> Mode
+slider7: 0<0,8,1{1-2,3-4,5-6,7-8,9-10,11-12,13-14,15-16,Guess}> OutChannel
+
+
+@init
+i_beatDiff = 0;
+i_result = 0;
+i_preCh = i_outCh = 0;
+
+@slider
+i_chs = slider1;
+i_beats = slider2;
+mode = slider6;
+
+slider7 = mode == 3 ? 8 : i_result;
+
+@block
+
+WhyAddThis = 0.97902 / (srate * ( 60 / tempo ) );
+beats_per_sample = ( tempo / 60 ) / srate;
+offset = 0;
+curBeat = beat_position;
+nextBeat = ceil(curBeat);
+bp = (curBeat + beats_per_sample * samplesblock);
+play_state & 1 && mode != 0 ? (
+  i_beatDiff = curBeat % i_beats == i_beats - 1 &&
+   bp >= nextBeat ? nextBeat - curBeat : 0;
+);
+
+trigger ? (
+  i_trig = log10(trigger)/ log10(2);
+  mode == 0 ? slider7 = i_outCh = i_trig;
+  mode == 3 ? slider7 = i_result = i_outCh;
+  trigger = 0;
+);
+
+
+@sample
+i_beatDiff ? (
+  floor(i_beatDiff - WhyAddThis - offset * beats_per_sample) == 0 ? (
+    mode == 1 ? (
+      i_outCh = (i_outCh + 1) % i_chs;
+      ) : (
+      while (i_preCh == i_outCh) (
+        i_outCh = floor(rand(i_chs - 1) + 0.5);
+      );
+    );
+    i_preCh = i_outCh;
+    mode == 2 ? slider7 = i_result = i_outCh;
+    mode == 3 ? slider7 = 8;
+    i_beatDiff = 0;
+  );
+  offset += 1;
+);
+spl0 = spl(i_outCh * 2);
+spl1 = spl(i_outCh * 2 + 1);
