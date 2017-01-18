@@ -1,0 +1,49 @@
+/*
+BitShiftGain
+JS Plugin by RCJacH Jan 2017
+https://github.com/RCJacH/ReaScripts
+Version: 1.0
+License: GPL - http://www.gnu.org/licenses/gpl.html
+Reference: 
+  AirWindows BitShiftGain
+
+Description:
+------
+Lossless gain adjustment for float point audio.
+Idea taken from AirWindows BitShiftGain.
+
+Instruction:
+------
+  * Use Macro Shift to increase or decress audio input by 6.0206 dB per bit.
+  * Use Micro Shift to fine adjust audio within 1 bit.
+  * Use Bit Ratio to adjust the dB representation of one bit.
+  * Fader is used as a percentage controller after bit shifting.
+  * Use Fader Curve to adjust the behavior of Fader slider.
+
+Changelog:
+ * v1.0 (2017-01-11)
+  + Initial Release
+*/
+
+desc: BitShiftGain
+
+slider1: 0<-16,16,1> Macro Shift (Bit = 6.0206 dB)
+slider2: 0<-100,100,0.000001> Micro Shift (% of a Bit)
+slider3: 1<0,2,0.1> Bit Ratio
+
+slider11: 100<0, 100, 0.0001> Fader (% of total)
+slider12: 4<0,10,0.1> Fader Curve
+
+@init
+maxs1 = 16;
+
+@slider
+slider1 = min(max(-maxs1, slider1),maxs1);
+slider2 = min(max(-100, slider2),100);
+slider11 = min(max(0, slider11),100);
+shift = 2 ^ ((slider1 + slider2 * 0.01) * slider3);
+curve = slider12;
+fade = (slider11) ^ curve * (0.1 ^ (curve * 2)) * shift;
+
+@sample
+spl0 *= fade; spl1 *= fade;
