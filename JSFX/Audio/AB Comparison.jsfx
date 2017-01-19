@@ -16,16 +16,16 @@ comparison purposes.
 Instruction:
 ------
   1. Set different comparing items to sequential stereo channels.
-  2. Set *# of Inputs* to number of stereo channels to compare.
-  3. Set desired switching beat length using *Switch Beat length*.
-    Alternatively, set *Millisecond Mode* to > 0 for switching based on time
-  4. Set switching mode using *Mode*:
+  2. Set **# of Inputs** to number of stereo channels to compare.
+  3. Set desired switching beat length using **Switch Beat length**.
+    Alternatively, set **Millisecond Mode** to > 0 for switching based on time
+  4. Set switching mode using **Mode**:
     Manual = Switch by pressing channel trigger;
     Sequential = Switch to the next channel;
     Random = Switch to a random different channel;
     Guess = Switch to a random channel, press trigger to show answer.
 
-  *OutChannel* Displays the current output channel.
+  **Output Channel Display**s the current output channel.
 
 Changelog:
  * v1.1 (2017-01-19)
@@ -52,7 +52,7 @@ slider3: 0<0,5000,10> Millisecond Mode (when > 0)
 slider6: 0<0,2,1{Manual,Sequential,Random,Guessing}> Mode
 slider7: 2<0.5,5,0.1> Answer Displaying Time (s)
 
-slider11: 0<0,8,1{1-2,3-4,5-6,7-8,9-10,11-12,13-14,15-16,Guess}> OutChannel
+slider11: 0<0,8,1{1-2,3-4,5-6,7-8,9-10,11-12,13-14,15-16,Guess}> Output Channel Display
 slider12: 0<0,8,1> -_OutCh
 
 in_pin:input 1 L
