@@ -1,11 +1,12 @@
 /*
-BitShiftGain
+BitRangeGain
 JS Plugin by RCJacH Jan 2017
 https://github.com/RCJacH/ReaScripts
 Version: 1.0
 License: GPL - http://www.gnu.org/licenses/gpl.html
 Reference: 
   AirWindows BitShiftGain
+  AirWindows PurestGain
 
 Description:
 ------
@@ -21,15 +22,17 @@ Instruction:
   * Use Fader Curve to adjust the behavior of Fader slider.
 
 Changelog:
- * v1.0 (2017-01-11)
-  + Initial Release
+  * v1.0a (2017-01-31)
+   + Renamed to BitRangeGain
+  * v1.0 (2017-01-11)
+   + Initial Release
 */
 
-desc: BitShiftGain
+desc: BitRangeGain
 
-slider1: 0<-16,16,1> Macro Shift (Bit = 6.0206 dB)
+slider1: 0<-16,16,1> Macro Shift (Bit ~= 6.0206 dB)
 slider2: 0<-100,100,0.000001> Micro Shift (% of a Bit)
-slider3: 1<0,2,0.1> Bit Ratio
+slider3: 1<0,3,0.25> Bit Ratio
 
 slider11: 100<0, 100, 0.0001> Fader (% of total)
 slider12: 4<0,10,0.1> Fader Curve
