@@ -22,7 +22,7 @@ local i_gui_gNameY = 10
 local i_gui_listX = 50
 local i_gui_gSz = 24
 local i_gui_lSz = 18
-local i_gui_font = "YaHei Consolas Hybrid"--"Calibri"
+local i_gui_font = "Calibri"
 local i_backKey = 8
 -- Booleans
 
@@ -125,7 +125,6 @@ local function fn_gui_draw(inGroup)
 end
 
 -- Public
--- curGroup = fn_chkBindings()
 
 function Main(isRepeat)
   -- Variable localization
