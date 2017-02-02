@@ -37,14 +37,4 @@ end
 
 local Main = require ("Engine")
 
-local GUI = {
-  name = "Vimper Solo",
-  x = 200,
-  y = 200,
-  w = 500,
-  h = 550,
-  draw = fn_gui_draw,
-}
-
-gfx.init(GUI.name, GUI.w, GUI.h, 0, GUI.x, GUI.y)
-Main(0)
+Main(1)

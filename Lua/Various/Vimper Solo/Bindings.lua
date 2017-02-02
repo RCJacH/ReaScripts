@@ -14,6 +14,27 @@ Transport = {
 
 Navigation = {
   NAME = "Navigation",
+  t = {
+    NAME = "Track Navigation",
+    UP = {40286, "Go to previous track"},
+    LEFT = {40288, "Go to previous track (leave selection)"},
+    DOWN = {40285, "Go to next track"},
+    RIGHT = {40287, "Go to next track (leave selection)"},
+  },
+  i = {
+    NAME = "Item Navigation",
+    UP = {40418, "Select and move to item in previous track"},
+    LEFT = {40416, "Select and move to previous item"},
+    DOWN = {40419, "Select and move to item in next track"},
+    RIGHT = {40417, "Select and move to next item"},
+  },
+  e = {
+    NAME = "Envelope Navigation",
+    DOWN = {41864, "Select next envelope"},
+    LEFT = {"_BR_ENV_SEL_PREV_POINT", "Select previous point"},
+    RIGHT = {"_BR_ENV_SEL_NEXT_POINT", "Select next point"},
+    UP = {41863, "Select previous envelope"},
+  }
 }
 
 MIDI = {
@@ -24,12 +45,90 @@ MIDI = {
 Layout = {
   NAME = "Layout",
   d = {48500, "Default Layout"},
-  
+  t = {40853, "Toggle visibility in TCP"},
+  m = {40250, "Toggle visibility in MCP"},
+  l = {
+    NAME = "Load Track View",
+    [1] = {40444, "Load track view #01"},
+    [2] = {40445, "Load track view #02"},
+    [3] = {40446, "Load track view #03"},
+    [4] = {40447, "Load track view #04"},
+    [5] = {40448, "Load track view #05"},
+    [6] = {40449, "Load track view #06"},
+    [7] = {40450, "Load track view #07"},
+    [8] = {40451, "Load track view #08"},
+    [9] = {40452, "Load track view #09"},
+    a = {40453, "Load track view #10"},
+  },
+  s = {
+    NAME = "Save Track View",
+    [1] = {40464, "Save track view #01"},
+    [2] = {40465, "Save track view #02"},
+    [3] = {40466, "Save track view #03"},
+    [4] = {40467, "Save track view #04"},
+    [5] = {40468, "Save track view #05"},
+    [6] = {40469, "Save track view #06"},
+    [7] = {40470, "Save track view #07"},
+    [8] = {40471, "Save track view #08"},
+    [9] = {40472, "Save track view #09"},
+    a = {40473, "Save track view #10"},  
+  },
+  L = {
+    NAME = "Load Window View",
+    [1] = {40454, "Load window set #01"},
+    [2] = {40455, "Load window set #02"},
+    [3] = {40456, "Load window set #03"},
+    [4] = {40457, "Load window set #04"},
+    [5] = {40458, "Load window set #05"},
+    [6] = {40459, "Load window set #06"},
+    [7] = {40460, "Load window set #07"},
+    [8] = {40461, "Load window set #08"},
+    [9] = {40462, "Load window set #09"},
+    a = {40463, "Load window set #10"},
+  },
+  S = {
+    NAME = "Save Window View",
+    [1] = {40474, "Save window set #01"},
+    [2] = {40475, "Save window set #02"},
+    [3] = {40476, "Save window set #03"},
+    [4] = {40477, "Save window set #04"},
+    [5] = {40478, "Save window set #05"},
+    [6] = {40479, "Save window set #06"},
+    [7] = {40480, "Save window set #07"},
+    [8] = {40481, "Save window set #08"},
+    [9] = {40482, "Save window set #09"},
+    a = {40483, "Save window set #10"},  
+  },
 }
 
 Track = {
   NAME = "Track",
-  
+  a = {40296, "Select all tracks"},
+  n = {40001, "Add new track"},
+  t = {46000, "Add from track template"},
+  T = {40392, "Save tracks as track template..."},
+  x = {40337, "Cut tracks"},
+  c = {40210, "Copy tracks"},
+  v = {40058, "Paste items/tracks"},
+  d = {40062, "Duplicate tracks"},
+  m = {40280, "Mute tracks"},
+  M = {40341, "Mute all tracks"},
+  DELETE = {40005, "Remove tracks"},
+  s = {7, "Toggle solo"},
+  S = {41199, "Toggle solo defeat"},
+  -- = {41997, "Move tracks to subproject"},
+  g = {40771, "Toggle all track grouping enabled"},
+  b = {41223, "Freeze to stereo"},
+  B = {41644, "Unfreeze tracks"},
+  f = {40291, "View FX chain"},
+  F = {40844, "View input FX"},
+  i = {40293, "View track I/O"},
+  r = {9, "Toggle record arm"},
+  R = {40495, "Cycle track record monitor"},
+  p = {41321, "Set record path to primary"},
+  P = {41322, "Set record path to secondary"},
+  h = {40282, "Invert track phase"},
+  l = {41314, "Toggle lock track controls"},
 }
 
 Item = {
@@ -106,6 +205,7 @@ Item = {
     },
     n = {40176, "Normal"},
   },
+  z = {41622, "Zoom to selected items"},
 }
 
 Take = {
@@ -130,8 +230,34 @@ Take = {
 
 Envelope = {
   NAME = "Envelope",
-  
+  r = {40887, "Reduce number of points"},
+  d = {"_RSbdbdf040df097fd57022f539c4b62b8e297c12cd", "Duplicate selected points"},
+  DELETE = {40333, "Delete all selected points"},
+  k = {40065, "Clear envelope"},
+  x = {40336, "Cut selected points"},
+  c = {40335, "Copy selected points"},
+  v = {40884, "Toggle hide"},
+  V = {"_RS194a70f3ae2f5e9f8fe0c0695c02e34b1a95d47c", "Hide all except envelope under mouse"},
+  h = {41151, "Toggle show all envelopes"},
+  H = {41152, "Toggle show all envelopes for all tracks"},
+  i = {42031, "Create automation item"},
+  a = {41595, "Toggle select all points"},
+  r = {40863, "Toggle record arm"},
+  l = {40851, "Toggle display in separate lane"},
+  b = {40883, "Toggle bypass"},
+  DOWN = {41181, "Move points down a bit"},
+  LEFT = {41176, "Move points left a bit"},
+  RIGHT = {41177, "Move points right a bit"},
+  UP = {41180, "Move points up a bit"},
+  [","] = {41178, "Move points left by grid"},
+  ["."] = {41179, "Move points right by grid"},
+  e = {42030, "Add edge points when moving multiple points"},
+  E = {42082, "Add edge points when moving automation item"},
+  [")"] = {41122, "Increase curve by 5%"},
+  ["("] = {41123, "Decrease curve by 5%"},
+  ["|"] = {40189, "Set linear"},
 }
+
 
 return {
   NAME = "Vimper Solo",
