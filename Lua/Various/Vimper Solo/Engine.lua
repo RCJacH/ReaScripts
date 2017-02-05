@@ -37,17 +37,15 @@ local lastGroup
 -- ====> Functions
 -- Private
 local function fn_getCmdID(inID)
-  local retID = (type(inID) == "table" and not inID.NAME) and inID[1]
-    or string.sub(inID, 1 ,1) == "_" and
-    reaper.NamedCommandLookup(inID) or inID
+  local retID = (type(inID) == "table" and not inID.NAME) and inID[1] or inID
+  retID = string.sub(retID, 1 ,1) == "_" and reaper.NamedCommandLookup(retID) or retID
   return retID
 end
 
 local function fn_runCmd(inID, flag, proj)
-  local ID = fn_getCmdID(inID)
   flag = flag or 0
   proj = proj or 0
-  reaper.Main_OnCommandEx(ID, flag, proj)
+  reaper.Main_OnCommandEx(inID, flag, proj)
 end
 
 
