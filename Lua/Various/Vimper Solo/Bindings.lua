@@ -1,4 +1,4 @@
-local Transport, Navigation, MIDI, Layout, Track, Item, Take, Envelope, Groups
+local Transport, Navigation, MIDI, Layout, Track, Item, Take, Envelope, Windows
 
 
 Transport = {
@@ -34,7 +34,14 @@ Navigation = {
     LEFT = {"_BR_ENV_SEL_PREV_POINT", "Select previous point"},
     RIGHT = {"_BR_ENV_SEL_NEXT_POINT", "Select next point"},
     UP = {41863, "Select previous envelope"},
-  }
+  },
+  s = {
+    NAME = "Scroll Navigation",
+    LEFT = {40140, "Scroll view left"},
+    RIGHT = {40141, "Scroll view right"},
+    UP = {40138, "Scroll view up"},
+    DOWN = {40139, "Scroll view down"},
+  },
 }
 
 MIDI = {
@@ -258,16 +265,40 @@ Envelope = {
   ["|"] = {40189, "Set linear"},
 }
 
-
+Windows = {
+  NAME = "Windows",
+  p = {40240, "Performance meter window"},
+  P = {42074, "Peaks display window"},
+  t = {40906, "Track Manager"},
+  c = {"_SWSAUTOCOLOR_OPEN", "Auto color/icon/layout window"},
+  r = {40251, "Routing matrix window"},
+  R = {40326, "Region/Marker manager window"},
+  F1 = {"_REAPACK_BROWSE", "ReaPack"},
+  m = {40078, "Mixer window"},
+  g = {40768, "Grouping matrix window"},
+  k = {40377, "Virtual MIDI keyboard"},
+  s = {40422, "Screen/track/item sets window"},
+  S = {40301, "Scale finder window"},
+  n = {40268, "Navigation window"},
+  f = {40271, "FX browser window"},
+  F = {41882, "FX monitoring chain"},
+  C = {40378, "Show big clock window"},
+  j = {40069, "Jump to time window"},
+  v = {50125, "Video window"},
+  z = {40072, "Undo history window"},
+  e = {40716, "MIDI editor window"},
+  i = {40847, "Open inline editor"},
+  I = {41887, "Close inline editor"},
+}
 return {
   NAME = "Vimper Solo",
   r = Transport,
   n = Navigation,
-  m = MIDI,
+  -- m = MIDI,
   l = Layout,
   t = Track,
   i = Item,
   a = Take,
   e = Envelope,
+  w = Windows,
 }
--- return Groups;

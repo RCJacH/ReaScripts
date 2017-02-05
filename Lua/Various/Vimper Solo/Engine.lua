@@ -80,7 +80,7 @@ local function fn_triggerCmd()
     cmdID = fn_getCmdID(cmdID)
     if type(cmdID) == "number" then -- Reaper command
       fn_runCmd(cmdID)
-      b_triggered = true
+      b_triggered = not string.match(curGroup.NAME, "Navigation") and true
       fn.f.setLastAction(a_keyPressed)
     elseif type(cmdID) == "string" then -- Script setting
       fn_setting(cmdID)
