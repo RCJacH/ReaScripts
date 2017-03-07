@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="RCJacH ReaScripts" commit="ff20ed91da2bc78a0211d69f255c24cd2fa8bb6e">
+<index version="1" name="RCJacH ReaScripts" commit="a2c2affbae1a5a6d12842355a0aefd8d55d4d501">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison.jsfx" type="effect" desc="AB Comparison">
       <metadata>
@@ -150,7 +150,10 @@ Potential Addition:
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Glue selected items, and rename result to: 1.The name of the first item If all item names are identical; 2.The name of each nonidentical items. 3.Remove the "Glued" in item name (but not the file name unfortunately)\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Glue selected items, and rename result to:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab The name of the first item If all item names are identical;\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab The name of each nonidentical items.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab Remove the "Glued" in item name (but not the file name unfortunately)\sa180\par}
 }
 ]]></description>
         <link rel="website">https://github.com/RCJacH/ReaScripts</link>
