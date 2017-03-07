@@ -1,32 +1,29 @@
 /*
-BitRangeGain
-JS Plugin by RCJacH Jan 2017
-https://github.com/RCJacH/ReaScripts
+JSFX Name: BitRangeGain
+Author: RCJacH
+Release Date: Jan 2017
+Link: https://github.com/RCJacH/ReaScripts
 Version: 1.0
-License: GPL - http://www.gnu.org/licenses/gpl.html
 Reference: 
   AirWindows BitShiftGain
   AirWindows PurestGain
-
-Description:
-------
-Lossless gain adjustment for float point audio.
-Idea taken from AirWindows BitShiftGain.
-
-Instruction:
-------
-  * Use Macro Shift to increase or decress audio input by 6.0206 dB per bit.
-  * Use Micro Shift to fine adjust audio within 1 bit.
-  * Use Bit Ratio to adjust the dB representation of one bit.
-  * Fader is used as a percentage controller after bit shifting.
-  * Use Fader Curve to adjust the behavior of Fader slider.
-
+About:
+  Lossless gain adjustment for float point audio.
+  1 bit = doubling of distance.
+  Instruction:
+    * Use Macro Shift to increase or decress audio input by 6.0206 dB per bit.
+    * Use Micro Shift to fine adjust audio within 1 bit.
+    * Use Bit Ratio to adjust the dB representation of one bit.
+    * Fader is used as a percentage controller after bit shifting.
+    * Use Fader Curve to adjust the behavior of Fader slider.
 Changelog:
   * v1.0a (2017-01-31)
    + Renamed to BitRangeGain
   * v1.0 (2017-01-11)
    + Initial Release
 */
+
+// License: GPL- http://www.gnu.org/licenses/gpl.html
 
 desc: BitRangeGain
 

@@ -1,32 +1,26 @@
 /*
-AB Comparison
-JS Plugin by RCJacH Jan 2017
-https://github.com/RCJacH/ReaScripts
+JSFX Name: AB Comparison
+Author: RCJacH
+Release Date: Jan 2017
+Link: https://github.com/RCJacH/ReaScripts
 Version: 1.1
-License: GPL - http://www.gnu.org/licenses/gpl.html
 Reference: 
   Jonas Eriksson BeatFinder JSFX
   Audio Vitamin Contra
-
-Description
-------
-This JSFX alternates between signals from different channels for objective
-comparison purposes.
-
-Instruction:
-------
-  1. Set different comparing items to sequential stereo channels.
-  2. Set **# of Inputs** to number of stereo channels to compare.
-  3. Set desired switching beat length using **Switch Beat length**.
-    Alternatively, set **Millisecond Mode** to > 0 for switching based on time
-  4. Set switching mode using **Mode**:
-    Manual = Switch by pressing channel trigger;
-    Sequential = Switch to the next channel;
-    Random = Switch to a random different channel;
-    Guess = Switch to a random channel, press trigger to show answer.
-
-  **Output Channel Display**s the current output channel.
-
+About:
+  This JSFX alternates between signals from different channels for objective
+  comparison purposes.
+  Instruction:
+    1. Set different comparing items to sequential stereo channels.
+    2. Set **# of Inputs** to number of stereo channels to compare.
+    3. Set desired switching beat length using **Switch Beat length**.
+      Alternatively, set **Millisecond Mode** to > 0 for switching based on time
+    4. Set switching mode using **Mode**:
+      Manual = Switch by pressing channel trigger;
+      Sequential = Switch to the next channel;
+      Random = Switch to a random different channel;
+      Guess = Switch to a random channel, press trigger to show answer.
+    **Output Channel Display**s the current output channel.
 Changelog:
  * v1.1 (2017-01-19)
   + Millisecond Mode.
@@ -37,11 +31,11 @@ Changelog:
   # Triggers in Sequential/Random Mode changes to Manual Mode.
   # Clicking on time-line do not reset to output 1-2.
   # Guess Mode switches by triggering, rather than time.
-
  * v1.0 (2017-01-19)
   + Initial Release
-
 */
+
+// Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
 
 desc: AB Comparison
 

@@ -1,14 +1,12 @@
 --[[
   ReaScript Name: Delete Content Under Mouse (Contextual)
   Author: RCJacH
-  Website: https://github.com/RCJacH/ReaScripts
-  License: GPL - http://www.gnu.org/licenses/gpl.html
+  Link: https://github.com/RCJacH/ReaScripts
   Version: 1.0
-
-  Description:
-  ------
-  Delete track/item/take/envelope depending on mouse position.
+  About: Delete track/item/take/envelope depending on mouse position.
 ]]
+
+-- Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
 
 function Main()
   reaper.Undo_BeginBlock()

@@ -1,8 +1,7 @@
 --[[
   ReaScript Name: Vimper Solo
   Author: RCJacH
-  Website: https://github.com/RCJacH/ReaScripts
-  License: GPL - http://www.gnu.org/licenses/gpl.html
+  Link: https://github.com/RCJacH/ReaScripts
   Version: 1.0
   Reference:
     Vimper
@@ -35,6 +34,9 @@
   [nomain] fn.lua
   [nomain] last_action.ini
 ]]
+
+-- Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
+
 do
   local info = debug.getinfo(1,'S');
   local base_path = info.source:match[[^@?(.*[\/])[^\/]-$]]

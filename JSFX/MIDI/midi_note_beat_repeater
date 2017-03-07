@@ -1,31 +1,28 @@
 /*
-MIDI Note Beat Repeater
-JS Plugin by RCJacH Oct 2016
-Blog: RCJacH.lofter.com
-Github: github.com/RCJacH/ReaperScript
+JSFX Name: MIDI Note Beat Repeater
+Author: RCJacH
+Release Date: Oct 2016
+Link: https://github.com/RCJacH/ReaScripts
 Version: 1.1
 Reference: 
   MIDI Note Repeater
   Native Instrument Maschine
-
-Description:
+About:
   This script is made to emulate the note repeating function in Native Instrument Maschine hardware.
   I have never used Maschine myself, thus I do not know how it really works.
   However, I did watch some video that demonstrated great workflow for inputting hihat patterns.
-
-How to use:
-  You can use this script in two ways:
-  1. Insert as an input FX of your track. Assign MIDI CCs to all of the parameters, trigger slider11(On/Off) and press a note,
-    the pressed note will repeat itself at an interval set using slider1(Rate), while slider2(Type) determines the type of
-    rhythm it generates.
-  2. Insert as a normal FX before your sampler. Write the trigger note for the desired sample, and use envelop to control
-    the parameters. You can even insert another track and record MIDI output of the original track, which allows you to
-    edit the generated pattern.
-  The Normal Type Lock slider(3) is great for drill type patterns where you have a steady 8th note groove with occasional
-    8th or 16th note triplet variations. This setting will free you from constantly alternating the type slider from triplet
-     to normal.
-  Channel Pressure is used to vary the velocity of repeated notes: output Velocity = Channel Pressure.
-
+  Instruction:
+    You can use this script in two ways:
+    1. Insert as an input FX of your track. Assign MIDI CCs to all of the parameters, trigger slider11(On/Off) and press a note,
+      the pressed note will repeat itself at an interval set using slider1(Rate), while slider2(Type) determines the type of
+      rhythm it generates.
+    2. Insert as a normal FX before your sampler. Write the trigger note for the desired sample, and use envelop to control
+      the parameters. You can even insert another track and record MIDI output of the original track, which allows you to
+      edit the generated pattern.
+    The Normal Type Lock slider(3) is great for drill type patterns where you have a steady 8th note groove with occasional
+      8th or 16th note triplet variations. This setting will free you from constantly alternating the type slider from triplet
+       to normal.
+    Channel Pressure is used to vary the velocity of repeated notes: output Velocity = Channel Pressure.
 Changelog:
  * v1.1 (2016-10-09)
   + Renamed
@@ -34,13 +31,14 @@ Changelog:
   # Fixed Note On accuracy
  * v1.0 (2016-07-24)
   + Initial Release
-
 Potential Addition:
   1. Velocity and Timing Humanization
   2. Aftertouch %.
   3. Native CC sliders.
   4. Work with pause play_state.
 */
+
+// License: GPL - http://www.gnu.org/licenses/gpl.html
 
 desc:MIDI Note Beat Repeater
 //tags: MIDI processing

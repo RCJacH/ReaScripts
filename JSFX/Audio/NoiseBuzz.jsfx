@@ -1,38 +1,34 @@
 /*
-NoiseBuzz
-JS Plugin by RCJacH Jan 2017
-https://github.com/RCJacH/ReaScripts
+JSFX Name: NoiseBuzz
+Author: RCJacH
+Release Date: Jan 2017
+Link: https://github.com/RCJacH/ReaScripts
 Version: 1.0
-License: GPL - http://www.gnu.org/licenses/gpl.html
-
 Reference:
   Wavesfactory SnareBuzz
   http://www.firstpr.com.au/dsp/pink-noise/
   ReaRack Filter
-
-Description:
-------
-Audio triggered dynamic noise generator with ASR and filter.
-
-Instruction:
-------
-  1. Set **Mix** slider to taste, use **Noise Gain** for additional volume control.
-  2. Select desired noise type.
-  3. (Optional) Use **Threshold**, **Attack**, **Release** to shape the envelope of
-    the noise, with AR triggered by input audio exceed or fall under the threshold.
-  4. (Optional) Use **HPF**, **LPF**, and their **Resonance** controls to limit the
-    frequency range of the generated noise.
-  5. (Optional) Adjust the detector **RMS** of the input level to smooth out the level
-    of the generated noise.
-  6. You can also route the noise audio to channel 3-4 to further shape the noise,
-    voiding the **Mix** control.
-
+About:
+  Audio triggered dynamic noise generator with ASR and filter.
+  Instruction:
+    1. Set **Mix** slider to taste, use **Noise Gain** for additional volume control.
+    2. Select desired noise type.
+    3. (Optional) Use **Threshold**, **Attack**, **Release** to shape the envelope of
+      the noise, with AR triggered by input audio exceed or fall under the threshold.
+    4. (Optional) Use **HPF**, **LPF**, and their **Resonance** controls to limit the
+      frequency range of the generated noise.
+    5. (Optional) Adjust the detector **RMS** of the input level to smooth out the level
+      of the generated noise.
+    6. You can also route the noise audio to channel 3-4 to further shape the noise,
+      voiding the **Mix** control.
 Changelog:
   * v1.0a (2017-01-31)
    + Renamed to NoiseBuzz
   * v1.0 (2017-01-22)
    + Initial Release
 */
+
+// Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
 
 desc: NoiseBuzz
 

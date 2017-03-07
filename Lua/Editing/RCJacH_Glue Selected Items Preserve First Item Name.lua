@@ -1,16 +1,17 @@
 --[[
   ReaScript Name: Glue selected items preserving first item name
   Author: RCJacH
-  Website: https://github.com/RCJacH/ReaScripts
+  Link: https://github.com/RCJacH/ReaScripts
   Version: 1.0
 
-  Description:
-  ------
-  Glue selected items and rename to:
-    The name of the first item If all item names are identical;
-    The name of each nonidentical items.
-    Remove the "Glued" in item name (but not the file name unfortunately)
+  About:
+    Glue selected items and rename to:
+      The name of the first item If all item names are identical;
+      The name of each nonidentical items.
+      Remove the "Glued" in item name (but not the file name unfortunately)
 ]]
+
+-- Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
 
 function merge_track_take_names(track_pointer, apply_to_first_take) 
   local first_take, item, take, take_name, b_exist
