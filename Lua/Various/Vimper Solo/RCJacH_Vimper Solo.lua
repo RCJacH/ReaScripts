@@ -31,9 +31,9 @@
   Provides:
   [main] RCJacH_Vimper Solo Repeat Action.lua
   [nomain] Bindings.lua
-  Engine.lua
-  fn.lua
-  last_action.ini
+  [nomain] Engine.lua
+  [nomain] fn.lua
+  [nomain] last_action.ini
 ]]
 do
   local info = debug.getinfo(1,'S');
