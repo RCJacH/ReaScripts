@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="RCJacH ReaScripts" commit="33413f4385785a91304933f6c73ae8c70f707c51">
+<index version="1" name="RCJacH ReaScripts" commit="43b56d260f573fd8999ed559f210976758244b3c">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison.jsfx" type="effect" desc="AB Comparison">
       <metadata>
@@ -7,7 +7,8 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 This JSFX alternates between signals from different channels for objective comparison purposes. Instruction:\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 This JSFX alternates between signals from different channels for objective comparison purposes.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Set different comparing items to sequential stereo channels.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Set {\b # of Inputs} to number of stereo channels to compare.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab Set desired switching beat length using {\b Switch Beat length}. Alternatively, set {\b Millisecond Mode} to > 0 for switching based on time\par}
@@ -43,7 +44,8 @@ Potential Addition:
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Lossless gain adjustment for float point audio. 1 bit = doubling of distance. Instruction:\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Lossless gain adjustment for float point audio. 1 bit = doubling of distance.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Macro Shift to increase or decress audio input by 6.0206 dB per bit.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Micro Shift to fine adjust audio within 1 bit.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Bit Ratio to adjust the dB representation of one bit.\par}
@@ -64,7 +66,8 @@ Potential Addition:
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Audio triggered dynamic noise generator with ASR and filter. Instruction:\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Audio triggered dynamic noise generator with ASR and filter.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Set {\b Mix} slider to taste, use {\b Noise Gain} for additional volume control.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Select desired noise type.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab (Optional) Use {\b Threshold}, {\b Attack}, {\b Release} to shape the envelope of the noise, with AR triggered by input audio exceed or fall under the threshold.\par}
@@ -99,6 +102,13 @@ Potential Addition:
     </reapack>
     <reapack name="RCJacH_Glue Selected Items Preserve First Item Name.lua" type="script" desc="Glue selected items preserving first item name">
       <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Glue selected items and rename to: The name of the first item If all item names are identical; The name of each nonidentical items. Remove the "Glued" in item name (but not the file name unfortunately)\par}
+}
+]]></description>
         <link rel="website">https://github.com/RCJacH/ReaScripts</link>
       </metadata>
       <version name="1.0" author="RCJacH" time="2017-03-07T11:30:33Z">
