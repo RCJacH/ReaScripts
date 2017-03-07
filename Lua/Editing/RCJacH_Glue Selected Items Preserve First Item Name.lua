@@ -4,10 +4,10 @@
   Link: https://github.com/RCJacH/ReaScripts
   Version: 1.0
   About:
-    Glue selected items and rename to:
-      The name of the first item If all item names are identical;
-      The name of each nonidentical items.
-      Remove the "Glued" in item name (but not the file name unfortunately)
+    Glue selected items and rename to
+    1.The name of the first item If all item names are identical;
+    2.The name of each nonidentical items.
+    3.Remove the "Glued" in item name (but not the file name unfortunately)
 ]]
 
 -- Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
