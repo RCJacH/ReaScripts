@@ -3,7 +3,8 @@
   Author: RCJacH
   Link: https://github.com/RCJacH/ReaScripts
   Version: 1.0
-  About: Delete track/item/take/envelope depending on mouse position.
+  About:
+    Delete track/item/take/envelope depending on mouse position.
 ]]
 
 -- Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html

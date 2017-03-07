@@ -10,6 +10,7 @@ Reference:
 About:
   This JSFX alternates between signals from different channels for objective
   comparison purposes.
+  
   Instruction:
     1. Set different comparing items to sequential stereo channels.
     2. Set **# of Inputs** to number of stereo channels to compare.

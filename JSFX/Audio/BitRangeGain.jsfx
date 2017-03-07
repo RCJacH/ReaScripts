@@ -10,6 +10,7 @@ Reference:
 About:
   Lossless gain adjustment for float point audio.
   1 bit = doubling of distance.
+  
   Instruction:
     * Use Macro Shift to increase or decress audio input by 6.0206 dB per bit.
     * Use Micro Shift to fine adjust audio within 1 bit.

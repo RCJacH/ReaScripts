@@ -10,6 +10,7 @@ Reference:
   ReaRack Filter
 About:
   Audio triggered dynamic noise generator with ASR and filter.
+  
   Instruction:
     1. Set **Mix** slider to taste, use **Noise Gain** for additional volume control.
     2. Select desired noise type.

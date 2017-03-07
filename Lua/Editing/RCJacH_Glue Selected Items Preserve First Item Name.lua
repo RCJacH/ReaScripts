@@ -3,7 +3,6 @@
   Author: RCJacH
   Link: https://github.com/RCJacH/ReaScripts
   Version: 1.0
-
   About:
     Glue selected items and rename to:
       The name of the first item If all item names are identical;
