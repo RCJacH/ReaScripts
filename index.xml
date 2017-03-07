@@ -1,7 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="RCJacH ReaScripts" commit="4b2a50427511217c51c13cd32a5eefb51ca67488">
+<index version="1" name="RCJacH ReaScripts" commit="33413f4385785a91304933f6c73ae8c70f707c51">
   <category name="JSFX/Audio">
-    <reapack name="AB Comparison.jsfx" type="effect">
+    <reapack name="AB Comparison.jsfx" type="effect" desc="AB Comparison">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 This JSFX alternates between signals from different channels for objective comparison purposes. Instruction:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Set different comparing items to sequential stereo channels.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Set {\b # of Inputs} to number of stereo channels to compare.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab Set desired switching beat length using {\b Switch Beat length}. Alternatively, set {\b Millisecond Mode} to > 0 for switching based on time\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab Set switching mode using {\b Mode}: Manual = Switch by pressing channel trigger; Sequential = Switch to the next channel; Random = Switch to a random different channel; Guess = Switch to a random channel, press trigger to show answer. {\b Output Channel Display}s the current output channel.\sa180\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
       <version name="1.0" time="2017-01-18T18:46:33Z">
         <changelog><![CDATA[+ Initial Release
 
@@ -23,13 +37,44 @@ Potential Addition:
         <source>https://github.com/RCJacH/ReaScripts/raw/225dcb55a806ad1775d90a767f9edae92d7100ce/JSFX/Audio/AB%20Comparison.jsfx</source>
       </version>
     </reapack>
-    <reapack name="BitRangeGain.jsfx" type="effect">
+    <reapack name="BitRangeGain.jsfx" type="effect" desc="BitRangeGain">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Lossless gain adjustment for float point audio. 1 bit = doubling of distance. Instruction:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Macro Shift to increase or decress audio input by 6.0206 dB per bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Micro Shift to fine adjust audio within 1 bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Bit Ratio to adjust the dB representation of one bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Fader is used as a percentage controller after bit shifting.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Fader Curve to adjust the behavior of Fader slider.\sa180\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
       <version name="1.0" time="2017-01-31T07:13:16Z">
         <changelog><![CDATA[+ Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/6f8b317f9082e6e7313ad3f8c5050357279c6584/JSFX/Audio/BitRangeGain.jsfx</source>
       </version>
     </reapack>
-    <reapack name="NoiseBuzz.jsfx" type="effect">
+    <reapack name="NoiseBuzz.jsfx" type="effect" desc="NoiseBuzz">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Audio triggered dynamic noise generator with ASR and filter. Instruction:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Set {\b Mix} slider to taste, use {\b Noise Gain} for additional volume control.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Select desired noise type.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab (Optional) Use {\b Threshold}, {\b Attack}, {\b Release} to shape the envelope of the noise, with AR triggered by input audio exceed or fall under the threshold.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab (Optional) Use {\b HPF}, {\b LPF}, and their {\b Resonance} controls to limit the frequency range of the generated noise.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 5.\tx360\tab (Optional) Adjust the detector {\b RMS} of the input level to smooth out the level of the generated noise.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 6.\tx360\tab You can also route the noise audio to channel 3-4 to further shape the noise, voiding the {\b Mix} control.\sa180\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
       <version name="1.0" time="2017-01-31T07:13:16Z">
         <changelog><![CDATA[+ Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/6f8b317f9082e6e7313ad3f8c5050357279c6584/JSFX/Audio/NoiseBuzz.jsfx</source>
@@ -39,6 +84,13 @@ Potential Addition:
   <category name="Lua/Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Delete track/item/take/envelope depending on mouse position.\par}
+}
+]]></description>
         <link rel="website">https://github.com/RCJacH/ReaScripts</link>
       </metadata>
       <version name="1.0" author="RCJacH" time="2017-02-05T08:15:16Z">
@@ -51,18 +103,6 @@ Potential Addition:
       </metadata>
       <version name="1.0" author="RCJacH" time="2017-03-07T11:30:33Z">
         <source main="main">https://github.com/RCJacH/ReaScripts/raw/bacfc0d2cf9e3a139500cafa86b629917ac1dac6/Lua/Editing/RCJacH_Glue%20Selected%20Items%20Preserve%20First%20Item%20Name.lua</source>
-      </version>
-    </reapack>
-  </category>
-  <category name="Lua/Various/Vimper Solo">
-    <reapack name="RCJacH_Vimper Solo.lua" type="script" desc="Vimper Solo">
-      <metadata>
-        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
-      </metadata>
-      <version name="1.0" author="RCJacH" time="2017-03-07T11:30:33Z">
-        <changelog><![CDATA[v1.0 (2017-02-05)
-+ Initial Release]]></changelog>
-        <source main="main">https://github.com/RCJacH/ReaScripts/raw/bacfc0d2cf9e3a139500cafa86b629917ac1dac6/Lua/Various/Vimper%20Solo/RCJacH_Vimper%20Solo.lua</source>
       </version>
     </reapack>
   </category>
