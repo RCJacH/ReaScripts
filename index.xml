@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<index version="1" name="RCJacH ReaScripts" commit="f1c9a8c864ca27e1b7763e6a980e1f7205509bfa">
+  <category name="JSFX/Audio">
+    <reapack name="AB Comparison.jsfx" type="effect">
+      <version name="1.0" time="2017-01-18T18:46:33Z">
+        <changelog><![CDATA[+ Initial Release
+
+Potential Addition:
+1. Switch in ms instead of beat division.
+2. Switch while not playing.]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/6c435acc784b9ed67a126ba2701493b11679a95c/JSFX/Audio/AB%20Comparison.jsfx</source>
+      </version>
+      <version name="1.1" time="2017-01-19T15:30:08Z">
+        <changelog><![CDATA[+ Millisecond Mode.
++ Beat Mode works while not playing.
++ Guess Mode added Answer Display Time.
++ Limitation for user input.
++ Default channel initialization.
+# Triggers in Sequential/Random Mode changes to Manual Mode.
+# Clicking on time-line do not reset to output 1-2.
+# Guess Mode switches by triggering, rather than time.
+]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/225dcb55a806ad1775d90a767f9edae92d7100ce/JSFX/Audio/AB%20Comparison.jsfx</source>
+      </version>
+    </reapack>
+    <reapack name="BitRangeGain.jsfx" type="effect">
+      <version name="1.0" time="2017-01-31T07:13:16Z">
+        <changelog><![CDATA[+ Initial Release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/6f8b317f9082e6e7313ad3f8c5050357279c6584/JSFX/Audio/BitRangeGain.jsfx</source>
+      </version>
+    </reapack>
+    <reapack name="NoiseBuzz.jsfx" type="effect">
+      <version name="1.0" time="2017-01-31T07:13:16Z">
+        <changelog><![CDATA[+ Initial Release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/6f8b317f9082e6e7313ad3f8c5050357279c6584/JSFX/Audio/NoiseBuzz.jsfx</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="Lua/Editing">
+    <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
+      <metadata>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.0" author="RCJacH" time="2017-02-05T08:15:16Z">
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/f1c9a8c864ca27e1b7763e6a980e1f7205509bfa/Lua/Editing/RCJacH_Delete%20content%20under%20mouse%20(contextual).lua</source>
+      </version>
+    </reapack>
+  </category>
+</index>
