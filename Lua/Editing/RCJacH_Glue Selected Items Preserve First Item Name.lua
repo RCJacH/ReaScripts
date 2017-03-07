@@ -4,7 +4,7 @@
   Link: https://github.com/RCJacH/ReaScripts
   Version: 1.0
   About:
-    Glue selected items and rename to
+    Glue selected items, and rename result to:
     1.The name of the first item If all item names are identical;
     2.The name of each nonidentical items.
     3.Remove the "Glued" in item name (but not the file name unfortunately)
