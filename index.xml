@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="RCJacH ReaScripts" commit="f1c9a8c864ca27e1b7763e6a980e1f7205509bfa">
+<index version="1" name="RCJacH ReaScripts" commit="bacfc0d2cf9e3a139500cafa86b629917ac1dac6">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison.jsfx" type="effect">
       <version name="1.0" time="2017-01-18T18:46:33Z">
@@ -43,6 +43,26 @@ Potential Addition:
       </metadata>
       <version name="1.0" author="RCJacH" time="2017-02-05T08:15:16Z">
         <source main="main">https://github.com/RCJacH/ReaScripts/raw/f1c9a8c864ca27e1b7763e6a980e1f7205509bfa/Lua/Editing/RCJacH_Delete%20content%20under%20mouse%20(contextual).lua</source>
+      </version>
+    </reapack>
+    <reapack name="RCJacH_Glue Selected Items Preserve First Item Name.lua" type="script" desc="Glue selected items preserving first item name">
+      <metadata>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.0" author="RCJacH" time="2017-03-07T11:30:33Z">
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/bacfc0d2cf9e3a139500cafa86b629917ac1dac6/Lua/Editing/RCJacH_Glue%20Selected%20Items%20Preserve%20First%20Item%20Name.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="Lua/Various/Vimper Solo">
+    <reapack name="RCJacH_Vimper Solo.lua" type="script" desc="Vimper Solo">
+      <metadata>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.0" author="RCJacH" time="2017-03-07T11:30:33Z">
+        <changelog><![CDATA[v1.0 (2017-02-05)
++ Initial Release]]></changelog>
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/bacfc0d2cf9e3a139500cafa86b629917ac1dac6/Lua/Various/Vimper%20Solo/RCJacH_Vimper%20Solo.lua</source>
       </version>
     </reapack>
   </category>
