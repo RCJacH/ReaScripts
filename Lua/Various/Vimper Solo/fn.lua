@@ -1,3 +1,7 @@
+--[[
+  This script is part of Vimper Solo Package
+  NoIndex: true
+--]]
 -------------------------------------------------------------------------
 -- This file provides the additional functions used by this script
 -------------------------------------------------------------------------

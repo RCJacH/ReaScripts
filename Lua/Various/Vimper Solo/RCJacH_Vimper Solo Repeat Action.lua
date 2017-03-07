@@ -1,3 +1,8 @@
+--[[
+  This script is part of Vimper Solo Package
+  NoIndex: true
+--]]
+
 do
   local info = debug.getinfo(1,'S');
   local base_path = info.source:match[[^@?(.*[\/])[^\/]-$]]

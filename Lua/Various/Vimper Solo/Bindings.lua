@@ -1,3 +1,7 @@
+--[[
+  This script is part of Vimper Solo Package
+  NoIndex: true
+--]]
 local Transport, Navigation, MIDI, Layout, Track, Item, Take, Envelope, Windows
 
 

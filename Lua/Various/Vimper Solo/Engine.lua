@@ -1,3 +1,7 @@
+--[[
+  This script is part of Vimper Solo Package
+  NoIndex: true
+--]]
 -- ====> System
 do
   local info = debug.getinfo(1,'S');

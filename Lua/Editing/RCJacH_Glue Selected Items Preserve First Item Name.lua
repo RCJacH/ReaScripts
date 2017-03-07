@@ -1,17 +1,16 @@
--- Glue selected items preserving names
--- Author: spk77
--- Author URl: http://forum.cockos.com/member.php?u=49553
--- Source URl: https://github.com/X-Raym/REAPER-EEL-Scripts
--- Licence: GPL v3
--- Release Date: 01-02-2015
--- Forum Thread URl: http://forum.cockos.com/showthread.php?p=1470398
+--[[
+  ReaScript Name: Glue selected items preserving first item name
+  Author: RCJacH
+  Website: https://github.com/RCJacH/ReaScripts
+  Version: 1.0
 
--- Version: 1.0
--- Version Date: 01-02-2015
--- Required : Reaper 4.76
-
--- Hosted by X-Raym
--- Thanks to spk77 for having succeed to do this !
+  Description:
+  ------
+  Glue selected items and rename to:
+    The name of the first item If all item names are identical;
+    The name of each nonidentical items.
+    Remove the "Glued" in item name (but not the file name unfortunately)
+]]
 
 function merge_track_take_names(track_pointer, apply_to_first_take) 
   local first_take, item, take, take_name, b_exist
