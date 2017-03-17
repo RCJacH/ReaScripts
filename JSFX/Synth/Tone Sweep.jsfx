@@ -1,0 +1,146 @@
+/*
+JSFX Name: Tone Sweep
+Author: RCJacH
+Release Date: Mar 2017
+Link: https://github.com/RCJacH/ReaScripts
+Version: 0.1
+Reference:
+  D16 Punchbox
+  Tone Generator
+About:
+  This JS plugin generates a sweeping tone base on settings
+  Instruction:
+  1. Set starting and ending note, fine tuning in cents if desired.
+  2. Set sweeping time and envelope time.
+  3. Adjust envelope curves
+  4. Select different wave shape if desired.
+*/
+
+// Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
+
+desc: Tone Sweep
+
+// pitch
+slider1: 440<400,480,0.01> Pitch Standard
+slider2: 40<0,127,1> Start Note
+slider3: 0<-100,100,1> Fine Tune (cents)
+slider4: 22<0,127,1> End Note
+slider5: 0<-100,100,1> Fine Tune (cents)
+slider6: 125<1,1000,0.1> Sweep Time
+
+// time
+slider8: 5<0,1000,0.01> Attack Time
+slider9: 125<0,1000,0.01> Hold Time
+slider10: 125<0,5000,0.01> Decay Time
+
+// curve
+slider12: 0<-100,100,1> Attack Curve
+slider13: 1<0,4,0.25> Attack Curve Multiplier
+slider14: 0<-100,100,1> Decay Curve
+slider15: 1<0,4,0.25> Decay Curve Multiplier
+slider16: 0<-100,100,1> Sweep Curve
+slider17: 1<0,4,0.25> Sweep Curve Multiplier
+
+slider21: 0<0,3,1{Sine,Triangle,Square,Saw}>Shape Mix
+
+slider31: -6<-120,0,1> Volume dB
+
+@init
+  STATUS_NOTE_ON          = $x90; // Note On Message
+  STATUS_NOTE_OFF         = $x80; // Note Off Message
+
+  env = 0;
+  halfPi = $pi/2;
+  onehalfPi = 3 * halfPi;
+  twoPi = 2.0*$pi;
+
+@slider
+  // Input Limiting
+  slider6 = max(0, slider6);
+  slider8 = max(0, slider8);
+  slider9 = max(0, slider9);
+  slider10 = max(0, slider10);
+  slider22 = max(0, min(22000, slider22));
+  slider23 = max(0, min(1, slider23));
+  slider24 = max(0, min(22000, slider24));
+  slider25 = max(0, min(1, slider25));
+  slider22 > slider24 ? slider22 = slider24;
+  slider24 < slider22 ? slider24 = slider22;
+
+  pStart = slider2 + (slider3 * 0.01);
+  fStart = slider1 * (2 ^ ((pStart - 57) / 12));
+  pEnd = slider4 + (slider5 * 0.01);
+  fEnd = slider1 * (2 ^ ((pEnd - 57) / 12));
+  fDif = fStart - fEnd;
+
+  // Time variables
+  tSweep = slider6 ? srate * slider6 * 0.001;
+
+  tAttack = slider8 ? srate * slider8 * 0.001;
+  tHold = slider9 ? srate * slider9 * 0.001;
+  tDecay = slider10 ? srate * slider10 * 0.001;
+  tAH = tAttack + tHold;
+  tAHD = tAH + tDecay;
+
+  // Curve variables
+  vAttack = 1/(2 ^ ((-slider12 * 0.01) * slider13));
+  vDecay = 1/(2 ^ ((slider14 * 0.01) * slider15));
+  vSweep = 1/(2 ^ ((slider16 * 0.01) * slider17));
+
+  shape = slider21;
+
+  volume = 2^(slider31/6);
+
+@block
+  while (
+    midirecv(offset,msg1,msg2,msg3) ? (
+      in_ch = msg1 & $x0F;
+      in_status = msg1 & $xF0; //Get incoming STATUS
+      in_pit = in_CCN = msg2; //Get incoming Pitch and CC number
+      in_vel = in_CCV = msg3; //Get incoming Velocity and CC value
+      // note on
+      (in_status == STATUS_NOTE_ON) ? (
+        volumePct = in_vel / 127;
+        noteOn = 1;
+        envCnt = 0;
+        freq = fStart;
+      );
+      midisend(offset,msg1,msg2,msg3);
+    );
+  );
+
+@sample
+  noteOn == 1 ? (
+    freq = fEnd + fDif * max(0, ((tSweep-min(tSweep, envCnt))/tSweep)^vSweep);
+    envCnt < tAttack ? ( //Attack
+      env = min(1, 1-((tAttack-envCnt)/tAttack)^vAttack);
+    ):
+    envCnt < tAH ? ( //Hold
+      env = 1;
+    ):( //Decay
+      env = (max(0, tAHD - envCnt)/tDecay)^vDecay;
+    );
+
+
+    inc = twoPi*freq/srate;
+    shape == 0 ? (
+      tone = cos(phase);
+    ):
+    shape == 1 ? (
+      tone = 2.0*phase/$pi-1.0;
+      (tone > 1.0) ? tone = 2.0-tone;
+    ):
+    shape == 2 ? (
+      tone = phase>halfPi && phase<onehalfPi ? 1 : -1; 
+    ):
+    shape == 3 ? (
+      tone = 1.0-phase/$pi;
+    );
+    tone *= env * volume;
+
+    spl0=spl1=tone;
+    phase += inc;
+    phase >= twoPi ? phase -= twoPi;
+    envCnt > 0 && env <= 0.000001 ? noteOn = 0;
+    envCnt += 1;
+  );
