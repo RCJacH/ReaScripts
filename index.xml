@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="RCJacH ReaScripts" commit="a2c2affbae1a5a6d12842355a0aefd8d55d4d501">
+<index version="1" name="RCJacH ReaScripts" commit="bc7f7656b511b632bcef1d6386c2c2137b3caaab">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison.jsfx" type="effect" desc="AB Comparison">
       <metadata>
@@ -125,6 +125,27 @@ Potential Addition:
 * v1.0 (2016-07-24)
  + Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/bee92c21a11db6084007db0d7c233799a3017059/JSFX/MIDI/midi_note_beat_repeater.jsfx</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JSFX/Synth">
+    <reapack name="Tone Sweep.jsfx" type="effect" desc="Tone Sweep">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 This JS plugin generates a sweeping tone base on settings Instruction:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Set starting and ending note, fine tuning in cents if desired.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Set sweeping time and envelope time.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab Adjust envelope curves\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab Select different wave shape if desired.\sa180\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="0.1" author="RCJacH" time="2017-03-17T16:50:44Z">
+        <source>https://github.com/RCJacH/ReaScripts/raw/bc53d68f3aa4aa650190bf4844eaff2af96a17b5/JSFX/Synth/Tone%20Sweep.jsfx</source>
       </version>
     </reapack>
   </category>
