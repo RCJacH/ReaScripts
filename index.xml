@@ -144,9 +144,6 @@ Potential Addition:
 ]]></description>
         <link rel="website">https://github.com/RCJacH/ReaScripts</link>
       </metadata>
-      <version name="0.1" author="RCJacH" time="2017-03-17T16:50:44Z">
-        <source>https://github.com/RCJacH/ReaScripts/raw/bc53d68f3aa4aa650190bf4844eaff2af96a17b5/JSFX/Synth/Tone%20Sweep.jsfx</source>
-      </version>
       <version name="1.0rc1" author="RCJacH" time="2017-04-29T13:58:05Z">
         <source>https://github.com/RCJacH/ReaScripts/raw/c32432b550968bd16c13554f5ee09cb01a0868dd/JSFX/Synth/Tone%20Sweep.jsfx</source>
       </version>
