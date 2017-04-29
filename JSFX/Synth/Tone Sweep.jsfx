@@ -7,6 +7,7 @@ Version: 0.1
 Reference:
   D16 Punchbox
   Tone Generator
+  ToneJS
 About:
   This JS plugin generates a sweeping tone base on settings
   Instruction:
@@ -14,6 +15,21 @@ About:
   2. Set sweeping time and envelope time.
   3. Adjust envelope curves
   4. Select different wave shape if desired.
+
+Changelog:
+ * v1.0rc1 (2017-04-28)
+  + Full GUI
+  + Note off/Key track
+
+ * v1.0pre2 (2017-04-13)
+  + Curve Slection
+  + GUI displaying waveform
+  + Simple AM/FM modulation with sidechain capability
+  # Using functions
+  # Fixed curve algorithm
+  # Move to different AHD stage at 0 phase
+ * v1.0pre1 (2017-03.28)
+  + Initial Algorithm
 */
 
 // Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
@@ -21,126 +37,1021 @@ About:
 desc: Tone Sweep
 
 // pitch
-slider1: 440<400,480,0.01> Pitch Standard
-slider2: 40<0,127,1> Start Note
-slider3: 0<-100,100,1> Fine Tune (cents)
-slider4: 22<0,127,1> End Note
-slider5: 0<-100,100,1> Fine Tune (cents)
-slider6: 125<1,1000,0.1> Sweep Time
+slider1: 440<400,480,0.01> -Pitch Standard
+slider2: 64<0,127,1> -Start Note
+slider3: 0<-100,100,1> -Fine Tune (cents)
+slider4: 21<0,127,1> -End Note
+slider5: 0<-100,100,1> -Fine Tune (cents)
+
+slider7: 125<1,1000,0.1> -Sweep Time
+slider8: -100<-100,100,1> -Sweep Curve
+slider9: 3<0,10,0.01> -Sweep Curve Multiplier
+slider10: 1<0,4,1{Linear,Exponential,Logarithmic,Sine,Cosine}> -Sweep Curve Shape
 
 // time
-slider8: 5<0,1000,0.01> Attack Time
-slider9: 125<0,1000,0.01> Hold Time
-slider10: 125<0,5000,0.01> Decay Time
+slider12: 5<0,1000,0.01> -Attack Time
+slider13: 125<1,1000,0.01> -Hold Time
+slider14: 125<0,5000,0.01> -Decay Time
 
 // curve
-slider12: 0<-100,100,1> Attack Curve
-slider13: 1<0,4,0.25> Attack Curve Multiplier
-slider14: 0<-100,100,1> Decay Curve
-slider15: 1<0,4,0.25> Decay Curve Multiplier
-slider16: 0<-100,100,1> Sweep Curve
-slider17: 1<0,4,0.25> Sweep Curve Multiplier
+slider16: 100<-100,100,1> -Attack Curve
+slider17: 1<0,10,0.01> -Attack Curve Multiplier
+slider18: 0<0,4,1{Linear,Exponential,Logarithmic,Sine,Cosine}> -Attack Curve Shape
+slider19: -100<-100,100,1> -Decay Curve
+slider20: 2<0,10,0.01> -Decay Curve Multiplier
+slider21: 0<0,4,1{Linear,Exponential,Logarithmic,Sine,Cosine}> -Decay Curve Shape
 
-slider21: 0<0,3,1{Sine,Triangle,Square,Saw}>Shape Mix
+slider23: 0<0, 20000, 0.01> -AM Frequency
+slider24: 0<-100,100,1> -AM Depth
+slider25: 0<-100,100,1> -AM Env Slant (/ - \)
+slider26: 0<0,3,1{Sine,Triangle,Square,Saw}> -AM Waveform
 
-slider31: -6<-120,0,1> Volume dB
+slider31: 0<0,3,1{Sine,Triangle,Square,Saw}> -Waveform
+
+slider34: 0<0,20000,0.01> -FM Frequency
+slider35: 0<-100,100,1> -FM Depth
+slider36: 0<-100,100,1> -FM Env Slant (/ - \)
+slider37: 0<0,3,1{Sine,Triangle,Square,Saw}> -FM Waveform
+slider38: 0<0,1,1{Static, Variable}> -FM Frequency Domain
+
+slider41: -18<-120,0,1> -Volume
+
+slider63: 0<0,8000,0.01> -Output Frequency
+slider64: 0<0,4,1> GUI Page
+
+in_pin:Input L
+in_pin:Input R
+in_pin:AM Input
+in_pin:FM Input
+out_pin:output L
+out_pin:output R
 
 @init
-  STATUS_NOTE_ON          = $x90; // Note On Message
-  STATUS_NOTE_OFF         = $x80; // Note Off Message
+  STATUS_NOTE_ON  = $x90; // Note On Message
+  STATUS_NOTE_OFF = $x80; // Note Off Message
 
-  env = 0;
-  halfPi = $pi/2;
-  onehalfPi = 3 * halfPi;
-  twoPi = 2.0*$pi;
+  halfPi          = $pi * 0.5;
+  onehalfPi       = halfPi * 3;
+  twoPi           = $pi * 2;
+  perSample       = 1/srate;
+  incBase         = twoPi * perSample;
+  ms2sample       = 0.001 * srate;
 
-@slider
+function onepole(fc) instance(cutoff, a0, b1, z1) (
+  fc != cutoff ? (
+    cutoff = fc;
+    b1 = exp(-twoPi * cutoff);
+    a0 = 1 - b1;
+  );
+  this = z1 = this * a0 + z1 * b1;
+);
+
+function pit2freq(pitch) (
+  (2 ^ ((pitch - 57) / 12));
+);
+
+function getCurve(shape, pos, t0, t1, v0, v1, curve) local(tExt, tLen, tmp, value) (
+  pos = max(t0, min(pos, t1));
+  tExt = pos - t0;
+  tLen = t1 - t0;
+  shape == 0 ? ( // Linear
+    value = tExt / tLen;
+  ) :
+  shape == 1 ? ( // Exponential
+    value = 2 ^ (tExt / tLen) - 1;
+  ) :
+  shape == 2 ? ( // Logarithmic
+    value = log(tExt + 1) / log(tLen + 1);
+  ) :
+  shape == 3 ? ( // Sine
+    value = 0.5 * (1 - cos($pi * (tExt / tLen)));
+  ) :
+  shape == 4 ? ( // Cosine
+    value = sin(halfPi * tExt / tLen);
+  );
+  v0 + value ^ curve * (v1 - v0);
+);
+
+function getEnv() local(b, Fc) (
+  b = (this.phase + incBase * this.freq) % $pi == 0;
+  this.state == 1 ? ( //Attack
+    Fc = this.atkFc;
+    this.env = getCurve(this.sA, this.AHDcnt, 0, this.tA, 0, 1, this.vA);
+    this.AHDcnt >= this.tA && b ? this.state = 2;
+  ):
+  this.state == 2 ? ( //Hold
+    Fc = this.holdFc;
+    this.env = 1;
+    b_noteoff.value ? (
+      !this.cnt && b ? this.state = 3;
+    ):(
+      this.AHDcnt >= this.tAH && b ? this.state = 3;
+    );
+  ):
+  this.state == 3 ? ( //Decay
+    Fc = this.decFc;
+    this.env = getCurve(this.sD, this.AHDcnt, this.tAH, this.tAHD, 1, 0, this.vD);
+    this.AHDcnt >= this.tAHD && b ? this.state = 0;
+  );
+  this.env.onepole(Fc);
+);
+
+function getTone(shape) local(tone) (
+  shape == 0 ? ( // Sine
+    tone = sin(this.phase);
+  ) :
+  shape == 1 ? ( // Triangle
+    tone = this.phase / halfPi - 1;
+    (tone > 1) ? tone = 2 - tone;
+  ):
+  shape == 2 ? ( // Square
+    tone = this.phase > halfPi && this.phase < onehalfPi ? 1 : -1; 
+  ):
+  shape == 3 ? ( // Saw
+    tone = 1 - this.phase / $pi;
+  );
+  this.tone = tone;
+);
+
+function incPhase(freq) (
+  this.phase += incBase * freq;
+  this.phase >= twoPi ? this.phase -= twoPi;
+);
+
+function getFreq(cnt) (
+  this.freq = getCurve(AHD.sSweep, cnt, 0, AHD.tSweep, this.fStart, this.bKeytrack ? this.fEnd : fEnd, AHD.vSweep);
+);
+
+function progress() (
+  this.AHDcnt += 1;
+  LFO.AM.bActive ? this.AM.incPhase(LFO.AM.freq);
+  LFO.FM.depth != 0 ? (
+    !LFO.FM.bSidechain ? (
+      this.FM.incPhase(LFO.FM.freq);
+      this.FM.getTone(LFO.FM.shape);
+    );
+    this.freq += this.FM.tone * LFO.FM.domain * LFO.FM.depth * getCurve(0, this.AHDcnt, 0, AHD.tSweep, LFO.FM.vStart, LFO.FM.vEnd, 1);
+  );
+  this.incPhase(this.freq);
+);
+
+function setStatus() (
+  this.getFreq(this.AHDcnt);
+  this.getEnv();
+);
+
+function setFloat() local(AMvalue, balance) (
+  this.setStatus();
+  this.getTone(this.toneShape);
+  LFO.AM.bActive ? (
+    !LFO.AM.bSidechain ? this.AM.getTone(LFO.AM.shape);
+    AMvalue = this.AM.tone * LFO.AM.depth * getCurve(0, this.AHDcnt, 0, this.tAHD, LFO.AM.vStart, LFO.AM.vEnd, 1);
+    balance = (1 - abs(LFO.AM.depth) * 0.5 ^ abs(LFO.AM.depth));
+  ) : (
+    AMvalue = 0;
+    balance = 1;
+  );
+  this.value = this.tone * this.env * (this.envPct + AMvalue) * balance;
+);
+
+function newNote(velPct) (
+  this.envPct = i_vel2vol.value > 0 ? (1 - i_vel2vol.value) + velPct * i_vel2vol.value : 1;
+  this.pitPct = i_vel2pit.value > 0 ? (1 - i_vel2pit.value) + velPct * i_vel2pit.value : 1;
+  this.fStart = (this.bKeytrack ? this.fEnd : fEnd) + fDif * this.pitPct;
+  this.phase = this.state > 1 ? this.phase : 0;
+  this.AM.phase = 0;
+  this.FM.phase = fDif > 0 ? $pi : 0;
+  this.tA = AHD.tA; this.tH = AHD.tH; this.tD = AHD.tD; this.tAH = AHD.tAH; this.tAHD = AHD.tAHD;
+  this.vA = AHD.vA; this.vD = AHD.vD;
+  this.sA = AHD.sA; this.sD = AHD.sD;
+  this.atkFc = atkFc; this.holdFc = holdFc; this.decFc = decFc;
+  this.AHDcnt = 0;
+  this.state = 1;
+  this.toneShape = toneShape;
+);
+
+function setNoteOff(b) local(tmp) (
+  tmp != b ? (
+    tmp = b;
+    note.cnt = 0;
+  );
+);
+
+function setSlant(slant) (
+  this.vStart = min(1, 1 + slant);
+  this.vEnd = min(1, 1 - slant);
+);
+
+function processSliders() (
   // Input Limiting
-  slider6 = max(0, slider6);
-  slider8 = max(0, slider8);
+  slider7 = max(0, slider7);
   slider9 = max(0, slider9);
-  slider10 = max(0, slider10);
-  slider22 = max(0, min(22000, slider22));
-  slider23 = max(0, min(1, slider23));
-  slider24 = max(0, min(22000, slider24));
-  slider25 = max(0, min(1, slider25));
-  slider22 > slider24 ? slider22 = slider24;
-  slider24 < slider22 ? slider24 = slider22;
+  slider12 = max(0, slider12);
+  slider13 = max(0, slider13);
 
+  // Frequency variables
   pStart = slider2 + (slider3 * 0.01);
-  fStart = slider1 * (2 ^ ((pStart - 57) / 12));
+  fStart = slider1 * pit2freq(pStart);
   pEnd = slider4 + (slider5 * 0.01);
-  fEnd = slider1 * (2 ^ ((pEnd - 57) / 12));
+  fEnd = slider1 * pit2freq(pEnd);
   fDif = fStart - fEnd;
+  fDifHalf = fDif / 2;
 
   // Time variables
-  tSweep = slider6 ? srate * slider6 * 0.001;
-
-  tAttack = slider8 ? srate * slider8 * 0.001;
-  tHold = slider9 ? srate * slider9 * 0.001;
-  tDecay = slider10 ? srate * slider10 * 0.001;
-  tAH = tAttack + tHold;
-  tAHD = tAH + tDecay;
+  AHD.tA = ceil(slider12*ms2sample);
+  AHD.tH = ceil(slider13*ms2sample);
+  AHD.tD = ceil(slider14*ms2sample);
+  AHD.tAH = AHD.tA + AHD.tH;
+  AHD.tAHD = AHD.tAH + AHD.tD;
+  AHD.tSweep = ceil(slider7*ms2sample);
 
   // Curve variables
-  vAttack = 1/(2 ^ ((-slider12 * 0.01) * slider13));
-  vDecay = 1/(2 ^ ((slider14 * 0.01) * slider15));
-  vSweep = 1/(2 ^ ((slider16 * 0.01) * slider17));
+  AHD.vA = (2 ^ (slider16 * 0.01 * slider17));
+  atkFc = (100 + AHD.vA * 20) * perSample;
+  AHD.vA = 1 / AHD.vA;
+  AHD.sA = slider18;
+  holdFc = (200 + slider12 * 0.5) * perSample;
+  AHD.vD = 2 ^ (slider19 * 0.01 * slider20);
+  AHD.sD = slider21;
+  decFc = (100 + AHD.vD * 20) * perSample;
 
-  shape = slider21;
+  AHD.vSweep = 2 ^ (slider8 * 0.01 * slider9);
+  AHD.sSweep = slider10;
 
-  volume = 2^(slider31/6);
+  LFO.AM.freq = slider23;
+  LFO.AM.depth = slider24 * 0.01;
+  LFO.AM.setSlant(slider25 * 0.01);
+  LFO.AM.shape = slider26;
+  LFO.AM.bActive = LFO.AM.freq > 0 && LFO.AM.depth != 0 ? 1 : 0;
+
+  toneShape = slider31;
+
+  LFO.FM.freq = slider34;
+  LFO.FM.depth = slider35 * 0.01;
+  LFO.FM.setSlant(slider36 * 0.01);
+  LFO.FM.shape = slider37;
+  LFO.FM.domain = slider38 == 0 ? LFO.FM.freq : fDif;
+
+  volume = 2^(slider41/6);
+);
+
+  processSliders();
+
+@slider
+
+  s1.value = slider1;
+  s2.value = slider2;
+  s3.value = slider3;
+  s4.value = slider4;
+  s5.value = slider5;
+  s7.value = gPit.x.value = slider7;
+  s8.value = gPit.y.value = slider8;
+  s9.value = slider9;
+  s10.value = slider10;
+
+  s12.value = gEnv.A.x.value = slider12;
+  s13.value = gEnv.H.x.value = slider13;
+  s14.value = gEnv.D.x.value = slider14;
+
+  s16.value = gEnv.A.y.value = slider16;
+  s17.value = slider17;
+  s18.value = slider18;
+  s19.value = gEnv.D.y.value = slider19;
+  s20.value = slider20;
+  s21.value = slider21;
+
+  s23.value = slider23;
+  s24.value = slider24;
+  s25.value = slider25;
+  s26.value = slider26;
+
+  s31.value = slider31;
+
+  s34.value = slider34;
+  s35.value = slider35;
+  s36.value = slider36;
+  s37.value = slider37;
+  s38.value = slider38;
+
+  s41.value = slider41;
+
+  uix.page = slider64;
 
 @block
   while (
     midirecv(offset,msg1,msg2,msg3) ? (
-      in_ch = msg1 & $x0F;
+      // in_ch = msg1 & $x1F; //Get incoming channel
       in_status = msg1 & $xF0; //Get incoming STATUS
-      in_pit = in_CCN = msg2; //Get incoming Pitch and CC number
-      in_vel = in_CCV = msg3; //Get incoming Velocity and CC value
+      in_pit = msg2; //Get incoming Pitch
+      in_vel = msg3; //Get incoming Velocity
       // note on
       (in_status == STATUS_NOTE_ON) ? (
-        volumePct = in_vel / 127;
-        noteOn = 1;
-        envCnt = 0;
-        freq = fStart;
+        note.bKeytrack = b_keytrack.value ? 1 : 0;
+        note.fEnd = b_keytrack.value ? slider1 * pit2freq(in_pit);
+        note.newNote(in_vel/127);
+        b_noteoff.value ? note.cnt += 1;
+      ):
+      (in_status == STATUS_NOTE_OFF) ? (
+        b_noteoff.value && note.cnt > 0 ? (
+          note.state == 2 ? (
+            note.cnt -= 1;
+            note.AHDcnt = AHD.tAH;
+          );
+        ):note.cnt = 0;
       );
       midisend(offset,msg1,msg2,msg3);
     );
   );
 
 @sample
-  noteOn == 1 ? (
-    freq = fEnd + fDif * max(0, ((tSweep-min(tSweep, envCnt))/tSweep)^vSweep);
-    envCnt < tAttack ? ( //Attack
-      env = min(1, 1-((tAttack-envCnt)/tAttack)^vAttack);
-    ):
-    envCnt < tAH ? ( //Hold
-      env = 1;
-    ):( //Decay
-      env = (max(0, tAHD - envCnt)/tDecay)^vDecay;
-    );
-
-
-    inc = twoPi*freq/srate;
-    shape == 0 ? (
-      tone = cos(phase);
-    ):
-    shape == 1 ? (
-      tone = 2.0*phase/$pi-1.0;
-      (tone > 1.0) ? tone = 2.0-tone;
-    ):
-    shape == 2 ? (
-      tone = phase>halfPi && phase<onehalfPi ? 1 : -1; 
-    ):
-    shape == 3 ? (
-      tone = 1.0-phase/$pi;
-    );
-    tone *= env * volume;
-
-    spl0=spl1=tone;
-    phase += inc;
-    phase >= twoPi ? phase -= twoPi;
-    envCnt > 0 && env <= 0.000001 ? noteOn = 0;
-    envCnt += 1;
+  LFO.AM.bSidechain ? note.AM.tone = spl2;
+  LFO.FM.bSidechain ? note.FM.tone = spl3;
+  note.state > 0 ? (
+    note.setFloat();
+    output = note.value * volume;
+    spl0 += output;
+    spl1 += output;
+    slider63 = note.freq;
+    note.progress();
   );
+
+@gfx 750 400
+  // GUI settings
+  function uix_setColor(type) (
+    type == 0 ? ( //Background
+      uix.r = uix.g = uix.b = 20;
+    ):
+    type == 1 ? ( //Border
+      uix.r = uix.g = 81; uix.b = 82;
+    ):
+    type == 2 ? ( //Text0
+      uix.r = 249; uix.g = 239; uix.b = 201;
+    ):
+    type == 3 ? ( //Text1
+      uix.r = 185; uix.g = 85; uix.b = 24;
+    ):
+    type == 4 ? ( //Slider
+      uix.r = 148; uix.g = 149; uix.b = 150;
+    ):
+    type == 5 ? ( //Button Dark
+      uix.r = 0.24; uix.g = 0; uix.b = 0;
+    ):
+    type == 6 ? ( //Button Light
+      uix.r = 255; uix.g = 0.15; uix.b = 0;
+    ):
+    type == 7 ? ( //Red
+      uix.r = 135; uix.g = 13; uix.b = 11;
+    ):
+    type == 8 ? ( //Orange
+      uix.r = 220; uix.g = 107; uix.b = 20;
+    ):
+    type == 9 ? ( //Yellow
+      uix.r = 205; uix.g = 159; uix.b = 20;
+    );
+    uix.r = uix.r <= 1 ? uix.r : uix.r/255; 
+    uix.g = uix.g <= 1 ? uix.g : uix.g/255;
+    uix.b = uix.b <= 1 ? uix.b : uix.b/255;
+    gfx_r = uix.r; gfx_g = uix.g; gfx_b = uix.b;
+  );
+
+  function uix_setFont(type) local(resize) (
+    resize = min(gfx_h * 0.0025, gfx_w * 0.0017);
+    type == 0 ? (
+      gfx_setfont(1,"Arial", resize * 16);
+    ):
+    type == 1 ? (
+      gfx_setfont(1,"Arial", resize * 36, 'b');
+    ):
+    type == 2 ? (
+      gfx_setfont(1,"Arial", resize * 30, 'b');
+    ):
+    type == 3 ? (
+      gfx_setfont(1,"Arial", resize * 24, 'b');
+    ):
+    type == 4 ? (
+      gfx_setfont(1,"Arial", resize * 20, 'b');
+    ):
+    type == 5 ? (
+      gfx_setfont(1,"Arial", resize * 14, 'b');
+    );
+  );
+
+  function uix_setAlign(wAlign, hAlign) (
+    uix.wAlign = max(0, min(1, wAlign));
+    uix.hAlign = max(0, min(1, hAlign));
+  );
+
+  function uix_setStrokeWidth(sWidth) (
+    uix.sWidth = sWidth;
+    uix.sWidth2 = sWidth * 2;
+  );
+
+  function uix_setPos(x,y) (
+    gfx_x = x; gfx_y = y;
+  );
+
+  function uix_getPitName(midinum) local(pit) (
+    pit = midinum % 12;
+    pit = pit == 0 ? "C" :
+          pit == 1 ? "C#" :
+          pit == 2 ? "D" :
+          pit == 3 ? "D#" :
+          pit == 4 ? "E" :
+          pit == 5 ? "F" :
+          pit == 6 ? "F#" :
+          pit == 7 ? "G" :
+          pit == 8 ? "G#" :
+          pit == 9 ? "A" :
+          pit == 10 ? "Bb" :
+          pit == 11 ? "B";
+    strcat(strcpy(#,pit),sprintf(oct,"%i",floor(midinum / 12)));
+  );
+
+  function uix_tmp(set) (
+    !set ? (
+      uix.tmp.sWidth = uix.sWidth;
+      uix.tmp.wAlign = uix.wAlign;
+      uix.tmp.hAlign = uix.hAlign;
+      uix.tmp.fColor = uix.fColor;
+      uix.tmp.sColor = uix.sColor;
+      uix.tmp.tColor = uix.tColor;
+    ) : (
+      uix.wAlign = uix.tmp.wAlign;
+      uix.hAlign = uix.tmp.hAlign;
+      uix.fColor = uix.tmp.fColor;
+      uix.sColor = uix.tmp.sColor;
+      uix.tColor = uix.tmp.tColor;
+      uix_setStrokeWidth(uix.tmp.sWidth);
+    );
+  );
+
+  // GUI Draw
+  function ui_rect(x,y,w,h)(
+    x -= w * uix.wAlign;
+    y -= h * uix.hAlign;
+    uix.sWidth > 0 ? (
+      uix_setColor(uix.sColor);
+      gfx_rect(x,y,w,h);
+      uix_setColor(uix.fColor);
+      gfx_rect(x + uix.sWidth,y + uix.sWidth,w - uix.sWidth2, h - uix.sWidth2);
+    ):(
+      uix_setColor(uix.fColor);
+      gfx_rect(x,y,w,h);
+    );
+  );
+
+  function ui_text(x,y,text,type)
+    local(w,h)
+  (
+    uix_setFont(type);
+    gfx_measurestr(text, w, h);
+    uix_setPos(x - w * uix.wAlign, y - h * uix.hAlign);
+    uix_setColor(uix.tColor);
+    gfx_drawstr(text);
+  );
+
+  function ui_textCurveName(x,y,type) local(str)(
+    type == 0 ? str = "Linear" :
+    type == 1 ? str = "Exponential" :
+    type == 2 ? str = "Logarithmic" :
+    type == 3 ? str = "Sine" :
+    type == 4 ? str = "Cosine";
+    ui_text(x, y, str, 0);
+  );
+
+  function ui_textWaveformName(x,y,type) local(str)(
+    type == 0 ? str = "Sine" :
+    type == 1 ? str = "Triangle" :
+    type == 2 ? str = "Square" :
+    type == 3 ? str = "Saw";
+    ui_text(x, y, str, 0);
+  );
+
+  function ui_handle(x,y,w,h)
+  local(kh, hw, grad)
+  (
+    uix_setAlign(0,0);
+    kh = h - 2;
+    hw = w * 0.5;
+    grad = 1/w*0.5;
+    uix_setColor(uix.kColor);
+    gfx_gradrect(x-3, y+1, hw+4, kh, uix.r*0.5, uix.g*0.5, uix.b*0.5, 1, uix.r/hw, uix.g/hw, uix.b/hw);
+    gfx_gradrect(x+1+hw, y+1, hw+4, kh, uix.r, uix.g, uix.b, 1, -grad, -grad, -grad);
+    uix_setColor(2);
+    gfx_rect(x + hw, y + 1, 2, kh - 1);
+  );
+
+  function ui_drawInit(x,y,w,h) (
+    // Mouse Logic
+    mouse_x >= x && mouse_x <= x+w && mouse_y >= y && mouse_y <= y+h && !this.disabled ? (
+      !mouse_cap ? this.hasEntered = 1;
+      mouse_cap ? this.hasClicked = 1;
+      this.hasEntered && this.hasClicked ? this.canChange = 1;
+    ) : (
+      this.hasEntered = this.hasClicked = 0;
+    );
+    !mouse_cap ? this.canChange = this.init_pos = 0;
+  );
+
+  function ui_drawGetControlValue(vStart,vEnd,stepsize,default,dir,length,type) local(tmp,mouse,step,axis,pos) (
+    this.range = abs(vStart - vEnd);
+    this.input = 0;
+    axis = sign(dir);
+    pos = abs(dir);
+    this.canChange ? (
+      mouse = axis < 0 ? mouse_y : mouse_x;
+      !this.init_pos ? this.init_pos = mouse;
+      type == 2 ? (// Check Box
+        this.value = !this.value;
+        this.hasEntered = this.canChange = 0;
+      ):(
+        type == 1 /*Dragbox*/ || (mouse_cap & 8 || mouse_cap & 16) ? ( // Holding Shift or Alt = Drag to Fine tune by 0.01 or 1
+          this.init_pos != mouse ? (
+            tmp = mouse - this.init_pos;
+            mouse_cap & 8 ? tmp = tmp * 0.01;
+            this.input += axis < 0 ? tmp : -tmp;
+            this.init_pos = mouse;
+          );
+          step += this.input;
+          abs(step) > stepsize ? (
+            tmp = step < 0 ? ceil(step / stepsize) * stepsize : floor(step / stepsize) * stepsize;
+            this.value -= tmp;
+            step -= tmp;
+          );
+        ):( // Direct left click = set by clicked position
+          this.input = mouse - pos;
+          tmp = 1 / stepsize;
+          this.value = ceil(this.range * this.input / length * tmp) / tmp;
+          this.value = vStart + (axis < 0 ? this.range - this.value : this.value);
+        );
+      );
+      mouse_cap & 4 ? this.value = default;
+    );
+    this.value = max(min(this.value,vEnd),vStart);
+    this.value;
+  );
+
+  function ui_drawVisual(x,y,w,h,title) (
+    // Knob parameters
+    this.knob.size = uix.gridx * 2;
+    this.knob.halfsize = this.knob.size * 0.5;
+
+    this.frame > 0 ? (
+      // Frame
+      uix_setAlign(0,0);
+      uix_setStrokeWidth(uix.sWidth);
+      ui_rect(x,y,w,h);
+    );
+
+    // Title
+    title != "" ? (
+      uix_setAlign(1,0.5);
+      ui_text(x - uix.gridx, y + h * 0.5, title, 0);
+    );
+  );
+
+  function ui_drawSlider(x,y,w,h,vStart,vEnd,stepsize,default,unit,title) local (digit) (
+    uix_tmp(0);
+    x -= w * uix.wAlign; y -= h * uix.hAlign;
+    this.frame = 1;
+    this.ui_drawInit(x,y,w,h);
+    this.ui_drawVisual(x,y,w,h,title);
+    this.ui_drawGetControlValue(vStart, vEnd, stepsize, default,x,w,0);
+
+    this.knob.pos = (this.range + this.value - vEnd) / (this.range) * (w-this.knob.size - uix.sWidth2);
+
+    // Handle
+    ui_handle(x+this.knob.pos,y,this.knob.size,h);
+    // Readout
+    !this.hidereadout ? (
+      digit = stepsize < 1 ? "%.2f" : stepsize < 0.1 ? "%.1f": "%d";
+      uix_setAlign(0,0);
+      ui_text(x + w + uix.gridx, y, strcat(sprintf(#,digit,this.value),unit), 0);
+    );
+    uix_tmp(1);
+    this.value;
+  );
+
+  function ui_drawSelector(x,y,w,h,vStart,vEnd,stepsize,default,title)
+  (
+    x -= w * uix.wAlign; y -= h * uix.hAlign;
+    this.frame = 1;
+    this.ui_drawInit(x,y,w,h);
+    this.ui_drawVisual(x,y,w,h,title);
+    this.ui_drawGetControlValue(vStart,vEnd,stepsize,default,x,w,0);
+
+    this.knob.pos = (this.range + this.value - vEnd) / (this.range) * (w-this.knob.size-this.knob.halfsize+uix.sWidth2);
+
+    // Handle
+    ui_handle(x+this.knob.pos,y,this.knob.size,h);
+
+    this.value;
+  );
+
+  function ui_drawChkbox(x,y,s,title) (
+    uix_tmp(0);
+    x -= s * uix.wAlign; y -= s * uix.hAlign;
+    this.frame = 1;
+    uix.fColor = 5; uix_setStrokeWidth(0);
+    this.ui_drawInit(x,y,s,s);
+    this.ui_drawVisual(x,y,s,s,title);
+    this.ui_drawGetControlValue(0,1,1,0,0,0,2);
+    // Checked
+    this.value ? (
+      uix_setColor(6);
+      uix_setStrokeWidth(1);
+      gfx_rect(x+uix.sWidth2,y+uix.sWidth2,s-uix.sWidth2*2,s-uix.sWidth2*2);
+    );
+      
+    uix_tmp(1);
+    this.value; 
+  );
+
+  function ui_drawValueBox(x,y,vStart,vEnd,stepsize,default,unit,title) local (tmp, digit, w, h, qh) (
+    uix_tmp(0);
+    ui_text(0,0,"",0);
+    gfx_measurestr(strcat(sprintf(#,"%.2f",vEnd),unit), w, h);
+    x -= w * uix.wAlign; y -= h * uix.hAlign;
+    this.frame = 0;
+    this.ui_drawInit(x,y,w + uix.gridx,h);
+    this.ui_drawVisual(x,y,w + uix.gridx,h,title);
+
+    // Knob parameters
+    this.knob.halfsize = 2;
+
+    this.ui_drawGetControlValue(vStart, vEnd, stepsize, default, -y,h,1);
+    this.knob.pos = (this.range + this.value - vEnd) / (this.range) * (h - this.knob.halfsize);
+
+    // Handle
+    uix_setColor(6);
+    gfx_circle(x,y+h-this.knob.pos,this.knob.halfsize,1,1);
+
+    // Readout
+    !this.hidereadout ? (
+      digit = stepsize < 1 ? "%.2f" : stepsize < 0.1 ? "%.1f": "%d";
+      uix_setAlign(0,0);
+      ui_text(x + uix.gridx, y, strcat(sprintf(#,digit,this.value),unit), 0);
+    );
+
+    uix_tmp(1);
+    this.value;
+  );
+
+  function ui_drawDragBox(x,y,w,h,vStart,vEnd,stepsize,default,dir)(
+    this.ui_drawInit(x,y,w,h);
+    this.ui_drawGetControlValue(vStart,vEnd,stepsize,default,dir,0,1);
+  );
+
+  function ui_drawGraph(x,y,w,h,type) local(step, pos, a, b, dir, draw) (
+    uix_setAlign(0,0);
+    uix_setStrokeWidth(1);
+    uix.fColor = uix.bColor;
+    ui_rect(x,y,w,h);
+    uix_setColor(uix.vColor);
+    x += uix.sWidth;
+    y += uix.sWidth;
+    h -= uix.sWidth2;
+    w -= uix.sWidth2;
+    uix_setPos(x, y);
+    draw.newNote(1);
+    type == 0 ? (//Waveform
+      step = w / AHD.tAHD;
+      dir = h * 0.5;
+      while (draw.state > 0) (
+        a = draw.AHDcnt * step;
+        draw.setFloat();
+        b = dir - draw.value * dir;
+        gfx_line(x + a, y + dir, x + a, y + b, 1);
+        draw.progress();
+      );
+    ):
+    type == 1 ? (//Line Curve
+      this.vStart == this.vEnd ? (
+        pos = h * this.vEnd;
+        gfx_rect(x, y + h - pos, w, pos, 1);
+      ) : (
+        pos = 0;
+        step = w / this.tCurve;
+        while (pos <= this.tCurve) (
+          a = pos * step;
+          b = getCurve(this.sCurve, pos, 0, this.tCurve, this.vStart, this.vEnd, this.vCurve);
+          b *= h;
+          gfx_rect(x + a, y + h - b, step + 1, b);
+          pos += 1;
+        );
+      );
+    ):
+    type == 2 ? (//Envelope Curve
+      step = w / AHD.tAHD;
+      while (draw.state > 0) (
+        a = draw.AHDcnt * step;
+        draw.setStatus();
+        b = h - draw.env * h;
+        gfx_line(x + a, y + h, x + a, y + b, 1);
+        draw.progress();
+      );
+    );
+  );
+
+  function ui_drawPitchGraph(x,y,w,h) local(tmp) (
+    uix_tmp(0);
+
+    // Draw Graph
+    uix_setAlign(0.5,1);
+    uix.tColor = 9;
+    ui_text(x + w * 0.5, y, "Pitch Curve", 4);
+    this.tCurve = AHD.tSweep; this.sCurve = AHD.sSweep; this.vCurve = AHD.vSweep;
+    this.vStart = fStart - fEnd;
+    this.vStart == 0 ? this.vStart = this.vEnd = 0.5 :(
+      this.vStart = (this.vStart / abs(this.vStart) + 1) * 0.5;
+      this.vEnd = 1 - this.vStart;
+    );
+    this.ui_drawGraph(x, y, w, h, 1);
+    uix.tColor = 2;
+    !this.hidefrequency ? (
+      uix_setAlign(0,0);
+      tmp = this.vStart > 0 ? fStart : fEnd;
+      ui_text(x + w + uix.gridx, y, strcat(sprintf(#,"%.2f",tmp), "Hz"), 0);
+      uix_setAlign(0,1);
+      tmp = this.vEnd > 0 ? fStart : fEnd;
+      ui_text(x + w + uix.gridx, y + h, strcat(sprintf(#,"%.2f",tmp), "Hz"), 0);
+    );
+    !this.hidelength ? (
+      uix_setAlign(0.5,0);
+      ui_text(x + w * 0.5, y + h, strcat(sprintf(#,"%.2f",s7.value), "ms"), 0);
+    );
+    
+    this.x.ui_drawDragBox(x, y, w, h, 0, 1000, 0.01, 125, x);
+    this.y.ui_drawDragBox(x, y, w, h, -100, 100, 0.01, -100, -y);
+
+    uix_tmp(1);
+  );
+
+  function ui_drawEnvGraph(x,y,w,h) local(tmp) (
+    uix_tmp(0);
+
+    // Draw Graph
+    uix_setAlign(0.5,1);
+    uix.tColor = 9;
+    ui_text(x + w * 0.5, y, "Envelope", 4);
+    this.ui_drawGraph(x, y, w, h, 2);
+
+    tmp = w/AHD.tAHD;
+    this.A.x.ui_drawDragBox(x, y, tmp * AHD.tA, h, 0, 1000, 1, 5, x);
+    this.A.y.ui_drawDragBox(x, y, tmp * AHD.tA, h, -100, 100, 1, -100, -y);
+    this.H.x.ui_drawDragBox(x+tmp*AHD.tA, y, tmp * AHD.tH, h, 1, 1000, 1, 125, x);
+    this.D.x.ui_drawDragBox(x+tmp*AHD.tAH, y, tmp * AHD.tD, h, 0, 5000, 1, 125, x);
+    this.D.y.ui_drawDragBox(x+tmp*AHD.tAH, y, tmp * AHD.tD, h, -100, 100, 1, -100, -y);
+    uix_tmp(1);
+  );
+
+  function ui_initiation() (
+    uix.sColor = 1; //Stroke Color
+    uix.fColor = 0; //Fill Color
+    uix.tColor = 2; //Text Color
+    uix.kColor = 7; //Knob Color
+    uix.vColor = 2; //Curve Color
+    uix.bColor = 8; //Box Color
+    uix_setStrokeWidth(1);
+    uix_setAlign(0,0);
+    ui_rect(0, 0, gfx_w, gfx_h);
+    uix.gridx = gfx_w * 0.01;
+    uix.gridy = gfx_h * 0.01;
+    uix.sliderh = uix.gridy * 3;
+    uix.sliderHPad = uix.gridy * 5;
+    uix.sliderw = uix.gridx * 75;
+    uix.sliderw2 = uix.gridx * 30;
+    uix.x = uix.gridx * 15; // Section L
+    uix.x2 = uix.x * 4; // Section R
+  );
+
+  // Initiation
+  ui_initiation();
+
+
+  uix.page == 0 ? (
+    uix.x = gfx_w * 0.5;
+    uix.tColor = 3;
+    uix_setAlign(1,0);
+    ui_text(uix.x, 0, "Tone ", 1);
+    uix.tColor = 4;
+    uix_setAlign(0,0);
+    ui_text(uix.x, 0, "Glide", 1);
+    gfx_measurestr("Glide", uix.x2, #);
+    uix.y = gfx_texth;
+    uix.tColor = 8;
+    uix_setAlign(1,0.25);
+    ui_text(uix.x + uix.x2, uix.y, "© RCJacH", 5);
+
+    uix.y = uix.gridy * 20;
+    // Pitch Curve
+    uix.tColor = 2;
+    uix_setAlign(1,0);
+    slider2 = s2.ui_drawValueBox(uix.gridx * 20, uix.y, 0,127,1,64,uix_getPitName(s2.value),"Start Note");
+    uix_setAlign(1,1);
+    slider4 = s4.ui_drawValueBox(uix.gridx * 20, uix.y+uix.gridy*20, 0,127,1,21,uix_getPitName(s4.value),"End Note");
+    gPit.ui_drawPitchGraph(uix.gridx * 20, uix.y, uix.gridx * 60, uix.gridy * 20);
+    slider7 = s7.value = gPit.x.value;
+    slider8 = s8.value = gPit.y.value;
+
+    uix.y = uix.gridy * 70;
+    // Envelope
+    uix_setAlign(0,0);
+    slider12 = gEnv.A.x.value = s12.ui_drawValueBox(uix.gridx * 20, uix.y, 0,1000,0.01,5,"ms","Attack");
+    slider13 = gEnv.H.x.value = s13.ui_drawValueBox(uix.gridx * 50, uix.y, 1,1000,0.01,125,"ms","Hold");
+    slider14 = gEnv.D.x.value = s14.ui_drawValueBox(uix.gridx * 80, uix.y, 0,5000,0.01,125,"ms","Decay");
+    uix.y += uix.sliderHPad;
+    slider18 = s18.ui_drawValueBox(uix.gridx * 20, uix.y, 0,4,1,0,"","Shape");
+    s18.hidereadout = 1;
+    slider21 = s21.ui_drawValueBox(uix.gridx * 80, uix.y, 0,4,1,0,"","Shape");
+    s21.hidereadout = 1;
+    uix_setAlign(0,0.5);
+    ui_textCurveName(uix.gridx * 20 + uix.gridx, uix.y + uix.sliderh * 0.5, s18.value);
+    ui_textCurveName(uix.gridx * 80 + uix.gridx, uix.y + uix.sliderh * 0.5, s21.value);
+
+    uix_setAlign(0,0);
+    uix.y -= uix.sliderHPad + uix.gridy * 20;
+    gEnv.ui_drawEnvGraph(0, uix.y, gfx_w, uix.gridy * 20);
+    s12.value = slider12 = gEnv.A.x.value;
+    s13.value = slider13 = gEnv.H.x.value;
+    s14.value = slider14 = gEnv.D.x.value;
+    s16.value = slider16 = gEnv.A.y.value;
+    s19.value = slider19 = gEnv.D.y.value;
+  ):
+  uix.page == 1 ? (
+
+    // Section 1
+    uix.y = uix.gridy * 5;
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    ui_text(uix.gridx, uix.gridy * 5, "Pitch", 2);
+
+    uix.y += gfx_texth + uix.gridy * 2;
+    uix.tColor = 2;
+    slider1 = s1.ui_drawSlider(uix.x, uix.y, uix.sliderw, uix.sliderh,400,480,0.01,440,"Hz","A4");
+    slider2 = s2.ui_drawSlider(uix.x, uix.y + uix.sliderHPad, uix.sliderw, uix.sliderh,0,127,1,64,uix_getPitName(s2.value),"Start Note");
+    slider3 = s3.ui_drawSlider(uix.x, uix.y + uix.sliderHPad * 2, uix.sliderw, uix.sliderh,-100,100,1,0,"Cents","Fine Tune");
+    slider4 = s4.ui_drawSlider(uix.x, uix.y + uix.sliderHPad * 3, uix.sliderw, uix.sliderh,0,127,1,21,uix_getPitName(s4.value),"End Note");
+    slider5 = s5.ui_drawSlider(uix.x, uix.y + uix.sliderHPad * 4, uix.sliderw, uix.sliderh,-100,100,1,0,"Cents","Fine Tune");
+
+    // Section 2
+    uix.y = uix.gridy * 40;
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    ui_text(uix.gridx, uix.y, "Sweep", 2);
+    uix.y += gfx_texth + uix.gridy * 2;
+    uix.tColor = 2;
+    slider7 = gPit.x.value = s7.ui_drawSlider(uix.x, uix.y, uix.sliderw2, uix.sliderh,0,1000,0.01,125,"ms","Time");
+    slider8 = gPit.y.value = s8.ui_drawSlider(uix.x, uix.y + uix.sliderHPad, uix.sliderw2, uix.sliderh,-100,100,0.01,-100,"%","Curve");
+    slider9 = s9.ui_drawSlider(uix.x, uix.y + uix.sliderHPad * 2, uix.sliderw2, uix.sliderh,0,10,0.01,3,"x","Multiplier");
+    slider10 = s10.ui_drawSelector(uix.x, uix.y + uix.sliderHPad * 3, uix.sliderw2, uix.sliderh,0,4,1,1,"Shape");
+    uix_setAlign(0,0.5);
+    ui_textCurveName(uix.x + uix.sliderw2 + uix.gridx, uix.y + uix.sliderHPad * 3 + uix.sliderh * 0.5, s10.value);
+
+    // Draw Graph
+    gPit.hidefrequency = gPit.hidelength = 0;
+    gPit.ui_drawPitchGraph(uix.x2, uix.y, uix.sliderw2, uix.gridy * 20);
+    slider7 = s7.value = gPit.x.value;
+    slider8 = s8.value = gPit.y.value;
+  ):
+  uix.page == 2 ? (
+    uix.y = uix.gridy * 5;
+
+    // Section 1
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    ui_text(uix.gridx, uix.y, "Time", 2);
+
+    uix.y += gfx_texth + uix.gridy * 2;
+    uix.tColor = 2;
+    uix_setAlign(0,0);
+    slider12 = gEnv.A.x.value = s12.ui_drawSlider(uix.x, uix.y, uix.sliderw, uix.sliderh,0,1000,0.01,5,"ms","Attack");
+    slider13 = gEnv.H.x.value = s13.ui_drawSlider(uix.x, uix.y + uix.sliderHPad, uix.sliderw, uix.sliderh,1,1000,0.01,125,"ms","Hold");
+    slider14 = gEnv.D.x.value = s14.ui_drawSlider(uix.x, uix.y + uix.sliderHPad * 2, uix.sliderw, uix.sliderh,0,5000,0.01,125,"ms","Decay");
+
+    // Section 2
+    uix.y = uix.gridy * 30;
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    ui_text(uix.gridx, uix.y, "Curve", 2);
+    uix.y += gfx_texth + uix.gridy * 2;
+    uix.tColor = 2;
+    uix_setAlign(0.5,1);
+    ui_text(uix.x + uix.sliderw2 * 0.5, uix.y, "Attack", 3);
+    ui_text(uix.x2 + uix.sliderw2 * 0.5, uix.y, "Decay", 3);
+
+    uix_setAlign(0,0);
+    slider16 = gEnv.A.y.value = s16.ui_drawSlider(uix.x, uix.y, uix.sliderw2, uix.sliderh,-100,1000.0,1,100,"%","Curve");
+    slider19 = gEnv.D.y.value = s19.ui_drawSlider(uix.x2, uix.y, uix.sliderw2, uix.sliderh,-100,100,1,-100,"%","");
+    uix.y += uix.sliderHPad;
+    slider17 = s17.ui_drawSlider(uix.x, uix.y, uix.sliderw2, uix.sliderh,0,10,0.01,1,"x","Multiplier");
+    slider20 = s20.ui_drawSlider(uix.x2, uix.y, uix.sliderw2, uix.sliderh,0,10,0.01,2,"x","");
+    uix.y += uix.sliderHPad;
+    slider18 = s18.ui_drawSelector(uix.x, uix.y, uix.sliderw2, uix.sliderh,0,4,1,0,"Shape");
+    slider21 = s21.ui_drawSelector(uix.x2, uix.y, uix.sliderw2, uix.sliderh,0,4,1,0,"");
+    uix_setAlign(0,0.5);
+    ui_textCurveName(uix.x + uix.sliderw2 + uix.gridx, uix.y + uix.sliderh * 0.5, s18.value);
+    ui_textCurveName(uix.x2 + uix.sliderw2 + uix.gridx, uix.y + uix.sliderh * 0.5, s21.value);
+
+    // Draw Graph
+    uix_setAlign(0,1);
+    gEnv.ui_drawEnvGraph(0, uix.gridy * 60, gfx_w, uix.gridy * 20);
+    s12.value = slider12 = gEnv.A.x.value;
+    s13.value = slider13 = gEnv.H.x.value;
+    s14.value = slider14 = gEnv.D.x.value;
+    s16.value = slider16 = gEnv.A.y.value;
+    s19.value = slider19 = gEnv.D.y.value;
+  ):
+  uix.page == 3 ? (
+
+    // Section 1
+    uix.y = uix.gridy * 5;
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    ui_text(uix.gridx, uix.y, "Waveform", 2);
+
+    uix.tColor = 2;
+    uix.y += gfx_texth + uix.gridy * 2;
+    slider31 = s31.ui_drawSelector(uix.x, uix.y, uix.sliderw, uix.sliderh,0,3,1,0,"Waveform");
+    uix_setAlign(0,0.5);
+    ui_textWaveformName(uix.x + uix.sliderw + uix.gridx, uix.y + uix.sliderh * 0.5, s31.value);
+
+    // Section 2
+    uix.y = uix.gridy * 25;
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    ui_text(uix.gridx, uix.y, "Modulation", 2);
+    uix.y += gfx_texth + uix.gridy * 2;
+
+    uix.tColor = 2;
+    uix_setAlign(0.5,1);
+    ui_text(uix.x + uix.sliderw2 * 0.5, uix.y, "AM", 3);
+    ui_text(uix.x * 4 + uix.sliderw2 * 0.5, uix.y, "FM", 3);
+    uix_setAlign(0, 0);
+    LFO.AM.bSidechain = b_AMsc.ui_drawchkbox(uix.x * 3 - uix.sliderh, uix.y - uix.sliderHPad, uix.sliderh, "Sidechain");
+    LFO.FM.bSidechain = b_FMsc.ui_drawchkbox(uix.x * 6 - uix.sliderh, uix.y - uix.sliderHPad, uix.sliderh, "Sidechain");
+    slider38 = !b_FMstatic.ui_drawchkbox(uix.x2 + uix.gridx * 5, uix.y - uix.sliderHPad, uix.sliderh, "Static");
+    slider23 = s23.ui_drawSlider(uix.x, uix.y, uix.sliderw2, uix.sliderh,0,20000,0.001,0,"Hz","Frequency");
+    slider34 = s34.ui_drawSlider(uix.x2, uix.y, uix.sliderw2, uix.sliderh,0,20000,0.001,0,"Hz","");
+
+    uix.y += uix.sliderHPad;
+    slider24 = s24.ui_drawSlider(uix.x, uix.y, uix.sliderw2, uix.sliderh,-100,100,1,0,"%","Depth");
+    slider35 = s35.ui_drawSlider(uix.x2, uix.y, uix.sliderw2, uix.sliderh,-100,100,1,0,"%","");
+    uix.y += uix.sliderHPad;
+    slider25 = s25.ui_drawSlider(uix.x, uix.y, uix.sliderw2, uix.sliderh,-100,100,1,0,"%","Env Slant");
+    slider36 = s36.ui_drawSlider(uix.x2, uix.y, uix.sliderw2, uix.sliderh,-100,100,1,0,"%","");
+    uix.y += uix.sliderHPad;
+    slider26 = s26.ui_drawSelector(uix.x, uix.y, uix.sliderw2, uix.sliderh,0,3,1,1,"Waveform");
+    slider37 = s37.ui_drawSelector(uix.x2, uix.y, uix.sliderw2, uix.sliderh,0,3,1,1,"");
+    uix_setAlign(0,0.5);
+    uix.y += uix.sliderh * 0.5;
+    ui_textWaveformName(uix.x + uix.sliderw2 + uix.gridx, uix.y, s26.value);
+    ui_textWaveformName(uix.x2 + uix.sliderw2 + uix.gridx, uix.y, s37.value);
+
+    // Draw Graph
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    uix.y += uix.sliderHPad;
+    ui_text(uix.gridx, uix.y, "Slant", 2);
+    gAM.tCurve = uix.sliderw2; gAM.vCurve = 1; gAM.sCurve = 0;
+    gAM.vStart = LFO.AM.vStart; gAM.vEnd = LFO.AM.vEnd;
+    gAM.ui_drawGraph(uix.x, uix.y, uix.sliderw2, uix.gridy * 20, 1);
+    gFM.tCurve = uix.sliderw2; gFM.vCurve = 1; gFM.sCurve = 0;
+    gFM.vStart = LFO.FM.vStart; gFM.vEnd = LFO.FM.vEnd;
+    gFM.ui_drawGraph(uix.x2, uix.y, uix.sliderw2, uix.gridy * 20, 1);
+  ):
+  uix.page == 4 ? (
+    uix.y = uix.gridy * 5;
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    ui_text(uix.gridx, uix.y, "Settings", 2);
+    uix.y += gfx_texth + uix.gridy * 2;
+    uix.tColor = 2;
+    slider41 = s41.ui_drawSlider(uix.x, uix.y, uix.sliderw, uix.sliderh,-120,0,1,-18,"dB","Volume");
+
+    // Section 2
+    uix.y = uix.gridy * 25;
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    ui_text(uix.gridx, uix.y, "Velocity", 2);
+    uix.y += gfx_texth + uix.gridy * 2;
+    uix.tColor = 2;
+    i_vel2vol.ui_drawSlider(uix.x, uix.y,uix.sliderw,uix.sliderh,0,1,0.01,0,"","Volume");
+    uix.y += uix.sliderHPad;
+    i_vel2pit.ui_drawSlider(uix.x, uix.y,uix.sliderw,uix.sliderh,0,1,0.01,0,"","Pitch");
+
+    // Section 3
+    uix.y = uix.gridy * 45;
+    uix.tColor = 3;
+    uix_setAlign(0,0);
+    ui_text(uix.gridx, uix.y, "Others", 2);
+    uix.y += gfx_texth + uix.gridy * 2;
+    uix.tColor = 2;
+    b_noteoff.ui_drawchkbox(uix.x, uix.y, uix.sliderh, "Note Off");
+    setNoteOff(b_noteoff.value);
+    b_keytrack.ui_drawchkbox(uix.x2, uix.y, uix.sliderh, "Key Track");
+  );
+
+  processSliders();
+  // Waveform
+  ui_drawGraph(0, uix.gridy * 80, gfx_w, uix.gridy * 20,0);
