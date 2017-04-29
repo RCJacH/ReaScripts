@@ -836,8 +836,8 @@ function processSliders() (
     ui_text(uix.x, 0, "Tone ", 1);
     uix.tColor = 4;
     uix_setAlign(0,0);
-    ui_text(uix.x, 0, "Glide", 1);
-    gfx_measurestr("Glide", uix.x2, #);
+    ui_text(uix.x, 0, "Sweep", 1);
+    gfx_measurestr("Sweep", uix.x2, #);
     uix.y = gfx_texth;
     uix.tColor = 8;
     uix_setAlign(1,0.25);
