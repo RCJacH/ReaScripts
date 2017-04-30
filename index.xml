@@ -147,6 +147,9 @@ Potential Addition:
       <version name="1.0rc2" author="RCJacH" time="2017-04-30T13:35:13Z">
         <source>https://github.com/RCJacH/ReaScripts/raw/3d97d5dc89af96ba4a0313e68c272d69ab61ad4a/JSFX/Synth/Tone%20Sweep.jsfx</source>
       </version>
+      <version name="1.0rc2" author="RCJacH" time="2017-04-30T13:35:13Z">
+        <source>https://github.com/RCJacH/ReaScripts/raw/3d97d5dc89af96ba4a0313e68c272d69ab61ad4a/JSFX/Synth/Tone%20Sweep.jsfx</source>
+      </version>
     </reapack>
   </category>
   <category name="Lua/Editing">
