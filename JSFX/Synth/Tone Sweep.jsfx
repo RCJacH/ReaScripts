@@ -3,7 +3,7 @@ JSFX Name: Tone Sweep
 Author: RCJacH
 Release Date: Mar 2017
 Link: https://github.com/RCJacH/ReaScripts
-Version: 1.0rc1
+Version: 1.0rc2
 Reference:
   D16 Punchbox
   Tone Generator
@@ -17,6 +17,8 @@ About:
   4. Select different wave shape if desired.
 
 Changelog:
+ * v1.0rc2 (2017-04-30)
+  # Fixed controls on the last GUI page not saving
  * v1.0rc1 (2017-04-28)
   + Full GUI
   + Note off/Key track
@@ -75,7 +77,11 @@ slider37: 0<0,3,1{Sine,Triangle,Square,Saw}> -FM Waveform
 slider38: 0<0,1,1{Static, Variable}> -FM Frequency Domain
 
 slider41: -18<-120,0,1> -Volume
-
+slider58: 0<0,1,1{Off,On}> -Key Track
+slider59: 0<0,1,1{Off,On}> -Note Off
+slider60: 0<0,1,0.01> -Velocity to Pitch
+slider61: 0<0,1,0.01> -Velocity to Volume
+slider62: 0<0,127,1> -keyFilter
 slider63: 0<0,8000,0.01> -Output Frequency
 slider64: 0<0,4,1> GUI Page
 
@@ -293,6 +299,11 @@ function processSliders() (
   LFO.FM.domain = slider38 == 0 ? LFO.FM.freq : fDif;
 
   volume = 2^(slider41/6);
+  b_keytrack.value = slider58;
+  b_noteoff.value = slider59;
+  i_vel2pit.value = slider60;
+  i_vel2vol.value = slider61;
+  keyFilter.value = slider62;
 );
 
   processSliders();
@@ -345,19 +356,21 @@ function processSliders() (
       in_pit = msg2; //Get incoming Pitch
       in_vel = msg3; //Get incoming Velocity
       // note on
-      (in_status == STATUS_NOTE_ON) ? (
-        note.bKeytrack = b_keytrack.value ? 1 : 0;
-        note.fEnd = b_keytrack.value ? slider1 * pit2freq(in_pit);
-        note.newNote(in_vel/127);
-        b_noteoff.value ? note.cnt += 1;
-      ):
-      (in_status == STATUS_NOTE_OFF) ? (
-        b_noteoff.value && note.cnt > 0 ? (
-          note.state == 2 ? (
-            note.cnt -= 1;
-            note.AHDcnt = AHD.tAH;
-          );
-        ):note.cnt = 0;
+      !keyFilter.value || in_pit == keyFilter.value ? (
+        (in_status == STATUS_NOTE_ON) ? (
+          note.bKeytrack = b_keytrack.value ? 1 : 0;
+          note.fEnd = b_keytrack.value ? slider1 * pit2freq(in_pit);
+          note.newNote(in_vel/127);
+          b_noteoff.value ? note.cnt += 1;
+        ):
+        (in_status == STATUS_NOTE_OFF) ? (
+          b_noteoff.value && note.cnt > 0 ? (
+            note.state == 2 ? (
+              note.cnt -= 1;
+              note.AHDcnt = AHD.tAH;
+            );
+          ):note.cnt = 0;
+        );
       );
       midisend(offset,msg1,msg2,msg3);
     );
@@ -941,7 +954,7 @@ function processSliders() (
     ui_text(uix.x2 + uix.sliderw2 * 0.5, uix.y, "Decay", 3);
 
     uix_setAlign(0,0);
-    slider16 = gEnv.A.y.value = s16.ui_drawSlider(uix.x, uix.y, uix.sliderw2, uix.sliderh,-100,1000.0,1,100,"%","Curve");
+    slider16 = gEnv.A.y.value = s16.ui_drawSlider(uix.x, uix.y, uix.sliderw2, uix.sliderh,-100,100,1,100,"%","Curve");
     slider19 = gEnv.D.y.value = s19.ui_drawSlider(uix.x2, uix.y, uix.sliderw2, uix.sliderh,-100,100,1,-100,"%","");
     uix.y += uix.sliderHPad;
     slider17 = s17.ui_drawSlider(uix.x, uix.y, uix.sliderw2, uix.sliderh,0,10,0.01,1,"x","Multiplier");
@@ -1028,6 +1041,7 @@ function processSliders() (
     uix.y += gfx_texth + uix.gridy * 2;
     uix.tColor = 2;
     slider41 = s41.ui_drawSlider(uix.x, uix.y, uix.sliderw, uix.sliderh,-120,0,1,-18,"dB","Volume");
+    slider62 = keyFilter.ui_drawSlider(uix.x, uix.y + uix.sliderHPad, uix.sliderw, uix.sliderh,0,127,1,24,"","Key Filter");
 
     // Section 2
     uix.y = uix.gridy * 25;
@@ -1036,9 +1050,9 @@ function processSliders() (
     ui_text(uix.gridx, uix.y, "Velocity", 2);
     uix.y += gfx_texth + uix.gridy * 2;
     uix.tColor = 2;
-    i_vel2vol.ui_drawSlider(uix.x, uix.y,uix.sliderw,uix.sliderh,0,1,0.01,0,"","Volume");
+    slider61 = i_vel2vol.ui_drawSlider(uix.x, uix.y,uix.sliderw,uix.sliderh,0,1,0.01,0,"","Volume");
     uix.y += uix.sliderHPad;
-    i_vel2pit.ui_drawSlider(uix.x, uix.y,uix.sliderw,uix.sliderh,0,1,0.01,0,"","Pitch");
+    slider60 = i_vel2pit.ui_drawSlider(uix.x, uix.y,uix.sliderw,uix.sliderh,0,1,0.01,0,"","Pitch");
 
     // Section 3
     uix.y = uix.gridy * 45;
@@ -1047,9 +1061,9 @@ function processSliders() (
     ui_text(uix.gridx, uix.y, "Others", 2);
     uix.y += gfx_texth + uix.gridy * 2;
     uix.tColor = 2;
-    b_noteoff.ui_drawchkbox(uix.x, uix.y, uix.sliderh, "Note Off");
+    slider59 = b_noteoff.ui_drawchkbox(uix.x, uix.y, uix.sliderh, "Note Off");
     setNoteOff(b_noteoff.value);
-    b_keytrack.ui_drawchkbox(uix.x2, uix.y, uix.sliderh, "Key Track");
+    slider58 = b_keytrack.ui_drawchkbox(uix.x2, uix.y, uix.sliderh, "Key Track");
   );
 
   processSliders();
