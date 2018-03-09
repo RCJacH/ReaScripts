@@ -31,7 +31,7 @@ Changelog:
 
 // License: GPL- http://www.gnu.org/licenses/gpl.html
 
-desc: BitRangeGain
+desc: RCBitRangeGain
 
 slider1: 0<-16,16,1> Macro Shift (Bit ~= 6.0206 dB)
 slider2: 0<-100,100,0.000001> Micro Shift (% of a Bit)
