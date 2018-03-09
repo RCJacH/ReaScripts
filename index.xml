@@ -1,6 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="d0427d7f6fdeddd9f5ee2deac8068fb3d539e3ae" name="RCJacH Scripts">
+<index version="1" commit="dceb56a072678f61ae6a4b6f869c9e57de8d5563" name="RCJacH Scripts">
   <category name="JSFX/Audio">
+    <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 This JSFX alternates between signals from different channels for objective comparison purposes.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Set {\i # of Outputs} to number of stereo channels to compare.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Link plugin output to different track or hardware output.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab Set desired switching beat length using {\i Switch Beat length}. Alternatively, set {\i Millisecond Mode} to > 0 for switching based on time\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab Set switching mode using {\i Mode}: Manual = Switch by pressing channel trigger; Sequential = Switch to the next channel; Random = Switch to a random different channel; Guess = Switch to a random channel, press trigger to show answer.\sa180\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.2" author="RCJacH" time="2018-03-09T07:48:41Z">
+        <changelog><![CDATA[+ Added a multiple output stereo version, reversed random input into random output.]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/dceb56a072678f61ae6a4b6f869c9e57de8d5563/JSFX/Audio/AB%20Comparison%20-%201INnOUT%20Stereo.jsfx</source>
+      </version>
+    </reapack>
     <reapack name="AB Comparison.jsfx" type="effect" desc="AB Comparison">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
@@ -38,19 +59,20 @@ Potential Addition:
         <source>https://github.com/RCJacH/ReaScripts/raw/225dcb55a806ad1775d90a767f9edae92d7100ce/JSFX/Audio/AB%20Comparison.jsfx</source>
       </version>
     </reapack>
-    <reapack name="BitRangeGain.jsfx" type="effect" desc="BitRangeGain">
+    <reapack name="BitRangeGain.jsfx" type="effect" desc="RCBitRangeGain">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Lossless gain adjustment for float point audio. 1 bit = doubling of distance.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Suedo bit based gain adjustment for float point audio. 1 bit ~= 6.0206 dB (doubling of distance).\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Macro Shift to increase or decress audio input by 6.0206 dB per bit.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Micro Shift to fine adjust audio within 1 bit.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Bit Ratio to adjust the dB representation of one bit.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Fader is used as a percentage controller after bit shifting.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Fader Curve to adjust the behavior of Fader slider.\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Macro Shift} to increase or decrease audio input by 6.0206 dB per bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Micro Shift} to fine adjust audio within 1 bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Bit Ratio} to adjust the dB representation of one bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Fader} is used as a percentage controller after bit shifting.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Fader Curve} to adjust the behavior of {\b Fader} slider.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Increase {\b Smooth Fader} if gain adjustment causes zipper noise.\sa180\par}
 }
 ]]></description>
         <link rel="website">https://github.com/RCJacH/ReaScripts</link>
@@ -81,6 +103,41 @@ Potential Addition:
       <version name="1.0" time="2017-01-31T07:13:16Z">
         <changelog><![CDATA[+ Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/6f8b317f9082e6e7313ad3f8c5050357279c6584/JSFX/Audio/NoiseBuzz.jsfx</source>
+      </version>
+    </reapack>
+    <reapack name="RCNoiseBuzz.jsfx" type="effect" desc="RCNoiseBuzz">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Audio triggered dynamic noise generator with ADSR and filter.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Set {\b Mix} slider to taste, use {\b Noise Gain} for additional volume control.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Select desired noise type.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab (Optional) Use {\b Threshold}, {\b Attack}, {\b Decay}, {\b Sustain}, {\b Release} to shape the envelope of the noise, with AR triggered by input audio exceed or fall under the threshold.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab (Optional) Use {\b HPF}, {\b LPF}, and their {\b Resonance} controls to limit the frequency range of the generated noise.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 5.\tx360\tab (Optional) Adjust the detector {\b RMS} of the input level to smooth out the level of the generated noise.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 6.\tx360\tab You can also route the noise audio to channel 3-4 to further shape the noise, voiding the {\b Mix} control.\sa180\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.1" author="RCJacH" time="2018-03-09T07:48:41Z">
+        <changelog><![CDATA[* v1.3 (2018-03-08)
+ + Brown Noise Type.
+ + MIDI Trigger.
+ * Fixed sustain.
+ * Renamed to RCNoiseBuzz since the update broke backward compatibility.
+* v1.2 (2017-04-08)
+ + Width Control.
+* v1.1 (2017-03-11)
+ + Decay & Sustain Control.
+* v1.0a (2017-01-31)
+ * Renamed to NoiseBuzz.
+* v1.0 (2017-01-22)
+ + Initial Release.]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/dceb56a072678f61ae6a4b6f869c9e57de8d5563/JSFX/Audio/RCNoiseBuzz.jsfx</source>
       </version>
     </reapack>
   </category>
