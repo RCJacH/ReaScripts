@@ -1,27 +1,32 @@
 /*
-JSFX Name: BitRangeGain
+JSFX Name: RCBitRangeGain
 Author: RCJacH
-Release Date: Jan 2017
+Release Date: Feb 2018
 Link: https://github.com/RCJacH/ReaScripts
 Version: 1.0
 Reference: 
   AirWindows BitShiftGain
   AirWindows PurestGain
 About:
-  Lossless gain adjustment for float point audio.
-  1 bit = doubling of distance.
+  Suedo bit based gain adjustment for float point audio.
+  1 bit ~= 6.0206 dB (doubling of distance).
   
   Instruction:
-    * Use Macro Shift to increase or decress audio input by 6.0206 dB per bit.
-    * Use Micro Shift to fine adjust audio within 1 bit.
-    * Use Bit Ratio to adjust the dB representation of one bit.
-    * Fader is used as a percentage controller after bit shifting.
-    * Use Fader Curve to adjust the behavior of Fader slider.
+    * Use **Macro Shift** to increase or decrease audio input by 6.0206 dB per bit.
+    * Use **Micro Shift** to fine adjust audio within 1 bit.
+    * Use **Bit Ratio** to adjust the dB representation of one bit.
+    * **Fader** is used as a percentage controller after bit shifting.
+    * Use **Fader Curve** to adjust the behavior of **Fader** slider.
+    * Increase **Smooth Fader** if gain adjustment causes zipper noise.
 Changelog:
+  * v1.1 (2018-02-13)
+    + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
+    * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
+    * Renamed to RCBitRangeGain
   * v1.0a (2017-01-31)
-   + Renamed to BitRangeGain
+    + Renamed to BitRangeGain
   * v1.0 (2017-01-11)
-   + Initial Release
+    + Initial Release
 */
 
 // License: GPL- http://www.gnu.org/licenses/gpl.html
@@ -33,18 +38,31 @@ slider2: 0<-100,100,0.000001> Micro Shift (% of a Bit)
 slider3: 1<0,3,0.25> Bit Ratio
 
 slider11: 100<0, 100, 0.0001> Fader (% of total)
-slider12: 4<0,10,0.1> Fader Curve
+slider12: 2<0,10,0.1> Fader Curve
+slider13: 2<0.1,10,0.1> Smooth Fader
+
+in_pin: Input L
+in_pin: Input R
+out_pin: Output L
+out_pin: Output R
 
 @init
 maxs1 = 16;
+vFade = 1;
+faderTgt = faderCrnt = 2 ^ ((slider11 * 0.01) ^ slider12) - 1;
 
 @slider
 slider1 = min(max(-maxs1, slider1),maxs1);
 slider2 = min(max(-100, slider2),100);
 slider11 = min(max(0, slider11),100);
 shift = 2 ^ ((slider1 + slider2 * 0.01) * slider3);
-curve = slider12;
-fade = (slider11) ^ curve * (0.1 ^ (curve * 2)) * shift;
+faderTgt = 2 ^ ((slider11 * 0.01) ^ slider12) - 1;
+smooth = 400 * slider13;
+_smooth = 1 /(smooth + 1);
 
 @sample
-spl0 *= fade; spl1 *= fade;
+faderCrnt = (((faderCrnt * smooth) + faderTgt)) * _smooth;
+vFade = faderCrnt;
+shift && vFade ? vFade *= shift;
+
+spl0 *= vFade; spl1 *= vFade;

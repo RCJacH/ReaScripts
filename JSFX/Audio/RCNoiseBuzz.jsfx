@@ -1,0 +1,313 @@
+/*
+JSFX Name: RCNoiseBuzz
+Author: RCJacH
+Release Date: Jan 2017
+Link: https://github.com/RCJacH/ReaScripts
+Version: 1.1
+Reference:
+  Wavesfactory SnareBuzz
+  http://www.firstpr.com.au/dsp/pink-noise/
+  ReaRack Filter
+  State Variable (Morphing) filter
+About:
+  Audio triggered dynamic noise generator with ADSR and filter.
+  
+  Instruction:
+    1. Set **Mix** slider to taste, use **Noise Gain** for additional volume control.
+    2. Select desired noise type.
+    3. (Optional) Use **Threshold**, **Attack**, **Decay**, **Sustain**, **Release**
+      to shape the envelope of the noise, with AR triggered by input audio exceed or
+      fall under the threshold.
+    4. (Optional) Use **HPF**, **LPF**, and their **Resonance** controls to limit the
+      frequency range of the generated noise.
+    5. (Optional) Adjust the detector **RMS** of the input level to smooth out the level
+      of the generated noise.
+    6. You can also route the noise audio to channel 3-4 to further shape the noise,
+      voiding the **Mix** control.
+Changelog:
+  * v1.3 (2018-03-08)
+   + Brown Noise Type.
+   + MIDI Trigger.
+   * Fixed sustain.
+   * Renamed to RCNoiseBuzz since the update broke backward compatibility.
+  * v1.2 (2017-04-08)
+   + Width Control.
+  * v1.1 (2017-03-11)
+   + Decay & Sustain Control.
+  * v1.0a (2017-01-31)
+   * Renamed to NoiseBuzz.
+  * v1.0 (2017-01-22)
+   + Initial Release.
+*/
+
+// Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
+
+desc: RCNoiseBuzz
+
+slider1: 50<0, 100, 1> Mix (%)
+slider2: -12<-24,24,0.1> Noise Gain (dB)
+slider3: 0<0,1,0.1> Width (Mono > Stereo)
+slider4: 2<0,2,1{Brown,Pink,White}>Color
+slider5: 1<0,1,0.001>Density
+slider6: 0<0,1>Smoother
+slider11: -60<-144,0,0.1> Threshold
+slider12: 3<0,50,1>Attack (ms)
+slider13: 0<0,500,1>Decay (ms)
+slider14: 100<0,100,1>Sustain (%)
+slider15: 50<0,500,1>Release (ms)
+slider21: 0<0,100>High Pass Frequency (Scale)
+slider22: 6<0,24>High Pass Resonance (dB)
+slider23: 0<0,100>High Pass %
+slider24: 100<0,100>Low Pass Frequency (Scale)
+slider25: 6<-12,24>Low Pass Resonance (dB)
+slider26: 0<0,100>Low Pass %
+slider31: 1<0,1,1{Static,Dynamic}> Dynamic Envelope
+slider32: 3<0,20,1>RMS (ms)
+slider41:-1<-1,127,1> MIDI Note (Set to -1 for Audio Triggered)
+slider42: 0<0,1,1{Mix to 1+2, 3+4}> Output Channel
+
+// options: no_meter
+
+@init
+
+  env       = 0;
+  stage     = 0;
+  perSample = 1/srate;
+  ms2sample = 0.001 * srate;
+  min_inf = -150.0;
+  pi = $pi;
+  freqlog = log(1.059);
+
+  rms[0]    = 0.075;
+  rms[1]    = 0.25;
+  rms[2]    = 1;
+  rms[3]    = 0.56;
+  rms[4]    = sqrt(0.5);
+  rms[5]    = 0.125;
+
+  ratio         = 6;
+  ratio[3]  = srate / 44100;
+  ratio[5]  =
+  ratio[2]  = sqrt(ratio[3]);
+  ratio[4]  = ratio[2] * ratio[3];
+  ratio[0]  = 1/ratio[2];
+  ratio[1]  = 1;
+
+  function gain(db, inf) ( db <= inf ? 0 : 10^(0.05 * db) );
+
+  function getOutput(input) (
+    input * dryPct + this.gN * wetPct;
+  );
+
+  function genNoise(cur)(
+    abs(cur) < smoothHi ? cur = rand(2) - 1:
+    cur -= sign(cur) * rand(1 + abs(cur)) * smoothHiSqt;
+    cur;
+  );
+
+  // "Pinking" filter (Paul Kellet's economy method) from "DSP generation of
+  // Pink (1/f) Noise".
+  // http://www.firstpr.com.au/dsp/pink-noise/
+  function genPink(cur)
+    instance(b0,b1,b2,b3,b4,b5,b6)
+    local(pN)
+  (
+    b0 = 0.99886 * b0 + cur * 0.0555179;
+    b1 = 0.99332 * b1 + cur * 0.0750759;
+    b2 = 0.96900 * b2 + cur * 0.1538520;
+    b3 = 0.86650 * b3 + cur * 0.3104856;
+    b4 = 0.55000 * b4 + cur * 0.5329522;
+    b5 = -0.7616 * b5 - cur * 0.0168980;
+    pN =  b0 + b1 + b2 + b3 + b4 + b5 + b6 + cur * 0.5362;
+    b6 = cur * 0.115926;
+    pN;
+  );
+
+  function colorNoise(color) instance(white, N, gN) local(tmp,a,lp)(
+    white = genNoise(white);
+    color == 0 ? ( //Brown
+      !a ? a = 1 - 1 / ( 0.0082 * srate + 1);
+      lp = a * (white + lp);
+      N = lp;
+    ): 
+    color == 1 ? ( //Pink
+      N = this.genPink(white);
+    ):
+    color == 3 ? (
+      N = a.genPink(white) - N;
+    ):(
+      N = white;
+    );
+    gN = N * gain;
+    gN = abs(gN) >= (1 - slider5) ? gN : 0; //Density
+    gN;
+  );
+
+function runFilter() instance(a0,a0.d,a1,a1.d,a2,a2.d,b1,b1.d,b2,b2.d,)(
+  a0 += a0.d; a1 += a1.d; a2 += a2.d; b1 += b1.d; b2 += b2.d; );
+
+function getFilter(input) instance(a0,a1,a2,b1,b2,mem1,mem2,mem3,mem4) 
+local(out) (
+  out = a0*input+a1*mem1+a2*mem2-b1*mem3-b2*mem4;
+  mem2 = mem1; mem1 = input; mem4 = mem3; mem3 = out;
+  out;
+);
+
+function applyFilter() instance(gN) (
+  hp.wet ? gN = hp.getFilter(gN) * hp.wet + (hp.dry ? gN * hp.dry);
+  lp.wet ? gN = lp.getFilter(gN) * lp.wet + (lp.dry ? gN * lp.dry);
+);
+
+@slider
+function fSlider(freq,res,pct,hp)
+instance(wet,dry,a0.tgt,a1.tgt,a2.tgt,b1.tgt,b2.tgt,f)
+local(sx,c,k,c1,c2,c3)
+(
+  sx = 16+freq*1.20103;
+  f = floor(exp(sx*log(1.059))*8.17742);
+  (wet = pct) ? (
+    dry = 1 - wet;
+    c = 2*f/srate;
+    res = f < 50 ? 1 : 10^(0.05*(-res+1.5));
+    //lp
+    k = 0.5*res*sin($pi*c);
+    c1 = 0.5*(1-k)/(1+k);
+    c2 = (0.5+c1)*cos($pi*c);
+    c3 = (0.5+c1+(hp?c2:-c2))*0.25;
+    a0.tgt = 2*c3;
+    a1.tgt = (hp?-4:4)*c3;
+    a2.tgt = 2*c3;
+    b1.tgt = -2*c2;
+    b2.tgt = 2*c1;
+  );
+);
+// Dynamic variables
+threshold = gain(slider11, min_inf);
+dAttack = slider12 ? 1/(slider12 * ms2sample) : 1;
+dDecay = slider13 ? 1/(slider13 * ms2sample) : 1;
+sustain = slider14 * 0.01;
+invSustain = 1 - sustain;
+dRelease = slider15 ? 1/(slider15 * ms2sample) : 1;
+
+// Filter variables
+bFilter = slider23 || slider26;
+hp.fSlider(slider21,slider22,slider23 * 0.01,1);
+lp.fSlider(slider24,slider25,slider26 * 0.01,0);
+
+// Level variables
+gain = rms[slider4] * ratio[slider4];
+volume = gain(slider2, min_inf);
+smoothHi = max(1 - slider6, 0.5);
+smoothHiSqt = smoothHi ^ 2;
+
+rms = exp(-1/(max(min(slider32 * 0.001, 0.02), 0.00004) * srate));
+dryPct = 1 - (wetPct = (slider42 ? 1 : sqr(slider1) * 0.0001;));
+
+@block
+function fNode() instance(d,tgt,src)
+(
+  d = (tgt - src)/samplesblock;
+  this = src;
+  src = tgt;
+);
+function fBlock()
+instance(a0,a1,a2,b1,b2)
+(a0.fNode(); a1.fNode(); a2.fNode(); b1.fNode(); b2.fNode(); );
+bFilter ? (hp.wet ? hp.fBlock();lp.wet ? lp.fBlock(););
+
+slider41 > -1 ? (
+  while(midirecv(offset, msg1, msg2, msg3)) (
+    in_status = msg1 & $xF0; //Get incoming STATUS
+    msg2 == slider41 ? (
+      iVel = in_status == $x90 ? msg3 : in_status == $x80 ? 0;
+      invVel = iVel / 127;
+    ); //msg2
+  ); //while
+); //slider41
+
+@sample
+
+// Get input peak/rms level.
+slider32 ? ( //RMS
+  ave = spl0 * spl0 + spl1 * spl1;
+  runave = ave + rms * (runave - ave);
+  inV = sqrt(runave);
+):( //Peak
+  ave = 0;
+  inV = max(abs(spl0), abs(spl1));
+);
+
+// Is it attack or release phase?
+(slider41 < 0 && inV >= threshold) || (slider41 >= 0 && iVel) ? (
+  !stage ? (
+    env += dAttack;
+    env >= 1 ? stage = 1;
+  ) : 
+  stage == 1 ? (
+    env -= dDecay * invSustain;
+    env <= sustain ? stage = 2;
+  ) :
+  stage == 2 ? (  
+    env = sustain;
+  );
+) : (
+  env > 0 ? env -= dRelease;
+  stage = 0;
+);
+env = max(0, min(1, env));
+
+// Noise Volume.
+slider41 < 0 && slider31 ? ( //Audio triggered and envelope following?
+  outV = inV > threshold ? threshold + env * (inV - threshold) : env * threshold;
+) : (
+  outV = env * (iVel ? invVel : 0.1);
+);
+outV *= volume;
+
+// Generate random float level between -1 and 1.
+s0.colorNoise(slider4);
+slider3 ? s1.colorNoise(slider4);
+
+// Calculate Filters.
+bFilter ? (hp.wet ? hp.runFilter(); lp.wet ? lp.runFilter(); );
+
+s0.gN *= outV;
+s0.applyFilter();
+slider3 ? ( //Stereo
+  s1.gN *= outV;
+  s1.applyFilter();
+  mono=(s0.gN+s1.gN)*0.5;
+  stereo=(s0.gN-s1.gN)*slider3*0.5;
+
+  s0.gN = (mono + stereo) / max(slider3,1);
+  s1.gN = (mono - stereo) / max(slider3,1);
+) : ( //Mono
+  s1.gN = s0.gN;
+);
+
+// Output based on channel selection.
+slider42 == 0 ? (
+spl0 = s0.getOutput(spl0);
+spl1 = s1.getOutput(spl1);
+);
+slider42 == 1 ? (
+spl0 = spl0;
+spl1 = spl1;
+spl2 = s0.gN;
+spl3 = s1.gN;
+);
+
+
+@gfx 100 16
+gfx_y = 5;
+gfx_x = 32;
+gfx_r=gfx_b=0;
+gfx_g=gfx_a=1;
+gfx_drawstr("HPF = ");
+gfx_drawnumber(hp.f,0);
+gfx_drawstr(" Hz");
+
+gfx_x=230;
+gfx_drawstr("LPF = ");
+gfx_drawnumber(lp.f,0);
+gfx_drawstr(" Hz");

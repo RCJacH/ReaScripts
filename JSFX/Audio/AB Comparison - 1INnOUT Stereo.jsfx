@@ -1,0 +1,173 @@
+/*
+JSFX Name: AB Comparison - 1INnOUT Stereo
+Author: RCJacH
+Release Date: Dec 2017
+Link: https://github.com/RCJacH/ReaScripts
+Version: 1.2
+Reference: 
+  Jonas Eriksson BeatFinder JSFX
+  Audio Vitamin Contra
+About:
+  This JSFX alternates between signals from different channels for objective
+  comparison purposes.
+  
+  Instruction:
+    1. Set *# of Outputs* to number of stereo channels to compare.
+    2. Link plugin output to different track or hardware output.
+    3. Set desired switching beat length using *Switch Beat length*.
+      Alternatively, set *Millisecond Mode* to > 0 for switching based on time
+    4. Set switching mode using *Mode*:
+      Manual = Switch by pressing channel trigger;
+      Sequential = Switch to the next channel;
+      Random = Switch to a random different channel;
+      Guess = Switch to a random channel, press trigger to show answer.
+
+Changelog:
+ * v1.2 (2017-12-01)
+  + Added a multiple output stereo version, reversed random input into random output.
+ * v1.1 (2017-01-19)
+  + Millisecond Mode.
+  + Beat Mode works while not playing.
+  + Guess Mode added Answer Display Time.
+  + Limitation for user input.
+  + Default channel initialization.
+  # Triggers in Sequential/Random Mode changes to Manual Mode.
+  # Clicking on time-line do not reset to output 1-2.
+  # Guess Mode switches by triggering, rather than time.
+ * v1.0 (2017-01-19)
+  + Initial Release
+*/
+
+// Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
+
+desc: AB Comparison - 1INnOut Stereo
+
+slider1: 2<1,8,1> # of Outputs
+slider2: 8<1,16,1> Switch Beat Length
+slider3: 0<0,5000,10> Millisecond Mode (when > 0)
+
+slider6: 0<0,2,1{Manual,Sequential,Random,Guessing}> Mode
+slider7: 2<0.5,5,0.1> Answer Displaying Time (s)
+
+slider11: 0<0,8,1{1-2,3-4,5-6,7-8,9-10,11-12,13-14,15-16,Guess}> OutChannel
+slider12: 0<0,8,1> -_OutCh
+
+in_pin:input L
+in_pin:input R
+out_pin:output 1 L
+out_pin:output 1 R
+out_pin:output 2 L
+out_pin:output 2 R
+out_pin:output 3 L
+out_pin:output 3 R
+out_pin:output 4 L
+out_pin:output 4 R
+out_pin:output 5 L
+out_pin:output 5 R
+out_pin:output 6 L
+out_pin:output 6 R
+out_pin:output 7 L
+out_pin:output 7 R
+out_pin:output 8 L
+out_pin:output 8 R
+
+@init
+i_diff = 0;
+i_result = 0;
+i_answerTime = 0;
+msCnt = 0;
+
+@slider
+i_maxchs = max(1, min(8, slider1));
+i_beats = max(1, min(16, slider2));
+i_ms =  max(0, slider3 * srate * 0.001);
+mode = slider6;
+msCnt = 0;
+
+//Disable User Selection of *OutChannel*
+slider11 = i_result = mode == 3 ? 8 : slider12;
+
+@block
+
+beats_per_sample = ( tempo / 60 ) / srate;
+offset = 0;
+
+// Switch automatically only in sequential/random mode
+mode > 0 && mode < 3 ? (
+  // Check whether in millisecond mode or beat mode
+  i_ms ? ( // ms Mode
+    // Calculate the samplesblock approaching next switch
+    msCnt += samplesblock;
+    i_diff = msCnt + samplesblock >= i_ms ? i_ms - msCnt : 0;
+    msCnt > i_ms ? msCnt = 0;
+    // i_diff = how many samples left until next beat
+  ) : ( // Beat Mode
+    //WhyAddThis is Jonas's magic number.
+    WhyAddThis = 0.97902 / (srate * ( 60 / tempo ) );
+    // Transport Playing
+    play_state & 1 ? (
+      // Calculate the samplesblock approaching next switch
+      curBeat = beat_position;
+      nextBeat = ceil(curBeat);
+      bp = (curBeat + beats_per_sample * samplesblock);
+      i_diff = curBeat % i_beats == i_beats - 1 &&
+        bp >= nextBeat ? nextBeat - curBeat : 0;
+    ) : (
+      msCnt += samplesblock * beats_per_sample;
+      i_diff = msCnt + samplesblock * beats_per_sample >= i_beats ?
+        i_beats - msCnt : 0;
+      msCnt > i_beats ? msCnt = 0;
+    );
+    // i_diff = how many beats left until next beat.
+  );  
+);
+
+// When a trigger button is pressed
+trigger ? (
+  // In Sequential/Random Mode, change to Manual Mode
+  // In Manual Mode, switch output directly.
+  mode < 3 ? (
+    mode ? slider6 = mode = 0;
+    // Get button number
+    i_trig = log10(trigger)/ log10(2);
+    slider11 = slider12 = i_trig;
+  );
+  // In Guess Mode, press any trigger to reveal answer.
+  mode == 3 ? (
+    slider12 = floor(rand(i_maxchs - 1) + 0.5);
+    slider11 = i_result = slider12;
+    i_answerTime = slider7 * srate;
+  );
+  trigger = 0;
+);
+
+// When an answer is shown in Guess Mode
+i_answerTime ? (
+  // Check to see when to conceal *Output* to "Guess".
+  i_answerTime = i_answerTime > 0 ? i_answerTime - samplesblock : 0;
+  !i_answerTime ? slider11 = i_result = 8;
+);
+
+@sample
+// Only calculate samples when beat changes within a samplesblock.
+i_diff ? (
+  (i_ms && i_diff - offset == 0) ||
+  (!i_ms && i_diff - WhyAddThis - offset * beats_per_sample <= 0) ? (
+    mode == 1 ? (
+      // Sequential Mode adds one to output.
+      slider12 = (slider12 + 1) % i_maxchs;
+    ):(
+      // Random Mode generate a random and different output.
+      while (i = floor(rand(i_maxchs - 1) + 0.5); i == slider12; );
+      slider12 = i;
+    );
+    slider11 = i_result = slider12;
+    i_diff = 0;
+  );
+  offset += 1;
+);
+s0 = spl0; s1 = spl1;
+spl0=spl1=0;
+sn = slider12 * 2;
+spl(sn) = s0;
+spl(sn + 1) = s1;

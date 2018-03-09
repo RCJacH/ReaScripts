@@ -112,10 +112,22 @@ slider1 ? (
 
 // Is it attack or release phase?
 inV >= threshold ? (
-  env < 1 ? env += attack;
+  stage == 0 ? (
+    env += attack;
+    env >= 1 ? stage = 1;
+  ) : 
+  stage == 1 ? (
+    env -= decay * (1 - sustain);
+    env <= sustain ? stage == 2;
+  ) :
+  stage == 2 ? (  
+    env = sustain;
+  );
 ) : (
   env > 0 ? env -= release;
+  stage = 0;
 );
+env = max(0,min(1,env));
 
 // Calculate Filters.
 hpn3 = hpn3 + hpcut * (vNoise - hpn3 + hpfb * (hpn3 - hpn4));
