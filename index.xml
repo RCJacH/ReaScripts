@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="816dd1874831b2dc6b0ded3a6e6edf670973d0ed" name="RCJacH Scripts">
+<index version="1" commit="3ec444f25cef1206d09bff82bbe48200da3ddb71" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -59,40 +59,6 @@ Potential Addition:
         <source>https://github.com/RCJacH/ReaScripts/raw/225dcb55a806ad1775d90a767f9edae92d7100ce/JSFX/Audio/AB%20Comparison.jsfx</source>
       </version>
     </reapack>
-    <reapack name="BitRangeGain.jsfx" type="effect" desc="RCBitRangeGain">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 Suedo bit based gain adjustment for float point audio. 1 bit ~= 6.0206 dB (doubling of distance).\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Macro Shift} to increase or decrease audio input by 6.0206 dB per bit.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Micro Shift} to fine adjust audio within 1 bit.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Bit Ratio} to adjust the dB representation of one bit.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Fader} is used as a percentage controller after bit shifting.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Fader Curve} to adjust the behavior of {\b Fader} slider.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Increase {\b Smooth Fader} if gain adjustment causes zipper noise.\sa180\par}
-}
-]]></description>
-        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
-      </metadata>
-      <version name="1.0" time="2017-01-31T07:13:16Z">
-        <changelog><![CDATA[+ Initial Release]]></changelog>
-        <source>https://github.com/RCJacH/ReaScripts/raw/6f8b317f9082e6e7313ad3f8c5050357279c6584/JSFX/Audio/BitRangeGain.jsfx</source>
-      </version>
-      <version name="1.1" author="RCJacH" time="2018-03-09T07:56:20Z">
-        <changelog><![CDATA[* v1.1 (2018-02-13)
-  + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
-  * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
-  * Renamed to RCBitRangeGain
-* v1.0a (2017-01-31)
-  + Renamed to BitRangeGain
-* v1.0 (2017-01-11)
-  + Initial Release]]></changelog>
-        <source>https://github.com/RCJacH/ReaScripts/raw/816dd1874831b2dc6b0ded3a6e6edf670973d0ed/JSFX/Audio/BitRangeGain.jsfx</source>
-      </version>
-    </reapack>
     <reapack name="NoiseBuzz.jsfx" type="effect" desc="NoiseBuzz">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
@@ -114,6 +80,36 @@ Potential Addition:
       <version name="1.0" time="2017-01-31T07:13:16Z">
         <changelog><![CDATA[+ Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/6f8b317f9082e6e7313ad3f8c5050357279c6584/JSFX/Audio/NoiseBuzz.jsfx</source>
+      </version>
+    </reapack>
+    <reapack name="RCBitRangeGain.jsfx" type="effect" desc="RCBitRangeGain">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Suedo bit based gain adjustment for float point audio. 1 bit ~= 6.0206 dB (doubling of distance).\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Macro Shift} to increase or decrease audio input by 6.0206 dB per bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Micro Shift} to fine adjust audio within 1 bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Bit Ratio} to adjust the dB representation of one bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Fader} is used as a percentage controller after bit shifting.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Fader Curve} to adjust the behavior of {\b Fader} slider.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Increase {\b Smooth Fader} if gain adjustment causes zipper noise.\sa180\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.1" author="RCJacH" time="2018-03-09T07:58:25Z">
+        <changelog><![CDATA[* v1.1 (2018-02-13)
+  + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
+  * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
+  * Renamed to RCBitRangeGain
+* v1.0a (2017-01-31)
+  + Renamed to BitRangeGain
+* v1.0 (2017-01-11)
+  + Initial Release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/3ec444f25cef1206d09bff82bbe48200da3ddb71/JSFX/Audio/RCBitRangeGain.jsfx</source>
       </version>
     </reapack>
     <reapack name="RCNoiseBuzz.jsfx" type="effect" desc="RCNoiseBuzz">
