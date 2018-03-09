@@ -3,7 +3,7 @@ JSFX Name: RCNoiseBuzz
 Author: RCJacH
 Release Date: Jan 2017
 Link: https://github.com/RCJacH/ReaScripts
-Version: 1.1
+Version: 1.3
 Reference:
   Wavesfactory SnareBuzz
   http://www.firstpr.com.au/dsp/pink-noise/
@@ -133,9 +133,7 @@ slider42: 0<0,1,1{Mix to 1+2, 3+4}> Output Channel
     color == 1 ? ( //Pink
       N = this.genPink(white);
     ):
-    color == 3 ? (
-      N = a.genPink(white) - N;
-    ):(
+    color == 2 ? ( //White
       N = white;
     );
     gN = N * gain;
@@ -164,15 +162,15 @@ instance(wet,dry,a0.tgt,a1.tgt,a2.tgt,b1.tgt,b2.tgt,f)
 local(sx,c,k,c1,c2,c3)
 (
   sx = 16+freq*1.20103;
-  f = floor(exp(sx*log(1.059))*8.17742);
+  f = floor(exp(sx*freqlog)*8.17742);
   (wet = pct) ? (
     dry = 1 - wet;
-    c = 2*f/srate;
+    c = 2*f*perSample;
     res = f < 50 ? 1 : 10^(0.05*(-res+1.5));
     //lp
-    k = 0.5*res*sin($pi*c);
+    k = 0.5*res*sin(pi*c);
     c1 = 0.5*(1-k)/(1+k);
-    c2 = (0.5+c1)*cos($pi*c);
+    c2 = (0.5+c1)*cos(pi*c);
     c3 = (0.5+c1+(hp?c2:-c2))*0.25;
     a0.tgt = 2*c3;
     a1.tgt = (hp?-4:4)*c3;
@@ -202,6 +200,11 @@ smoothHiSqt = smoothHi ^ 2;
 
 rms = exp(-1/(max(min(slider32 * 0.001, 0.02), 0.00004) * srate));
 dryPct = 1 - (wetPct = (slider42 ? 1 : sqr(slider1) * 0.0001;));
+
+slider4 != color? (
+  s0.N = s0.gN = s1.N = s1.gN = 0;
+  color = slider4;
+);
 
 @block
 function fNode() instance(d,tgt,src)
