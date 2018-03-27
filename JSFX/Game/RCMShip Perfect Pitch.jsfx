@@ -17,6 +17,8 @@ About:
   3. Upon answering, you will be shown the correct answer, and your own answer if it differs.
   4. Click **Next** to continue to next round.
 
+  ## Features
+  
   ### Adaptive
   Upon answering, the chance of appearance for the current note will be changed based on whether you've answered correctly and the win stream of the note.
 
