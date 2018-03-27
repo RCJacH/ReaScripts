@@ -9,9 +9,7 @@ About:
 
   RCMShip (MShip stands for musicianship) Perfect Pitch is a little game for exercising Perfect Pitch, the ability to recognize notes without any reference, using adaptive method of randomization.
 
-  ## Usage
-
-  ### How to Play
+  ## How to Play
   1. Click **START**, the synth will play a tone.
   2. Guess the name of the tone by clicking on one of the note names.
   3. Upon answering, you will be shown the correct answer, and your own answer if it differs.
@@ -25,8 +23,8 @@ About:
   ### Selective
   Click on **Setup** to redirect to note setup page, where you can either manually select which note(s) to include in the game, or randomly generate a set number of notes based on currently selected ones.
 
-  ### Configuration
-  Click on **Config** for further preferences, such as Volume, note length, base octave, and octave span (octaves above base octave for note generation). You can also switch to MIDI mode so you can use samples or other synth as sound source.
+  ### Configurative
+  Click on **Config** for further preferences, such as Volume, note length, base octave, and octave span (octaves above base octave for note generation). You can also switch to MIDI mode so you can use samples or other synth as sound source. Right click on a button to return it to default value.
 
 
 Changelog:
