@@ -1,0 +1,680 @@
+/*
+JSFX Name: RCMShip Perfect Pitch
+Author: RCJacH
+Release Date: Mar 2018
+Version: 1.0rc1
+About:
+  ## Description
+
+  RCMShip (MShip stands for musicianship) Perfect Pitch is a little game for exercising Perfect Pitch, the ability to recognize notes without any reference, using adaptive method of randomization.
+
+  ## Usage
+
+  ### How to Play
+  1. Click **START**, the synth will play a tone.
+  2. Guess the name of the tone by clicking on one of the note names.
+  3. Upon answering, you will be shown the correct answer, and your own answer if it differs.
+  4. Click **Next** to continue to next round.
+
+  ### Adaptive
+  Upon answering, the chance of appearance for the current note will be changed based on whether you've answered correctly and the win stream of the note.
+
+  ### Selective
+  Click on **Setup** to redirect to note setup page, where you can either manually select which note(s) to include in the game, or randomly generate a set number of notes based on currently selected ones.
+
+  ### Configuration
+  Click on **Config** for further preferences, such as Volume, note length, base octave, and octave span (octaves above base octave for note generation). You can also switch to MIDI mode so you can use samples or other synth as sound source.
+
+
+Changelog:
+  * v1.0rc1 (2018-03-28)
+    + GUI
+    + Note Selection
+    + Octaves
+    + Winstream
+  * v1.0pre1 (2018-03-12)
+    + Initial Algorithm
+*/
+
+// Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
+
+desc: RCMShip Perfect Pitch
+
+out_pin:output L
+out_pin:output R
+
+@init
+
+  defChance = 256;
+  maxChance = 128;
+  minChance = 1;
+  i_guess = -1;
+  i_rnd = -1;
+
+  !f_active ? f_active = $xFFF;
+  smooth = 200;
+
+  twoPi           = $pi * 2;
+  incBase         = twoPi * 1 / srate;
+
+  uix.init = 0;
+  uix_stopped = 1;
+  inc = 1;
+  uix_settings = inc; memset(uix_settings, 0, 32); inc += 32;
+  a_midi = inc; memset(a_midi, 0, 128); inc += 128;
+  a_chance = inc; inc += 12;
+  a_correct = inc; inc += 12;
+  a_wrong = inc; inc += 12;
+  a_winstream = inc; inc += 12;
+  
+  function fn_reset() (
+    // Reset All status
+    memset(a_chance, defChance, 12);
+    memset(a_correct, 0, 12);
+    memset(a_wrong, 0, 12);
+    memset(a_winstream, 0, 12);
+  );
+  !a_chance[0] ? fn_reset();
+
+  function fn_stopGame() (
+    uix_stopped = 1;
+    bt_start.status = 0;
+    i_guess = i_rnd = -1;
+  );
+
+  function fn_altChance(n,bCorrect) local(i)(
+    // Write each guess to memory.
+    bCorrect? (
+      a_correct[n] += 1; a_winstream[n] < 0 ? a_winstream[n] = 1 : a_winstream[n] += 1;
+    ) : (
+      a_wrong[n] +=1; a_winstream[n] > 0 ? a_winstream[n] = 0 : a_winstream -= 1;
+    );
+    
+    // Increase or decrease chance of the played note by the square of winstream
+    i = 2 ^ a_winstream[n];
+    a_chance[n] += bCorrect ? -i : i;
+    a_chance[n] = max(minChance,min(maxChance, a_chance[n]));
+  );
+
+  // Generate a random tone index
+  function fn_rndTone() 
+  local(i, r, t, b) 
+  (
+    // Add up all tone chances
+    i = t = 0;
+    loop(12,
+      f_active & 2 ^ i ? t += a_chance[i];
+      i += 1;
+    );
+    // Generate random chance and find the matching index
+    i = -1;
+    b = 1;
+    r = rand(t)|0;
+    while(
+      i += 1;
+      f_active & 2 ^ i ? ( // If note is active
+        r >= a_chance[i] ? r -= a_chance[i] : b = 0;
+      );
+      // Break loop only if random chance is less than the play chance of an active tone index
+      b; 
+    );
+    i;
+  );
+
+  // Set the flags of manually clicked pitches for randomization
+  function fn_setManual() local(i) (
+    f_manual = f_active;
+    // Get number of notes of f_manual
+    i = i_manualCnt = 0;
+    loop(12,
+      (f_active >> i)&1 ? i_manualCnt += 1;
+      i += 1;
+    );
+  );
+
+  // Generate f_active based on f_manual
+  function fn_genRndflag() local(f_activeo) (
+    f_activeo = f_active = f_manual;
+    while(
+      loop(i_rndNum - i_manualCnt,
+        while(
+          n = rand(12)|0;
+          f_active&(2 ^ n);
+        );
+        f_active |= 2 ^ n;
+      );
+      // Make sure to differenciate from the last set
+      f_active == f_activeo;
+    );
+  );
+
+  function pit2freq(pitch) (
+    440 * (2 ^ ((pitch - 57) / 12));
+  );
+
+  function incEnv(tgt) instance(env) (
+    env != tgt ? env = (env * smooth + tgt) / (smooth + 1);
+  );
+
+  function incPhase() instance(f,phase) (
+    phase += incBase * f;
+    phase >= twoPi ? phase -= twoPi;
+  );
+
+  function setFloat() (
+    this.env <= 0.00001 ? (this.env = 0; this.state = 0);
+    this.value = sin(this.phase) * this.env * volume;
+  );
+
+  function progress() (
+    this.cnt += 1;
+    this.incPhase(note.f);
+    this.incEnv(this.cnt <= this.len ? this.state : 0);
+  );
+
+  function newNote(pitch, len) (
+    this.cnt = 0;
+    this.phase = this.phase ? this.phase : 0;
+    this.len = ceil(len * srate);
+    this.env = this.env ? this.env : 0;
+    this.state = 1;
+    this.f = pit2freq(pitch);
+  );
+
+@block
+uix.midi ? (
+  i = 0;
+  loop(128,
+    a_midi[i] ? (
+      // Send note off to keys longer than set length
+      a_midi[i] == 1 ? midisend(0,$x90,i,127);
+      a_midi[i] > ceil(vb_nLen.value * srate) ? (midisend(0,$x80,i,0); a_midi[i] = 0;)
+      : a_midi[i] += samplesblock;
+    );
+    i += 1;
+  );
+);
+
+@sample
+
+!uix.midi && (note.state || note.env) ? (
+  note.progress();
+  note.setFloat();
+  spl1 = spl0 = note.value;
+);
+
+@gfx 600 600
+
+  // Rescale keeping square shape
+  uix.scale = min(gfx_w, gfx_h) / 600;
+  uix.bt = 128 * uix.scale;
+  uix.side = 32 * uix.scale;
+  uix.grid = 8 * uix.scale;
+  uix.g1 = uix.side;
+  uix.g2 = uix.g1 + uix.bt + uix.grid;
+  uix.g3 = uix.g2 + uix.bt + uix.grid;
+  uix.g4 = uix.g3 + uix.bt + uix.grid;
+
+  function uix_getPitName(pit) (
+    pit = pit == 0 ? "C" :
+          pit == 1 ? (uix.pitName&2 ? "Db" : "C#" ) :
+          pit == 2 ? "D" :
+          pit == 3 ? (uix.pitName&2 ? "Eb" : "D#" ) :
+          pit == 4 ? "E" :
+          pit == 5 ? "F" :
+          pit == 6 ? (uix.pitName&2 ? "Gb" : "F#" ) :
+          pit == 7 ? "G" :
+          pit == 8 ? (uix.pitName&2 ? "Ab" : "G#" ) :
+          pit == 9 ? "A" :
+          pit == 10 ? (uix.pitName&1 ? "A#" : "Bb" ) :
+          pit == 11 ? "B" ;
+    strcpy(#,pit);
+  );
+
+  function uix_Hue2RGB(p, q, t) local(o, h) (
+    t < 0 ? t += 360; t > 360 ? t -= 360;
+    o = t < 60 ? p + (q - p) * t / 60:
+    t < 180 ? q:
+    t < 240 ? p + (q - p) * (240 - t) / 60: p;
+    o;
+  );
+
+  function uix_HSL2RGB(h,s,l) local(q,p,h,r,g,b)(
+    s = min(max(s,0),1);
+    l = min(max(l,0),1);
+    !s ? r=g=b=l : !l ? r=g=b=0 : l == 1 ? r=g=b=1 :(
+      q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      p = 2 * l - q;
+      r = uix_Hue2RGB(p, q, h + 120);
+      g = uix_Hue2RGB(p, q, h);
+      b = uix_Hue2RGB(p, q, h - 120);
+    );
+    gfx_r = r; gfx_g = g; gfx_b = b;
+  );
+
+  function uix_getColor(x, a) local(h, s, l) (
+    !x ? ( // BG
+      h = s = l = 0;
+    ) : x == 1 ? ( // Button Inactive
+      h = 146; s = 0.03; l = 0.30;
+    ) : x == 2 ? ( // Button Active
+      h = 146; s = 0.03; l = 0.78;
+    ) : x == 3 ? ( // Button Correct
+      h = 84; s = 1; l = 0.65;
+    ) : x == 4 ? ( // Button Wrong
+      h = 348; s = 1; l = 0.81;
+    ) : x == 5 ? ( // Button Appending
+      h = 54; s = 1; l = 0.83;
+    ) : x == 6 ? ( // Button Setup
+      h = 215; s = 0.68; l = 0.78;
+    );
+
+    a < 0 ? l *= abs(a) : a > 0 ? l *= 1 + a;
+    l = min(max(l,0),1);
+    uix_settings[7] = h;
+    uix_settings[8] = s;
+    uix_settings[9] = l;
+  );
+
+  function uix_setFont(m) (
+    gfx_setfont(1, "Arial", m * uix.scale, 'b');
+  );
+
+  function ui_drawText(x,y,w,h,s,m) local(sw,sh, l) (
+    uix_setFont(m);
+    gfx_measurestr(s, sw, sh);
+    // Set Alignment
+    gfx_x = x + w * uix_settings[5/*xAlign*/] - sw * uix_settings[5/*xAlign*/];
+    gfx_y = y + h * uix_settings[6/*yAlign*/] - sh * uix_settings[6/*yAlign*/];
+    // Text Color based on BG color
+    l = uix_settings[9];
+    uix_HSL2RGB(uix_settings[7], uix_settings[8], l > 0.5 ? l * 0.5 : l * 1.8);// * (uix_settings[8] < 0.7 && uix_settings[8] > 0.2 ? 0.5 : 1.6 ));
+    gfx_drawstr(s);
+  );
+
+  function ui_drawInit(x,y,w,h) local(color, i, hue, s, l, b) (
+    // Desaturate while LClicking
+    b = this.status==2 || this.status == 8;
+    hue = uix_settings[7]; s = uix_settings[8]; l = uix_settings[9];
+    b ? (hue -= 6; s < 0.5 ? l *= 0.9 : s *= 0.7; );
+    // Add border with darker color
+    uix_HSL2RGB(hue,s,l*0.8);
+    i = 0;
+    loop(uix.grid >> (b ? 3 : 2),
+      gfx_rect(x + i, y + i, w - i << 1, h - i << 1);
+      i += 1;
+    );
+    // Body
+    uix_HSL2RGB(hue,s,l);
+    gfx_rect(x + i, y + i, w - i << 1, h - i << 1);
+  );
+
+  function ui_ctrlInit(x,y,w,h) instance(f_mouse, status) (
+    /* f_mouse 
+      1 = mouse within rng
+      2 = LClick Down
+      4 = Single LClick Up
+      8 = Double LClick Down
+      16 = Double LClick Up
+      32 = RClick Down
+      64 = RClick Up
+    */
+    /* status
+      0 = Active
+      1 = Inactive
+      2 = triggering
+      4 = triggered
+      8 = dragging
+    */
+    mouse_x >= x && mouse_x <= x+w && mouse_y >= y && mouse_y <= y+h ? ( // Within border
+      !mouse_cap || f_mouse&2 ? f_mouse |= 1; // Within range only when not dragging from another object
+      f_mouse&1 && mouse_cap&1 ? (
+        f_mouse |= 2; status = 2; // LClick Down
+        // For disabling click when dragging
+        !uix_settings[23] ? uix_settings[23] = mouse_x;
+        !uix_settings[24] ? uix_settings[24] = mouse_y;
+      );
+      f_mouse&1 && mouse_cap&2 ? f_mouse |= 32; // RClick Down
+    ) : f_mouse&1 ? f_mouse ~= 1;
+    f_mouse&2 && !mouse_cap ? ( // LClick Up
+      f_mouse ~= 2;
+      !(f_mouse&1) ? status = 0; // Reset status if mouse goes off border of the object
+      f_mouse&1 ? f_mouse |= 4;
+    );
+    f_mouse&4 ? (status&2 ? status = 4;f_mouse ~= 4;); // LClick Up, used to trigger action
+    f_mouse&32 && !mouse_cap ? ( // RClick Up
+      f_mouse~=32;
+      f_mouse&1 ? f_mouse|=64;
+    );
+    !mouse_cap ? (init_pos = uix_settings[23] = uix_settings[24] = 0; status&8 ? status = 0;);
+  );
+
+
+  // Get value by mouse position in relation to the object
+  function ui_getCtrlValue(vStart,vEnd,stepsize,default,dir) local(mouse, input, tmp, step, axis)
+  instance(rng, init_pos, f_mouse, status, value) (
+    rng = abs(vStart - vEnd);
+    input = 0;
+    axis = sign(dir);
+    // If mouse pos changed while clicking, do not trigger click action
+    status > 1 && f_mouse&2 && (mouse_x != uix_settings[23] || mouse_y != uix_settings[24]) ? status = 8;
+    f_mouse&2 ? (
+      mouse = axis < 0 ? mouse_y : mouse_x;
+      !init_pos ? init_pos = mouse; // Initialize position
+      init_pos != mouse ? ( // If change of mouse position
+        tmp = (mouse - init_pos);
+        tmp *= mouse_cap&8/*Shift*/ ? 0.01 : 0.1;
+        input += axis < 0 ? tmp : -tmp; // Add up positional difference in ratio
+        init_pos = mouse;
+      );
+      status&8 ? ( // Only when dragging
+        step += input;
+        // Add to value only when positional difference is greater than stepsize
+        abs(step) > stepsize ? (
+          tmp = step < 0 ? ceil(step / stepsize) * stepsize : floor(step / stepsize) * stepsize;
+          value -= tmp;
+          step -= tmp;
+        );
+      );
+    ):
+    f_mouse&64/*Right*/ ? (value = default; f_mouse ~= 64;); // Reset upon releasing RClick
+    value = max(min(value,max(vStart,vEnd)),min(vStart,vEnd)); //Limit value within rng
+    value;
+  );
+
+  // Draw a rectangular button
+  function ui_drawButton(x,y,w,h,cBG,s,f) local(sw, sh) instance(click,triggered)(
+    s != "" || this.status != 1 ? this.ui_ctrlInit(x,y,w,h);
+    uix_getColor(cBG, 0); // Get HSL from color presets
+    this.ui_drawInit(x,y,w,h);
+    // Draw text in the center
+    uix_settings[5/*xAlign*/] = uix_settings[6/*yAlign*/] = 0.5;
+    ui_drawText(x,y,w,h,s,f);
+  );
+
+  // Draw a Note variation of a button
+  function ui_drawNote(i,m) local(bGuess, cBG, x, y, r, active) (
+    // Check Note status: Active? Guessed?
+    active = f_active & 2 ^ i;
+    bGuess = i_guess == i_rnd;
+    // Get button color based on status
+    cBG = m == 0 ? (
+      active ? (
+        (bGuess && i_guess == i) || (i_guess >=0 && !bGuess && i_rnd == i) ? 3 : // Made a guess and show Correct
+        !bGuess && i_guess == i ? 4 : i_rnd != -1 && i_guess == -1 ? 5 : 2;
+      ) : 1;
+    ): m == 1 ? active ? 3 : 1;
+
+    // Get position
+    x = i % 4; y = (i / 4);
+    x = !(x~0) ? uix.g1 : !(x~1) ? uix.g2 : !(x~2) ? uix.g3 : !(x~3) ? uix.g4;
+    y = !(y~0) ? uix.g1 : !(y~1) ? uix.g2 : !(y~2) ? uix.g3 : !(y~3) ? uix.g4;
+    this.ui_drawButton(
+      x, y, uix.bt, uix.bt, cBG,
+      uix_getPitName(i),36
+    );
+
+    // Trigger actions
+    m < 2 ? (
+      m == 0 && (uix_stopped || (i_guess != -1 && (i == i_guess || i == i_rnd))) ? (
+        this.status&2 ? (
+          !note.env ? note.newNote(vb_oct.value + (vb_span.value ? rand(vb_span.value)&0 * 12), vb_nLen.value);
+        ): this.status&4 ? (
+          !note.env ? note.cnt = note.len;
+        );
+      );
+      this.status&4 ? (
+        m == 0 ? (
+          !uix_stopped && f_active & 2 ^ i && i_guess == -1 ? (
+            i_guess = i;
+            fn_altChance(i_rnd, i_guess == i_rnd);
+            bt_start.status = 0;
+          );
+        ): m == 1 ? (
+          f_active ~= 2 ^ i; 
+          fn_setManual();
+          fn_stopGame();
+        );
+        this.status = 0;
+      );
+    );
+
+    // Show stats
+    uix.noteDisplay ? (
+      r = a_correct[i] / (a_correct[i] + a_wrong[i]) * 100;
+      s = uix.noteDisplay == 1 ? 
+        strcat(strcat(sprintf(#,"%d",a_correct[i]),":"), sprintf(#,"%d",a_wrong[i])) : uix.noteDisplay == 2 ?
+        strcat(sprintf(#,"%.2f", r),"%");
+      uix_settings[5/*xAlign*/] = 0.5; uix_settings[6/*yAlign*/] = 0.85;
+      ui_drawText(x,y,uix.bt,uix.bt,s,24);
+    );
+  );
+
+  // A static variation of button (no triggered action)
+  function ui_drawLabel(x,y,w,h,s)(
+    this.status = 1;
+    this.ui_drawButton(x, y, w, h, 1, s, 24);
+  );
+
+  // A minimalistic control
+  function ui_drawDragBox(x,y,w,h,vStart,vEnd,stepsize,default) local (knobsize, tmp, digit, s, qh, knob.pos)
+  instance(rng, value) (
+    this.ui_ctrlInit(x,y,w,h);
+    this.ui_getCtrlValue(vStart, vEnd, stepsize, default, -1);
+    knobsize = 4;
+    knob.pos = (rng + value - vEnd) / (rng) * (h - knobsize << 2);
+
+    // Handle
+    uix_HSL2RGB(uix_settings[7] - 52, 1 - uix_settings[8], uix_settings[9]);
+    gfx_circle(x + w * 0.1, y + knobsize << 1 + (h - knobsize << 2) - knob.pos,knobsize,1,1);
+
+    value; 
+  );
+
+  // A dragbox with value showing
+  function ui_drawValueBox(x,y,w,h,vStart,vEnd,stepsize,default,unit) local (knobsize, tmp, digit, s, qh)
+  instance(rng, value, knob.pos) (
+    // Draw Box
+    uix_getColor(3, 0);
+    this.ui_drawInit(x,y,w,h);
+    uix_setFont(30);
+    this.ui_drawDragBox(x,y,w,h,vStart,vEnd,stepsize,default);
+ 
+    // Draw Value Text
+    digit = stepsize < 0.1 ? "%.2f" : stepsize < 1 ? "%.1f": "%d";
+    s = strcat(sprintf(#, digit, max(vStart,vEnd)), unit);
+    gfx_measurestr(s, sw, sh);
+
+    s = strcat(sprintf(#, digit, value), unit);
+    uix_settings[5/*xAlign*/] = uix_settings[6/*yAlign*/] = 0.5;
+    uix_getColor(3, 0);
+    ui_drawText(x,y,w,h,s,24);
+
+    // No action triggered upon releasing LClick
+    this.status&4 ?(this.status = 0;);
+    value;
+  );
+
+  //*************************
+  // GFX
+  //*************************
+
+  // Initiate default values
+  !b_init ? (
+    uix.noteDisplay = 1;
+    vb_nLen.value = 1.5;
+    vb_volume.value = -6;
+    vb_oct.value = 4;
+    vb_span.value = 0;
+    b_init = 1;
+  );
+
+  // Background
+  gfx_r = gfx_g = gfx_b = 0;
+  gfx_rect(0,0,gfx_w,gfx_h);
+
+  uix_getColor(1, 0);
+  uix_HSL2RGB(uix_settings[7],uix_settings[8],uix_settings[9]);
+  uix_settings[5/*xAlign*/] = 1; uix_settings[6/*yAlign*/] = 0.8;
+  ui_drawText(gfx_w - uix.side - uix.bt, 0, uix.bt, uix.side, "© RCJacH", 18);
+
+
+  // Draw notes
+  uix_settings[0] < 2 ? (
+    bt_note0.ui_drawNote(0,uix_settings[0/*Page ID*/]);
+    bt_note1.ui_drawNote(1,uix_settings[0/*Page ID*/]);
+    bt_note2.ui_drawNote(2,uix_settings[0/*Page ID*/]);
+    bt_note3.ui_drawNote(3,uix_settings[0/*Page ID*/]);
+    bt_note4.ui_drawNote(4,uix_settings[0/*Page ID*/]);
+    bt_note5.ui_drawNote(5,uix_settings[0/*Page ID*/]);
+    bt_note6.ui_drawNote(6,uix_settings[0/*Page ID*/]);
+    bt_note7.ui_drawNote(7,uix_settings[0/*Page ID*/]);
+    bt_note8.ui_drawNote(8,uix_settings[0/*Page ID*/]);
+    bt_note9.ui_drawNote(9,uix_settings[0/*Page ID*/]);
+    bt_note10.ui_drawNote(10,uix_settings[0/*Page ID*/]);
+    bt_note11.ui_drawNote(11,uix_settings[0/*Page ID*/]);
+  );
+
+  bt_setup.ui_drawButton(uix.g1, uix.g4, uix.bt, uix.bt, 6, uix_settings[0] ? "<" : "Setup",36);
+  bt_setup.status&4 ? (
+    uix.init = 0;
+    fn_setManual();
+    uix_settings[0] = uix_settings[0] != 1 ? 1 : 0;
+    bt_setup.status = 0;
+  );
+
+  uix_settings[0/*Page ID*/] == 0 ? (
+    bt_display.ui_drawButton(uix.g2, uix.g4, uix.bt, uix.bt, 2, uix.noteDisplay&1?"Ratio":uix.noteDisplay&2?"Percent":"Score",36);
+    bt_display.status&4 ? (
+      uix.noteDisplay += 1;
+      uix.noteDisplay > 2 ? uix.noteDisplay = 0;
+      bt_display.status = 0;
+    );
+
+    uix_stopped ? bt_play.status = 1;
+    bt_play.ui_drawButton(uix.g3, uix.g4, uix.bt, uix.bt, bt_play.status != 1 ? 3 : 1, "Replay",36);
+    bt_play.status&4 ? (
+      note.newNote(i_rndMIDI, vb_nLen.value);
+      bt_play.status = 0;
+    );
+
+    bt_start.ui_drawButton(uix.g4, uix.g4, uix.bt, uix.bt, bt_start.status != 1 ? 5 : 1, uix_stopped ? "START" : "Next",36);
+    bt_start.status&4 ? (
+      uix_stopped || i_guess != -1 ? (
+        // uix.fanfare ? (
+          // bt_setup.status = 1;
+          // i = 0;
+          // loop(16,
+            // uix.fanfare == 2 ? (
+              // note.newNote(rand(12) + 48, 0.3);
+              // while(
+                // note.env || note.state;
+              // );
+            //   ) :
+            // uix.fanfare == 1 ? (
+            //   i < 13 ? !note.env ? note.newNote(
+            //     24 + rand(12)&0 + 
+            //     i == 0 ? 2 :
+            //     i == 1 ? 4 :
+            //     i == 2 ? 7 :
+            //     i == 3 ? 12 :
+            //     i == 4 ? 16 :
+            //     i == 5 ? 12 :
+            //     i == 6 ? 14 :
+            //     i == 7 ? 16 :
+            //     i == 8 ? 19 :
+            //     i == 9 ? 14 :
+            //     i == 10 ? 16 :
+            //     i == 11 ? 19 :
+            //     i == 12 ? 23 :
+            //     i == 13 ? 24
+            //   , i < 13 ? 0.1: 0.4
+              // );
+            // );
+            // i += 1;
+          // );
+          // bt_setup.status = 0;
+        // );
+        i_rnd = fn_rndTone();
+        i_rndMIDI = max(0,min(127,i_rnd + (vb_oct.value + (vb_span.value ? rand(vb_span.value)&0 : 0)) * 12));
+        i_guess = -1;
+        uix.midi ? a_midi[i_rndMIDI] = 1 : note.newNote(i_rndMIDI, vb_nLen.value);
+        uix_stopped ? (uix_stopped = 0; bt_play.status = 0;);
+      );
+      bt_start.status = 1;
+    );
+
+  ): uix_settings[0/*Page ID*/] == 1 ? (
+    bt_all.ui_drawButton(uix.g2, uix.g4, uix.bt, uix.bt, 2, f_active == $xFFF ? "None" : "All",36);
+    bt_all.status&4 ? (
+      fn_stopGame();
+      f_active = f_active == $xFFF ? 0 : $xFFF;
+      fn_setManual();
+      bt_all.status = 0;
+    );
+    lb_rnd.ui_drawButton(uix.g3, uix.g4, uix.bt, uix.bt, f_active == $xFFF ? 1:3, "Random",36);
+    i_rndNum = db_rndNum.ui_drawDragBox(uix.g3, uix.g4, uix.bt, uix.bt, 2, 12, 1, i_manualCnt + 2);
+    i_rndNum = db_rndNum.value = max(i_manualCnt, i_rndNum);
+    db_rndNum.status&4 ? (
+      fn_stopGame();
+      fn_genRndflag();
+      db_rndNum.status = 0;
+    );
+    uix_settings[5/*xAlign*/] = 0.5; uix_settings[6/*yAlign*/] = 0.85;
+    ui_drawText(uix.g3, uix.g4, uix.bt, uix.bt, sprintf(#,"%d", i_rndNum),1);
+    bt_config.ui_drawButton(uix.g4, uix.g4, uix.bt, uix.bt, 6, "Config",36);
+    bt_config.status&4 ? (
+      uix_settings[0] = 2;
+      bt_config.status = 0;
+    );
+  ): uix_settings[0/*Page ID*/] == 2 ? (
+    lb_volume.ui_drawLabel(uix.g1, uix.g1, uix.bt, uix.bt, "Volume:");
+    vb_volume.ui_drawValueBox(uix.g2, uix.g1, uix.bt, uix.bt, -60, 0, 0.1, -6, " dB");
+    lb_nLen.ui_drawLabel(uix.g1, uix.g2, uix.bt, uix.bt, "Note Length:");
+    vb_nLen.ui_drawValueBox(uix.g2, uix.g2, uix.bt, uix.bt, 0.5, 5, 0.5, 1.5, " ms");
+
+
+    lb_oct.ui_drawLabel(uix.g3, uix.g1, uix.bt, uix.bt, "Base Octave:");
+    vb_oct.ui_drawValueBox(uix.g4, uix.g1, uix.bt, uix.bt, 0, 10, 1, 4, " Oct");
+    lb_span.ui_drawLabel(uix.g3, uix.g2, uix.bt, uix.bt, "Octave Span:");
+    vb_span.ui_drawValueBox(uix.g4, uix.g2, uix.bt, uix.bt, 0, 4, 1, 0, " Octs");
+
+    lb_fanfare.ui_drawLabel(uix.g1, uix.g3, uix.bt, uix.bt, "");
+    bt_fanfare.ui_drawButton(uix.g2, uix.g3, uix.bt, uix.bt, !uix.fanfare ? 1:(2), uix.fanfare == 1 ? "On":uix.fanfare == 2 ? "Random" : "",36);
+    // bt_fanfare.status&4 ? (
+    //   uix.fanfare += 1;
+    //   uix.fanfare > 2 ? uix.fanfare = 0;
+    //   bt_fanfare.status = 0;
+    // );
+
+    lb_pitName.ui_drawLabel(uix.g3, uix.g3, uix.bt, uix.bt, "Pitch Name");
+    bt_pitName.ui_drawButton(uix.g4, uix.g3, uix.bt, uix.bt, 2, uix.pitName == 1 ? "Sharp":uix.pitName == 2 ? "Flat" : "C",36);
+    bt_pitName.status&4 ? (
+      uix.pitName += 1;
+      uix.pitName > 2 ? uix.pitName = 0;
+      bt_pitName.status = 0;
+    );
+    
+    bt_reset.ui_drawButton(uix.g2, uix.g4, uix.bt, uix.bt, 4, "Reset",36);
+    bt_reset.status&4 ? (
+      fn_reset();
+      bt_reset.status = 0;
+    );
+
+    bt_btStyle.ui_drawButton(uix.g4, uix.g4, uix.bt, uix.bt, 1, uix.btStyle ? "Flash":"",36);
+    // bt_btStyle.status&4 ? (
+    //   uix.btStyle = !uix.btStyle;
+    //   bt_btStyle.status = 0;
+    // );
+
+    bt_trig.ui_drawButton(uix.g3, uix.g4, uix.bt, uix.bt, 2, uix.midi ? "MIDI":"Sine",36);
+    bt_trig.status&4 ? (
+      uix.midi = !uix.midi;
+      bt_trig.status = 0;
+    );
+
+
+  );
+
+  volume = 2^(vb_volume.value/6);
+  uix.init = 1;
