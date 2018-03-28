@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="b39a12754b83fe9763e22d9d8f2417610bc707ff" name="RCJacH Scripts">
+<index version="1" commit="9e52e9496749f6c529f516335d30fbb837ed6732" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -173,18 +173,18 @@ Potential Addition:
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 Description\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 RCMShip (MShip stands for musicianship) Perfect Pitch is a little game for exercising Perfect Pitch, the ability to recognize notes without any reference, using adaptive method of randomization.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 Usage\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs28 How to Play\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 How to Play\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Click {\b START}, the synth will play a tone.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Guess the name of the tone by clicking on one of the note names.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab Upon answering, you will be shown the correct answer, and your own answer if it differs.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab Click {\b Next} to continue to next round.\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 Features\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \b \fs28 Adaptive\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Upon answering, the chance of appearance for the current note will be changed based on whether you've answered correctly and the win stream of the note.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \b \fs28 Selective\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Click on {\b Setup} to redirect to note setup page, where you can either manually select which note(s) to include in the game, or randomly generate a set number of notes based on currently selected ones.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs28 Configuration\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Click on {\b Config} for further preferences, such as Volume, note length, base octave, and octave span (octaves above base octave for note generation). You can also switch to MIDI mode so you can use samples or other synth as sound source.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs28 Configurative\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Click on {\b Config} for further preferences, such as Volume, note length, base octave, and octave span (octaves above base octave for note generation). You can also switch to MIDI mode so you can use samples or other synth as sound source. Right click on a button to return it to default value.\par}
 }
 ]]></description>
         <link rel="website">https://github.com/RCJacH/ReaScripts</link>
