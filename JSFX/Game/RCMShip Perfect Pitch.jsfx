@@ -28,6 +28,9 @@ About:
 
 
 Changelog:
+  * v1.0rc2 (2018-03-28)
+    # Fixed number on Random button not showing
+    # Changed None/All button to red since it's somewhat destructive.
   * v1.0rc1 (2018-03-28)
     + GUI
     + Note Selection
@@ -606,7 +609,7 @@ uix.midi ? (
     );
 
   ): uix_settings[0/*Page ID*/] == 1 ? (
-    bt_all.ui_drawButton(uix.g2, uix.g4, uix.bt, uix.bt, 2, f_active == $xFFF ? "None" : "All",36);
+    bt_all.ui_drawButton(uix.g2, uix.g4, uix.bt, uix.bt, 4, f_active == $xFFF ? "None" : "All",36);
     bt_all.status&4 ? (
       fn_stopGame();
       f_active = f_active == $xFFF ? 0 : $xFFF;
@@ -615,14 +618,13 @@ uix.midi ? (
     );
     lb_rnd.ui_drawButton(uix.g3, uix.g4, uix.bt, uix.bt, f_active == $xFFF ? 1:3, "Random",36);
     i_rndNum = db_rndNum.ui_drawDragBox(uix.g3, uix.g4, uix.bt, uix.bt, 2, 12, 1, i_manualCnt + 2);
-    i_rndNum = db_rndNum.value = max(i_manualCnt, i_rndNum);
     db_rndNum.status&4 ? (
       fn_stopGame();
       fn_genRndflag();
       db_rndNum.status = 0;
     );
     uix_settings[5/*xAlign*/] = 0.5; uix_settings[6/*yAlign*/] = 0.85;
-    ui_drawText(uix.g3, uix.g4, uix.bt, uix.bt, sprintf(#,"%d", i_rndNum),1);
+    ui_drawText(uix.g3, uix.g4, uix.bt, uix.bt, sprintf(#,"%d", i_rndNum),24);
     bt_config.ui_drawButton(uix.g4, uix.g4, uix.bt, uix.bt, 6, "Config",36);
     bt_config.status&4 ? (
       uix_settings[0] = 2;
