@@ -11,6 +11,12 @@ About:
   ReaModular - RCAutoPanner is an auto panning JSFX effect, supporting 6 types of sync method, also panning curves, cv input and other effects.
 
 Changelog:
+  * v1.0pre2 (2018-04-05)
+    # Renamed **Delay %** to **Sync Offset %**
+    # Changed Panlaw to dB for easier reference
+    # CV/Audio Mode audio goes through curve setting, and thus spread and offset.
+    + Smoother Automation for: Rate (Non-Sync), Curve, Rotate, Width, Spread, Offset
+    + Ducking Mode
   * v1.0pre1 (2018-04-04)
     + Initial Algorithm
 */
@@ -20,14 +26,14 @@ Changelog:
 desc: ReaModular - RCAutoPanner
 
  /* Rate */
-slider1: 1<0.01,20,0.01>Rate (Hz)
+slider1: 1<0,20,0.01>Rate (Hz)
 slider2: 1<0.1,4,0.01>Rate (Ms)
 slider3: 1<0.1,4,0.01>Rate (Beats)
 slider4: 5<0,9,1{4,2,1,1/2,1/4,1/8,1/16,1/32,1/64,1/128}>Rate (Measure)
 slider5: 0<0,2,1{NORMAL,TRIPLET,DOTTED}>Sync Type
 slider6: 1<0,2,1{Hz,ms,Beats,Measure,CV,Audio}>Sync Method
 
-slider8: 0<-100,100>Delay %
+slider8: 0<-100,100>Sync Offset %
 slider9: 1<0,2,1{None,Reverse,Replicate}>Mirror
 
 /* Shape */
@@ -39,23 +45,24 @@ slider13: 1<0,10,0.01>Curve Multiplier
 // slider31: 0<0,100,1>Random Amount
 // slider32: 0<0,10,1>Random Smoothing
 
+/* Ducking */
+slider35: -100<-100,0,0.1>Ducking Threshold
+slider36: 0<0,10,1>Smooth Duck
+slider37: 3<0,5,1{Left,Right,Forward,Backward,Random}>Ducking Direction
+slider38: 0<0,1,1{Clip,Fold}>Ducking Border Behavior
+slider39: 0<0,100,1>Ducking Amount %
+
 /* Stage */
 slider41: 0<-90,90,1>Rotate (°)
 slider42: 100<0,200,1>Width (%)
 slider43: 100<0,100,1>Spread
 slider44: 0<-100,100,1>Offset
 
-/* Ducking */
-// Ducking Threshold
-// Ducking Speed
-// <0,1,1{Clip,Fold}>Ducking Direction
-// Ducking Amount
-
 /* Settings */
 
 slider60: 0<0,10,1>Smooth Pan
 slider61: 3<0,3,1{None,Left,Right,Stereo}>Channel
-slider62: 0<-2,1,0.25>Pan Law (Bit ~= 6.0206 dB)
+slider62: 0<-12,12,1.5>Pan Law (dB)
 // slider62: <0,1,1{Low,High}>Quality
 
 slider64: 0.5<0,1> Pan CV
@@ -63,7 +70,8 @@ slider64: 0.5<0,1> Pan CV
 
 in_pin:left input
 in_pin:right input
-in_pin:Pan CV Input
+in_pin:Pan CV input
+in_pin:Duck input
 out_pin:left output
 out_pin:right output
 out_pin:pan output
@@ -77,10 +85,12 @@ i_curPos = 0;
 d_perSample = 1/srate;
 
 inc = 0;
-a_ave = inc; memset(a_ave, 0, 10); inc += 10;
-a_aveG = inc; memset(a_aveG, 0, 10); inc += 10;
-a_rnd = inc; memset(a_rnd, 0, 10); inc += 10;
+i_aveMem = inc; inc += 1;
+i_aveMemG = inc; inc += 1;
+i_rndMem = inc; inc += 1;
+i_duckMem = inc; inc += 1;
 
+function gain(db) ( db <= -100 ? 0 : 10^(0.05 * db) );
 
 function lerp(src, tgt, pct) (
   !pct ? src : pct == 1 ? tgt : src * (1 - pct) + tgt * pct;
@@ -108,24 +118,15 @@ function getCurve(shape, pos, t, v0, v1, curve) local(value) (
   v0 + value ^ curve * (v1 - v0);
 );
 
-function walkingAverage(inSample, len, mempos) local(total) (
-  total = 0;
-  len > 9 ? (mempos[9] = mempos[8]; total += mempos[9];);
-  len > 8 ? (mempos[8] = mempos[7]; total += mempos[8];);
-  len > 7 ? (mempos[7] = mempos[6]; total += mempos[7];);
-  len > 6 ? (mempos[6] = mempos[5]; total += mempos[6];);
-  len > 5 ? (mempos[5] = mempos[4]; total += mempos[5];);
-  len > 4 ? (mempos[4] = mempos[3]; total += mempos[4];);
-  len > 3 ? (mempos[3] = mempos[2]; total += mempos[3];);
-  len > 2 ? (mempos[2] = mempos[1]; total += mempos[2];);
-  len > 1 ? (mempos[1] = mempos[0]; total += mempos[1];);
-  len > 0 ? (mempos[0] = inSample; total += mempos[0];);
-  total /= len;
-  total;
+function walkingAverage(inSample, len, mempos) local(ave) (
+  ave=inSample*inSample;
+  mempos[] = ave + len * (mempos[] - ave);
+  mempos[] ^ 0.5 + 0.000000000001;
 );
 
 function fn_progress(b) (
   b ? this += 1 : this = 0;
+  this > i_totalSamples ? this -= i_totalSamples;
 );
 
 function fn_updateTempo()(
@@ -134,35 +135,45 @@ function fn_updateTempo()(
 );
 
 function fn_updateRate(rate)(
-  i_cycleSamples = !slider6 ? srate / rate : slider6 == 1 ? floor(srate * rate) /* ms */ : floor(rate * samples_per_beat)/* Synced */;
+  i_cycleSamples = !panSync? srate / rate : panSync== 1 ? floor(srate * rate) /* ms */ : floor(rate * samples_per_beat)/* Synced */;
   i_totalSamples = i_cycleSamples;
   slider9 ? i_cycleSamples = i_cycleSamples * 0.5;
   i_delaySample = i_totalSamples * slider8 * 0.01;
 );
 
 fn_updateTempo();
-fn_updateRate(slider2);
+fn_updateRate(1);
 
 @slider
-!slider6 ? rate = slider1 : slider6 == 1 ? rate = slider2 : (
-  rate = slider6 == 2 ? slider3 : slider6 == 3 ? 16/(2 ^ slider4);
-  slider5 ? rate *= slider5&1 ? 2/3 : slider5&2 ? 3/2;
+!panSync? rateAppend = slider1 : panSync== 1 ? rateAppend = slider2 : (
+  rateAppend = panSync== 2 ? slider3 : panSync== 3 ? 16/(2 ^ slider4);
+  slider5 ? rateAppend *= slider5&1 ? 2/3 : slider5&2 ? 3/2;
 );
-fn_updateRate(rate);
+panSync != slider6 ? (pan = d_drate = 0; rate = rateAppend; fn_updateRate(rate); panSync = slider6;);
 
-panCurve = 2 ^ (slider12 * 0.01 * slider13);
+panCurveAppend = 2 ^ (slider12 * 0.01 * slider13);
 
-d_rot=slider41*0.017453292;
-d_width = slider42 * 0.005;
+d_rotAppend=slider41*0.017453292;
+d_widthAppend = slider42 * 0.005;
 d_halfSpread = slider43 * 0.005;
 d_offset = 0.5 + slider44 * 0.005;
-d_left = d_offset - d_halfSpread;
-d_right = d_offset + d_halfSpread;
+d_leftAppend = d_offset - d_halfSpread;
+d_rightAppend = d_offset + d_halfSpread;
 
-i_rnd = slider31 * 0.01;
-i_smooth = slider60;
-f_ch = slider61;
-panlaw = 2 ^ slider62;
+rmstime = max(min(slider60/500,0.02),0.00004);
+d_panRMS = exp(-1/(rmstime * srate));
+
+d_rndPct = slider31 * 0.01;
+rmstime = max(min(slider32/1000,0.02),0.00002);
+d_rndRMS = exp(-1/(rmstime * srate));
+
+d_duckThreshold = gain(slider35);
+rmstime = max(min(slider36/1000,0.02),0.00002);
+d_duckRMS = exp(-1/(rmstime * srate));
+d_duckPct = slider39 * 0.01;
+
+i_ch = slider61;
+panlaw = 2 ^ (slider62 / 6);
 
 @block
 prevTempo != tempo ? (
@@ -171,21 +182,40 @@ prevTempo != tempo ? (
   prevTempo = tempo;
 );
 
-play_state&1 && (slider6 == 2 || slider6 == 3) ? i_curPos = (play_position * srate) % i_totalSamples;
+per_samplesblock = 1 / samplesblock;
+
+play_state&1 && (panSync== 2 || panSync== 3) ? (
+  i_curPos = (play_position * srate) % i_totalSamples;
+);
+b_calcPan = (play_state&0 && b_calcSig) || play_state&1;
+
+/* Smooth Faders */
+d_drate = rate != rateAppend ? (rateAppend - rate) * per_samplesblock * 0.5;
+d_dpanCurve = panCurve != panCurveAppend ? (panCurveAppend - panCurve) * per_samplesblock;
+
+d_drot = d_rot != d_rotAppend ? (d_rotAppend - d_rot) * per_samplesblock;
+d_dwidth = d_width != d_widthAppend ? (d_widthAppend - d_width) * per_samplesblock;
+d_dleft = d_left != d_leftAppend ? (d_leftAppend - d_left) * per_samplesblock;
+d_dright = d_right != d_rightAppend ? (d_rightAppend - d_right) * per_samplesblock;
+
 
 @sample
+b_calcSig = (i_ch&1 && (spl0 || s0)) || (i_ch&2 && (spl1 || s0));
 
-b_calcSig = (f_ch&1 && spl0) || (f_ch&2 && spl1);
-b_calcPos = (play_state&0 && b_calcSig) || play_state&1;
+/* Update Values */
+d_drate ? (rate += d_drate; fn_updateRate(rate));
+d_dpanCurve ? panCurve += d_dpanCurve;
+d_drot ? d_rot += d_drot;
+d_dwidth ? d_width += d_dwidth;
+d_dleft ? d_left += d_dleft;
+d_dright ? d_right += d_dright;
 
 /* Setup Sound Stage */
 b_calcSig ? (
-  d_rnd = rand(1)*0.1;
-  d_rndV = slider31 ? (slider32 ? walkingAverage(d_rnd,slider32,a_rnd) : d_rnd) : 0;
-
-  f_ch&1 ? s0 = spl0;
-  f_ch&2 ? s1 = spl1;
-  f_ch == 3 ? (
+  /* Input Setup */
+  i_ch&1 ? s0 = spl0;
+  i_ch&2 ? s1 = spl1;
+  i_ch == 3 ? (
     // Rotation
     d_rot ? (
       s0 = sign(spl0);
@@ -211,30 +241,62 @@ b_calcSig ? (
   s0 = s1 = 0;
 );
 
-  // Pan
-slider6 < 4 ? ( // From Algorithm
-  i_curPos > i_totalSamples ? i_curPos -= i_totalSamples;
-  i_cyclePos = i_curPos + i_delaySample;
-  i_cyclePos < 0 ? i_cyclePos += i_totalSamples : i_cyclePos > i_totalSamples ? i_cyclePos -= i_totalSamples;
-  i_cyclePos > i_cycleSamples ? (
-    slider9 == 1 ? tgtPan = getCurve(slider11, i_cycleSamples - (i_cyclePos - i_cycleSamples), i_cycleSamples, d_left, d_right, panCurve) :
-    slider9 == 2 ? tgtPan = 1 - getCurve(slider11, i_cyclePos, i_cycleSamples, d_left, d_right, panCurve);
-  ): tgtPan = getCurve(slider11, i_cyclePos, i_cycleSamples, d_left, d_right, panCurve);
+b_calcPan ? (
 
-  // Progress
-  i_curPos.fn_progress((play_state&0 && b_calcSig) || play_state&1);
-):( // From input
-  tgtPan = slider6 == 4 ? spl2 : slider6 == 5 ? spl2 * 0.5 + 0.5;
+  /* Pan Position */
+  panSync< 4 ? ( // From Algorithm
+    rate ? (
+      i_cyclePos = i_curPos + i_delaySample;
+      /* Change Rate */
+      // To be implemented
+
+      i_cyclePos < 0 ? i_cyclePos += i_totalSamples : i_cyclePos > i_totalSamples ? i_cyclePos -= i_totalSamples;
+      i_cyclePos > i_cycleSamples ? (
+        slider9 == 1 ? tgtPan = getCurve(slider11, i_cycleSamples - (i_cyclePos - i_cycleSamples), i_cycleSamples, d_left, d_right, panCurve) :
+        slider9 == 2 ? tgtPan = 1 - getCurve(slider11, i_cyclePos, i_cycleSamples, d_left, d_right, panCurve);
+      ): tgtPan = getCurve(slider11, i_cyclePos, i_cycleSamples, d_left, d_right, panCurve);
+
+      // Progress
+      i_curPos.fn_progress((play_state&0 && b_calcSig) || play_state&1);
+    ):(
+      tgtPan = d_offset;
+    )
+  ):( // From input
+    tgtPan = panSync== 4 ? spl2 : panSync== 5 ? spl2 * 0.5 + 0.5;
+    tgtPan = getCurve(slider11, max(0,min(1,tgtPan)), 1, d_left, d_right, panCurve);
+  );
+
+  /* Duck */
+  slider39 ? (
+    spl3 /* Duck in */ >= d_duckThreshold ? (
+      d_duck = (abs(spl3) - d_duckThreshold) * d_duckPct;
+      !slider37 || (slider37 == 4 && rand(1) < 0.5) ||
+      (i_totalSamples > i_cycleSamples && 
+        (slider37 == 2 && i_cyclePos > i_cycleSamples) || 
+        (slider37 == 2 && i_cyclePos <= i_cycleSamples)) ? 
+      d_duck = -d_duck;
+    );
+    slider36 ? d_duck = walkingAverage(d_duck, d_duckRMS, i_duckMem);
+    tgtPan += d_duck;
+    tgtPan = !slider38 ? max(0,min(1, tgtPan)) : (tgtPan > 1 ? 1 - (tgtPan - 1) : tgtPan < 0 ? -tgtPan : tgtPan);
+  );
+
+  pan = slider60 ? walkingAverage(tgtPan, d_panRMS, i_aveMem) : tgtPan;
+  pan > 1 ? pan = 1 - (pan - 1); pan < 0 ? pan = -pan;
+  slider64 = spl2 = pan;
+  strpan = pan;
+  invpan = 1 - pan;
 );
-pan = i_smooth ? walkingAverage(tgtPan, i_smooth, a_ave) : tgtPan;
-slider64 = spl2 = pan;
-invpan = 1 - pan;
-panlaw != 1 ? (
-  pan *= lerp(panlaw, 1, abs(0.5 - pan) * 2);
-  invpan *= lerp(panlaw, 1, abs(0.5 - invpan) * 2);
+
+/* Output */
+b_calcSig ? (
+  panlaw != 1 ? (
+    strpan ? strpan *= lerp(panlaw, 1, abs(0.5 - strpan) * 2);
+    invpan ? invpan *= lerp(panlaw, 1, abs(0.5 - invpan) * 2);
+  );
+  spl0 = (i_ch&1 ? s0 * invpan) + (i_ch&2 ? s1 * strpan);
+  spl1 = (i_ch&1 ? s0 * strpan) + (i_ch&2 ? s1 * invpan);
 );
-spl0 = (f_ch&1 ? s0 * invpan) + (f_ch&2 ? s1 * pan);
-spl1 = (f_ch&1 ? s0 * pan) + (f_ch&2 ? s1 * invpan);
 
 @gfx 400 100
 
@@ -250,7 +312,6 @@ while (
   prevX = pos;
   prevY = y;
   y = halfH - halfH * getCurve(slider11, gfx_w - pos, gfx_w, d_left, d_right, panCurve);
-  i_smooth ? y = walkingAverage(y, i_smooth, a_aveG);
   gfx_line(prevX, prevY, pos, y, 1);
   pos += 1;
   pos <= gfx_w;
@@ -271,4 +332,5 @@ while (
   pos >= 0;
 );
 gfx_r = !gfx_g = gfx_b = 0;
-gfx_circle(pan * gfx_w, i_cyclePos/i_totalSamples * gfx_h, 5, 1, 1);
+y = panSync< 4 ? i_cyclePos/i_totalSamples * gfx_h : halfH;
+gfx_circle(pan * gfx_w, y, 5, 1, 1);
