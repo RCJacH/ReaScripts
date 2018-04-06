@@ -28,6 +28,9 @@ About:
 
 
 Changelog:
+  * v1.0pre2 (2018-04-05)
+    # Fixed saving progress, but you have to save the project.
+    # I will do a rewrite of the script later thus going back to pre-release.
   * v1.0rc2 (2018-03-28)
     # Fixed number on Random button not showing
     # Changed None/All button to red since it's somewhat destructive.
