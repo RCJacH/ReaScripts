@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="df594297d69018c3731de0712b087b591a5b1a87" name="RCJacH Scripts">
+<index version="1" commit="dadfb578de00a0ba954130794e174d209a279f2c" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -89,13 +89,20 @@ Potential Addition:
 \widowctrl\hyphauto
 
 {\pard \ql \f0 \sa180 \li0 \fi0 Suedo bit based gain adjustment for float point audio. 1 bit ~= 6.0206 dB (doubling of distance).\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 RCBitRangeGain solves two issues of the traditional dB-based gain plugin:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab When doing static gain alternation (meaning no automation) by twice/half of the sound pressure, we often adjust the signal by 6dB. However 6dB is around 1.9952623149688795, rather than the integer 2 which we desired, thus the signal will expand in number of digits, and truncate when it reaches the length of limit of the bit depth used for calculation, cause some sort of distortion, although likely inaudible. This is resolved by the AirWindows BitShiftGain algorithm, which adjusts volume by the exact number that represents bit shifting rather than dB.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab When doing dynamic gain alternation (with automation), there might occur a zipper noise, a sudden high frequency distortion like aliasing (like that of the digital square wave), when moving the volume slider too quickly. This is resolved by the AirWindows PurestGain algorithm, which does the volume change with smoothing effect. The result is no aliasing, but a bit slower reaction to changes. The original PurestGain fader has 4000 samples window of smooth effect, and I reduced it to 800, which in my opinion is a better balance between smoothness and reaction speed.\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 By combining the two AirWindows algorithms, RCBitRangeGain can be used both statically and dynamically. Also I included other controls related to the basic concept so users can still break away from only doing 6dB gains, although when adjusting gains by anything other than bits will cause truncation.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Macro Shift} to increase or decrease audio input by 6.0206 dB per bit.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Micro Shift} to fine adjust audio within 1 bit.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Bit Ratio} to adjust the dB representation of one bit.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Fader} is used as a percentage controller after bit shifting.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Fader} is used as a controller of output volume in percentage after bit shifting.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Fader Curve} to adjust the behavior of {\b Fader} slider.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Increase {\b Smooth Fader} if gain adjustment causes zipper noise.\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Increase {\b Smooth Fader} if gain adjustment causes zipper noise.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Pan} is used to balanced the volume of L-R channels.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Pan Law (dB)} to determine whether the audio is attenuated or amplified when approaching center.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Increase {\b Smooth Pan} if pan adjustment causes zipper noise.\sa180\par}
 }
 ]]></description>
         <link rel="website">https://github.com/RCJacH/ReaScripts</link>
