@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="9e52e9496749f6c529f516335d30fbb837ed6732" name="RCJacH Scripts">
+<index version="1" commit="df594297d69018c3731de0712b087b591a5b1a87" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -259,6 +259,25 @@ Potential Addition:
       </version>
       <version name="1.0rc2a" author="RCJacH" time="2017-05-06T03:17:15Z">
         <source>https://github.com/RCJacH/ReaScripts/raw/d0427d7f6fdeddd9f5ee2deac8068fb3d539e3ae/JSFX/Synth/Tone%20Sweep.jsfx</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JSFX/Synth/ReaModular">
+    <reapack name="RCAutoPanner.jsfx" type="effect" desc="ReaModular - RCAutoPanner">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 Description\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 PRERELEASE, USE ONLY FOR TESTING PURPOSES. I might change the slider numbering later on.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 ReaModular - RCAutoPanner is an auto panning JSFX effect, supporting 6 types of sync method, also panning curves, cv input and other effects.\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.0pre1" author="RCJacH" time="2018-04-04T12:03:53Z">
+        <source>https://github.com/RCJacH/ReaScripts/raw/a4adeb1a75ac1fda2bc37a2bd9a961911f38d464/JSFX/Synth/ReaModular/RCAutoPanner.jsfx</source>
       </version>
     </reapack>
   </category>

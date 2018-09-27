@@ -11,14 +11,39 @@ About:
   Suedo bit based gain adjustment for float point audio.
   1 bit ~= 6.0206 dB (doubling of distance).
   
+  RCBitRangeGain solves two issues of the traditional dB-based gain plugin:
+    1. When doing static gain alternation (meaning no automation) by twice/half of the sound pressure, 
+       we often adjust the signal by 6dB. However 6dB is around 1.9952623149688795, rather than the 
+       integer 2 which we desired, thus the signal will expand in number of digits, and truncate when
+       it reaches the length of limit of the bit depth used for calculation, cause some sort of distortion,
+       although likely inaudible. This is resolved by the AirWindows BitShiftGain algorithm, which adjusts
+       volume by the exact number that represents bit shifting rather than dB.
+    2. When doing dynamic gain alternation (with automation), there might occur a zipper noise, a sudden 
+       high frequency distortion like aliasing (like that of the digital square wave), when moving the 
+       volume slider too quickly. This is resolved by the AirWindows PurestGain algorithm, which does
+       the volume change with smoothing effect. The result is no aliasing, but a bit slower reaction to
+       changes. The original PurestGain fader has 4000 samples window of smooth effect, and I reduced it
+       to 800, which in my opinion is a better balance between smoothness and reaction speed.
+
+  By combining the two AirWindows algorithms, RCBitRangeGain can be used both statically and dynamically.
+  Also I included other controls related to the basic concept so users can still break away from only
+  doing 6dB gains, although when adjusting gains by anything other than bits will cause truncation.
+  
   Instruction:
     * Use **Macro Shift** to increase or decrease audio input by 6.0206 dB per bit.
     * Use **Micro Shift** to fine adjust audio within 1 bit.
     * Use **Bit Ratio** to adjust the dB representation of one bit.
-    * **Fader** is used as a percentage controller after bit shifting.
+    * **Fader** is used as a controller of output volume in percentage after bit shifting.
     * Use **Fader Curve** to adjust the behavior of **Fader** slider.
     * Increase **Smooth Fader** if gain adjustment causes zipper noise.
+    * **Pan** is used to balanced the volume of L-R channels.
+    * Use **Pan Law (dB)** to determine whether the audio is attenuated or amplified when approaching center.
+    * Increase **Smooth Pan** if pan adjustment causes zipper noise.
 Changelog:
+  * v1.3 (2018-09-27)
+    + Using PurestGain Fader algorithm to change pan, so panning should be smoother now.
+  * v1.2 (2018-04-12)
+    + Added Pan controls
   * v1.1 (2018-02-13)
     + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
     * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
@@ -31,7 +56,7 @@ Changelog:
 
 // License: GPL- http://www.gnu.org/licenses/gpl.html
 
-desc: RCBitRangeGain
+desc: BitRangeGain
 
 slider1: 0<-16,16,1> Macro Shift (Bit ~= 6.0206 dB)
 slider2: 0<-100,100,0.000001> Micro Shift (% of a Bit)
@@ -41,28 +66,52 @@ slider11: 100<0, 100, 0.0001> Fader (% of total)
 slider12: 2<0,10,0.1> Fader Curve
 slider13: 2<0.1,10,0.1> Smooth Fader
 
+slider21: 0<-100,100,0.1>Pan
+slider22: 0<-6,6,1.5>Pan Law (dB)
+slider23: 2<0.1,10,0.1> Smooth Pan
+
 in_pin: Input L
 in_pin: Input R
 out_pin: Output L
 out_pin: Output R
 
 @init
-maxs1 = 16;
 vFade = 1;
 faderTgt = faderCrnt = 2 ^ ((slider11 * 0.01) ^ slider12) - 1;
+panCrnt = panTgt = 0.005 * slider21 + 0.5;
 
 @slider
-slider1 = min(max(-maxs1, slider1),maxs1);
+slider1 = min(max(-16, slider1),16);
 slider2 = min(max(-100, slider2),100);
 slider11 = min(max(0, slider11),100);
 shift = 2 ^ ((slider1 + slider2 * 0.01) * slider3);
 faderTgt = 2 ^ ((slider11 * 0.01) ^ slider12) - 1;
-smooth = 400 * slider13;
-_smooth = 1 /(smooth + 1);
+faderSmooth = 400 * slider13;
+_faderSmooth = 1 / (faderSmooth + 1);
+
+panTgt = 0.005 * slider21 + 0.5;
+panlaw = 2 ^ ((slider22 + 6)/6);
+pancomp = (panlaw > 1.0 ? 1.0/panlaw : panlaw);
+panSmooth = 400 * slider23;
+_panSmooth = 1 / (panSmooth + 1);
 
 @sample
-faderCrnt = (((faderCrnt * smooth) + faderTgt)) * _smooth;
+faderCrnt = (((faderCrnt * faderSmooth) + faderTgt)) * _faderSmooth;
 vFade = faderCrnt;
 shift && vFade ? vFade *= shift;
 
-spl0 *= vFade; spl1 *= vFade;
+panCrnt = (((panCrnt * panSmooth) + panTgt)) * _panSmooth;
+
+adj = vFade;
+
+panlaw != 1.0 ? (
+  panlaw > 1.0 ? adj *= panlaw;
+  panatt = 1.0 - abs(panCrnt * 2 - 1.0);
+  adj *= pancomp+(1.0-pancomp)*(2.0/(2.0-panatt)-1.0);
+);
+
+adj0 = adj1 = adj;
+adj1 *= panCrnt;
+adj0 *= (1.0 - panCrnt);
+
+spl0 *= adj0; spl1 *= adj1;
