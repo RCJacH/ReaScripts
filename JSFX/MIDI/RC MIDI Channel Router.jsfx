@@ -1,0 +1,349 @@
+/*
+JSFX Name: RC MIDI Channel Router
+Author: RCJacH
+Release Date: Jun 2019
+Link: https://github.com/RCJacH/ReaScripts
+Version: 1.0
+About:
+  ## Description
+
+  RC MIDI Channel Router is a MIDI plugin to send each Note-On/Note-Off/CC event to assigned Channel(s) accordingly.
+
+  ## How to Use
+    1. Select channel using channel select buttons number 1-16.
+    2. Press (and drag) Note button below to toggle note send state.
+       Green means note will be send to selected Channel upon receiving input.
+       Red means not send.
+    3. You can switch to separate CCs assignment window by pressing the CC button at the top-right position.
+
+    There are four extra buttons located at the top-center of the plugin.
+    Reset: Reseting all notes and ccs of all channels to default setting.
+    All: Turn all notes/cc of the current channel on (green).
+    None: Turn all notes/cc of the current channel off (red).
+    Flip: Invert all notes/cc of the current channel.
+
+Changelog:
+  * v1.0 (2019-06-30)
+    + Initial Release
+*/
+
+// Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
+
+desc: RC MIDI Channel Router
+
+slider1: cur_ch=0<0,15,1>-Channel
+slider2: select_mode=0<0,1,1>-Note/CC
+slider10: i_note=0<0,127,1>-Select Note
+slider11: ch1=0<0,1,1>-Channel 1
+slider12: ch2=0<0,1,1>-Channel 2
+slider13: ch3=0<0,1,1>-Channel 3
+slider14: ch4=0<0,1,1>-Channel 4
+slider15: ch5=0<0,1,1>-Channel 5
+slider16: ch6=0<0,1,1>-Channel 6
+slider17: ch7=0<0,1,1>-Channel 7
+slider18: ch8=0<0,1,1>-Channel 8
+slider19: ch9=0<0,1,1>-Channel 9
+slider20: ch10=0<0,1,1>-Channel 10
+slider21: ch11=0<0,1,1>-Channel 11
+slider22: ch12=0<0,1,1>-Channel 12
+slider23: ch13=0<0,1,1>-Channel 13
+slider24: ch14=0<0,1,1>-Channel 14
+slider25: ch15=0<0,1,1>-Channel 15
+slider26: ch16=0<0,1,1>-Channel 16
+
+@init
+
+  STATUS_NOTE_ON          = $x90; // Note On Message
+  STATUS_NOTE_OFF         = $x80; // Note Off Message
+  STATUS_CC               = $xB0; // CC Message
+
+  which_ch = -1;
+  click = -1;
+  flip_mode = -1;
+
+  inc = 0;
+  a_notes = inc; inc += 128;
+  a_ccs = inc; inc += 128;
+  a_gridx = inc; inc += 12;
+  a_gridy = inc; inc += 14;
+
+  w = 48;
+  h = 24;
+  br = 2;
+  br2 = br*2;
+
+  function setupGrid(inc)
+  local(i, tmp)
+  global(w, h, br, br2, a_gridx, a_gridy)
+  (
+    i = 0;
+    tmp = br2;
+    loop(12,
+      a_gridx[i] = tmp;
+      tmp += w + br;
+      i += 1;
+    );
+    i = 0;
+    tmp = br2;
+    loop(14,
+      a_gridy[i] = tmp;
+      tmp += (i==2 ? br2:h + br);
+      i += 1;
+    );
+  );
+
+  setupGrid(inc);
+  a = a_gridx[1];
+  a2 = a_gridy[1];
+
+  function getChNoteV(n,t) 
+  (
+    (t == 0) ? a_notes[n] :
+    (t == 1) ? a_ccs[n];
+  );
+
+  function setDefault() (
+    memset(a_notes, 1, 128);
+    memset(a_ccs, 1, 128);
+  );
+
+  function setValue(v) local(i) global(mem, chv) (
+    i = 0;
+    loop(128,
+      !v ? (
+        mem[i] |= chv;
+        mem[i] ~= chv;
+      ):(
+        mem[i] |= chv;
+      );
+      i += 1;
+    );
+  );
+
+  function setValue(v,start,n) local(i) global(mem, chv) (
+    i = start;
+    loop(n,
+      !v ? (
+        mem[i] |= chv;
+        mem[i] ~= chv;
+      ):(
+        mem[i] |= chv;
+      );
+      i += 1;
+    );
+  );
+
+  function flipValue() local(i) global(mem, chv) (
+    i = 0;
+    loop(128,
+      mem[i] ~= chv;
+      i += 1;
+    );
+  );
+
+  function setChV() global(chv,cur_ch) (
+    chv = 1<<cur_ch;
+  );
+
+  function updateSliders()
+  local(memn)
+  (
+    memn=select_mode?a_ccs[i_note]:a_notes[i_note];
+    ch1=memn&1;
+    ch2=memn&1<<1?1;
+    ch3=memn&1<<2?1;
+    ch4=memn&1<<3?1;
+    ch5=memn&1<<4?1;
+    ch6=memn&1<<5?1;
+    ch7=memn&1<<6?1;
+    ch8=memn&1<<7?1;
+    ch9=memn&1<<8?1;
+    ch10=memn&1<<9?1;
+    ch11=memn&1<<10?1;
+    ch12=memn&1<<11?1;
+    ch13=memn&1<<12?1;
+    ch14=memn&1<<13?1;
+    ch15=memn&1<<14?1;
+    ch16=memn&1<<15?1;
+  );
+
+  !inited ? (
+    setDefault();
+    setChV();
+    inited = 1;
+  );
+
+  updateSliders();
+
+@serialize
+  file_mem(0, a_notes, 128);
+  file_mem(0, a_ccs, 128);
+
+@slider
+  function sliderV() (
+    (ch1?1) + (ch2?2) + (ch3?4) + (ch4?8) + (ch5?16) + (ch6?32) +
+    (ch7?64) + (ch8?128) + (ch9?256) + (ch10?512) + (ch11?1024) +
+    (ch12?2048) + (ch13?4096) + (ch14?8192) + (ch15?16384) + (ch16?32768);
+  );
+  
+  mem = select_mode ? a_ccs : a_notes;
+
+  updateSliders();
+
+
+@block
+
+  while (
+    midirecv(offset, msg1, msg2, msg3) ? (
+      in_ch = msg1&$x0F;
+      in_type = msg1&$xF0;
+      type = (in_type == STATUS_NOTE_ON) || (in_type == STATUS_NOTE_OFF) ? 0 :
+             (in_type == STATUS_CC) ? 1 : -1;
+      type != -1 && (which_ch == -1 || in_ch == which_ch) ? (
+        chNoteV = getChNoteV(msg2, type);
+        chNoteV != 0 ? (
+          i = 0;
+          loop(16,
+            chNoteV&(2 ^ i) ? (
+              msg1 = in_type + i;
+              midisend(offset, msg1, msg2, msg3);
+            );
+            i += 1;
+          );
+        );
+      ): midisend(offset, msg1, msg2, msg3);
+    );
+  );
+
+@gfx 604 348
+
+  function uix_getPitName(pit) (
+    pit = pit == 0 ? "C" :
+          pit == 1 ? "C#" :
+          pit == 2 ? "D" :
+          pit == 3 ? "D#" :
+          pit == 4 ? "E" :
+          pit == 5 ? "F" :
+          pit == 6 ? "F#" :
+          pit == 7 ? "G" :
+          pit == 8 ? "G#" :
+          pit == 9 ? "A" :
+          pit == 10 ? "Bb" :
+          pit == 11 ? "B";
+    strcpy(#,pit);
+  );
+
+  function uix_setColor(n) (
+    !n ? (gfx_r = 1; gfx_g = .94; gfx_b = 0.83;) :
+    n == 10 ? (gfx_r = .06; gfx_g = .19; gfx_b = 0.36;) :
+    n == 11 ? (gfx_r = .08; gfx_g = .45; gfx_b = 0.50;) :
+    n == 20 ? (gfx_r = .55; gfx_g = .35; gfx_b = .35;) :
+    n == 30 ? (gfx_r = .64; gfx_g = .87; gfx_b = .61;);
+  );
+
+  function ui_drawTitle() (
+    gfx_setfont(1, "Arial", 24, 'b');
+    uix_setColor(10);
+    gfx_x = gfx_y = br2;
+    gfx_drawstr("MIDI Channel Router");
+    gfx_setfont(1, "Arial", 16, 'b');
+    gfx_x = w*2.8; gfx_y = br+h;
+    gfx_drawstr("@RCJacH");
+  );
+
+  function ui_drawButton(x,y,w,h,c,s) local(sw,sh) (
+    uix_setColor(c ? 30 : 20);
+    gfx_rect(x, y, w, h);
+    uix_setColor(c ? 11 : 0);
+    gfx_measurestr(s, sw, sh);
+    gfx_x = x + w * 0.5 - sw * 0.5;
+    gfx_y = y + h * 0.5 - sh * 0.5;
+    gfx_drawstr(s);
+  );
+
+  function ui_drawNote(i) (
+    this.ui_drawButton(a_gridx[i%12], a_gridy[floor(i/12)+3], w, h,
+      select_mode ? a_ccs[i]&1<<cur_ch : a_notes[i]&1<<cur_ch,
+      select_mode ? sprintf(#, "%i", i):strcat(strcpy(#,uix_getPitName(i%12)),sprintf(#,"%i",floor(i/12)));
+    );
+  );
+
+  function ui_drawNotes() local(i, hi, vi) (
+    i = 0;
+    loop(128,
+      hi = i % 12; vi = floor(i / 12) + 3;
+      ui_drawNote(i);
+      mouse_x >= a_gridx[hi] && mouse_x <= a_gridx[hi]+w && mouse_y >= a_gridy[vi] && mouse_y <= a_gridy[vi]+h ? (
+        mouse_cap&1 ? (
+          hold_first == -1 ? hold_first = mem[i]&chv;
+          click != i ? (
+            hold_first ? (
+              mem[i] |= chv;
+              mem[i] ~= chv;
+            ):(
+              mem[i] |= chv;
+            );
+          );
+          click = i;
+          updateSliders();
+        );
+        mouse_cap == 0 ? (
+          hold_first = -1;
+          click = -1;
+        );
+      );
+      i += 1;
+    );
+
+  );
+
+  function ui_drawClickableButton(x,y,w,h,c,s) instance(click,activated) (
+    this.ui_drawButton(x, y, w, h, c, s);
+    mouse_x >= x && mouse_x <= x+w && mouse_y >= y && mouse_y <= y+h ? (
+      mouse_cap&1 ? click = 1;
+      click && mouse_cap == 0 ? click = 2;
+      click == 2 ? (activated = 1; click = 0);
+    );
+  );
+
+  function ui_drawChannelSwitch(x,y) local(i,x1) instance(click,activated) (
+    i = 0;
+    loop(16,
+      x1 = x + h*i + br*i*0.5;
+      ui_drawButton(x1,y,i==15?h-1:h,h,cur_ch==i,sprintf(#, "%i", i+1));
+      mouse_x >= x1 && mouse_x <= x1+h && mouse_y >= y && mouse_y <= y+h ? (
+        mouse_cap&1 ? click = i + 1;
+        (click == i + 1) && !mouse_cap ? (
+          cur_ch = i;
+          setChV();
+          updateSliders();
+        );
+      );
+      i += 1;
+    );
+  );
+
+  uix_setColor(0);
+  gfx_rect(0,0,gfx_w,gfx_h);
+
+  ui_drawTitle();
+  
+  gfx_setfont(1, "Arial", 20, 'b');
+
+  ui_drawNotes();
+
+  bt_reset.ui_drawClickableButton(a_gridx[4], br2, w, h, bt_reset.click, "Reset");
+  bt_reset.activated ? (setDefault(); bt_reset.activated = 0;);
+  bt_all.ui_drawClickableButton(a_gridx[5], br2, w, h, bt_all.click, "All");
+  bt_all.activated ? (setValue(1); bt_all.activated = 0;);
+  bt_none.ui_drawClickableButton(a_gridx[6], br2, w, h, bt_none.click, "None");
+  bt_none.activated ? (setValue(0); bt_none.activated = 0;);
+  bt_flip.ui_drawClickableButton(a_gridx[7], br2, w, h, bt_flip.click, "Flip");
+  bt_flip.activated ? (flipValue(); bt_flip.activated = 0;);
+
+  bt_modeNote.ui_drawClickableButton(a_gridx[10], br2, w, h, !select_mode, "Note");
+  bt_modeNote.activated ? (select_mode = 0; mem = a_notes; bt_modeNote.activated = 0; updateSliders(););
+  bt_modeCC.ui_drawClickableButton(a_gridx[11], br2, w, h, select_mode, "CC");
+  bt_modeCC.activated ? (select_mode = 1; mem = a_ccs; bt_modeCC.activated = 0; updateSliders(););
+
+  sw_channel.ui_drawChannelSwitch(a_gridx[4],br2+br+h);
