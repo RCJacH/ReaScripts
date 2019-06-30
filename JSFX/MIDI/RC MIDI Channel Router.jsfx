@@ -192,28 +192,26 @@ slider26: ch16=0<0,1,1>-Channel 16
 
 
 @block
-
-  while (
-    midirecv(offset, msg1, msg2, msg3) ? (
-      in_ch = msg1&$x0F;
-      in_type = msg1&$xF0;
-      type = (in_type == STATUS_NOTE_ON) || (in_type == STATUS_NOTE_OFF) ? 0 :
-             (in_type == STATUS_CC) ? 1 : -1;
-      type != -1 && (which_ch == -1 || in_ch == which_ch) ? (
-        chNoteV = getChNoteV(msg2, type);
-        chNoteV != 0 ? (
-          i = 0;
-          loop(16,
-            chNoteV&(2 ^ i) ? (
-              msg1 = in_type + i;
-              midisend(offset, msg1, msg2, msg3);
-            );
-            i += 1;
+  while (midirecv(offset, msg1, msg2, msg3)) (
+    in_ch = msg1&$x0F;
+    in_status = msg1&$xF0;
+    status = (in_status == STATUS_NOTE_ON) || (in_status == STATUS_NOTE_OFF) ? 0 :
+           (in_status == STATUS_CC) ? 1 : -1;
+    status != -1 && (which_ch == -1 || in_ch == which_ch) ? (
+      chNoteV = getChNoteV(msg2, status);
+      chNoteV != 0 ? (
+        i = 0;
+        loop(16,
+          chNoteV&(2 ^ i) ? (
+            msg1 = in_status + i;
+            midisend(offset, msg1, msg2, msg3);
           );
+          i += 1;
         );
-      ): midisend(offset, msg1, msg2, msg3);
-    );
+      );
+    ): midisend(offset, msg1, msg2, msg3);
   );
+
 
 @gfx 604 348
 
