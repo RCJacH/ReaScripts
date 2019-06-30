@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="dadfb578de00a0ba954130794e174d209a279f2c" name="RCJacH Scripts">
+<index version="1" commit="e20d37e5466383052909045840c87c9a45fedcd9" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -242,6 +242,28 @@ Potential Addition:
 * v1.0 (2016-07-24)
  + Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/bee92c21a11db6084007db0d7c233799a3017059/JSFX/MIDI/midi_note_beat_repeater.jsfx</source>
+      </version>
+    </reapack>
+    <reapack name="RC MIDI Channel Router.jsfx" type="effect" desc="RC MIDI Channel Router">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 Description\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 RC MIDI Channel Router is a MIDI plugin to send each Note-On/Note-Off/CC event to assigned Channel(s) accordingly.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 How to Use\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Select channel using channel select buttons number 1-16.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Press (and drag) Note button below to toggle note send state. Green means note will be send to selected Channel upon receiving input. Red means not send.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab You can switch to separate CCs assignment window by pressing the CC button at the top-right position.\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 There are four extra buttons located at the top-center of the plugin. Reset: Reseting all notes and ccs of all channels to default setting. All: Turn all notes/cc of the current channel on (green). None: Turn all notes/cc of the current channel off (red). Flip: Invert all notes/cc of the current channel.\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.0" author="RCJacH" time="2019-06-30T12:52:13Z">
+        <changelog><![CDATA[+ Initial Release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/e20d37e5466383052909045840c87c9a45fedcd9/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
       </version>
     </reapack>
   </category>
