@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="e20d37e5466383052909045840c87c9a45fedcd9" name="RCJacH Scripts">
+<index version="1" commit="de67d37089f937f870ece31e8710321295ee6ecc" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -342,6 +342,28 @@ Potential Addition:
       </metadata>
       <version name="1.0" author="RCJacH" time="2017-03-07T11:30:33Z">
         <source main="main">https://github.com/RCJacH/ReaScripts/raw/bacfc0d2cf9e3a139500cafa86b629917ac1dac6/Lua/Editing/RCJacH_Glue%20Selected%20Items%20Preserve%20First%20Item%20Name.lua</source>
+      </version>
+    </reapack>
+    <reapack name="RCJacH_Select Tracks with Regex.lua" type="script" desc="Select Tracks with Regex">
+      <version name="1.0a" author="RCJacH" time="2021-05-05T14:58:17Z">
+        <changelog><![CDATA[* v1.0a (2021-05-05)
+  + Initial Release.]]></changelog>
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/b4f9d05c383a7041a272268f26f0d161b2b4e7ad/Lua/Editing/RCJacH_Select%20Tracks%20with%20Regex.lua</source>
+      </version>
+    </reapack>
+    <reapack name="RCJacH_Set Parent Send Channel Offset of Selected Tracks.lua" type="script" desc="Set Channel Offset of All Selected Tracks with prompt input">
+      <version name="1.0a" author="RCJacH" time="2021-05-05T14:58:42Z">
+        <changelog><![CDATA[* v1.0a (2021-05-05)
+  + Initial Release.]]></changelog>
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/de67d37089f937f870ece31e8710321295ee6ecc/Lua/Editing/RCJacH_Set%20Parent%20Send%20Channel%20Offset%20of%20Selected%20Tracks.lua</source>
+      </version>
+    </reapack>
+    <reapack name="RCJacH_Spread Items Horizontally.lua" type="script" desc="Spread items horizontally">
+      <metadata>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.0" author="RCJacH" time="2021-05-05T14:58:01Z">
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/9813dfcdccd86fd31e81e6897ba069d26074d31a/Lua/Editing/RCJacH_Spread%20Items%20Horizontally.lua</source>
       </version>
     </reapack>
   </category>
