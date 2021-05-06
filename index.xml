@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="de67d37089f937f870ece31e8710321295ee6ecc" name="RCJacH Scripts">
+<index version="1" commit="5c6d503d8a443e80b81024c404ddf04b6f80f0dc" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -351,19 +351,30 @@ Potential Addition:
         <source main="main">https://github.com/RCJacH/ReaScripts/raw/b4f9d05c383a7041a272268f26f0d161b2b4e7ad/Lua/Editing/RCJacH_Select%20Tracks%20with%20Regex.lua</source>
       </version>
     </reapack>
-    <reapack name="RCJacH_Set Parent Send Channel Offset of Selected Tracks.lua" type="script" desc="Set Channel Offset of All Selected Tracks with prompt input">
-      <version name="1.0a" author="RCJacH" time="2021-05-05T14:58:42Z">
-        <changelog><![CDATA[* v1.0a (2021-05-05)
-  + Initial Release.]]></changelog>
-        <source main="main">https://github.com/RCJacH/ReaScripts/raw/de67d37089f937f870ece31e8710321295ee6ecc/Lua/Editing/RCJacH_Set%20Parent%20Send%20Channel%20Offset%20of%20Selected%20Tracks.lua</source>
-      </version>
-    </reapack>
     <reapack name="RCJacH_Spread Items Horizontally.lua" type="script" desc="Spread items horizontally">
       <metadata>
         <link rel="website">https://github.com/RCJacH/ReaScripts</link>
       </metadata>
       <version name="1.0" author="RCJacH" time="2021-05-05T14:58:01Z">
         <source main="main">https://github.com/RCJacH/ReaScripts/raw/9813dfcdccd86fd31e81e6897ba069d26074d31a/Lua/Editing/RCJacH_Spread%20Items%20Horizontally.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="Lua/Templating">
+    <reapack name="RCJacH_Set Airwindows Console TrackFX Pin Mapping.lua" type="script" desc="Setup the pin mapping of selected airwindows console summing track, with console bus as the last fx and console channel as all others.">
+      <version name="1.0a" author="RCJacH" time="2021-05-06T08:18:51Z">
+        <changelog><![CDATA[* v1.0a (2021-05-06)
+  + Initial Release.]]></changelog>
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/5c6d503d8a443e80b81024c404ddf04b6f80f0dc/Lua/Templating/RCJacH_Set%20Airwindows%20Console%20TrackFX%20Pin%20Mapping.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="Lua/Track Properties">
+    <reapack name="RCJacH_Set Parent Send Channel Offset of Selected Tracks.lua" type="script" desc="Set Channel Offset of All Selected Tracks with prompt input">
+      <version name="1.0a" author="RCJacH" time="2021-05-06T08:18:28Z">
+        <changelog><![CDATA[* v1.0a (2021-05-05)
+  + Initial Release.]]></changelog>
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/4d3a15b39843de0622bbe294eb1176446efb4d6e/Lua/Track%20Properties/RCJacH_Set%20Parent%20Send%20Channel%20Offset%20of%20Selected%20Tracks.lua</source>
       </version>
     </reapack>
   </category>
