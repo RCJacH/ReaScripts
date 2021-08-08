@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="06c385ab6cc80edcde60f572497068614bb92669" name="RCJacH Scripts">
+<index version="1" commit="d40d6a97a31250efee6b182e38ad1f74c80d3669" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -117,6 +117,21 @@ Potential Addition:
 * v1.0 (2017-01-11)
   + Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/3ec444f25cef1206d09bff82bbe48200da3ddb71/JSFX/Audio/RCBitRangeGain.jsfx</source>
+      </version>
+    </reapack>
+    <reapack name="RCInflator.jsfx" type="effect" desc="RCInflator">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 JSFX implementation of Sony Oxford Inflator algorithm, found on Gearspace.\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="0.2" author="RCJacH" time="2021-08-08T16:23:02Z">
+        <source>https://github.com/RCJacH/ReaScripts/raw/d40d6a97a31250efee6b182e38ad1f74c80d3669/JSFX/Audio/RCInflator.jsfx</source>
       </version>
     </reapack>
     <reapack name="RCNoiseBuzz.jsfx" type="effect" desc="RCNoiseBuzz">
