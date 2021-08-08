@@ -1,0 +1,56 @@
+/*
+JSFX Name: RCInflator
+Author: RCJacH
+Release Date: Aug 2021
+Link: https://github.com/RCJacH/ReaScripts
+Version: 0.2
+Reference:
+  tviler
+  Sony Oxford
+About:
+  JSFX implementation of Sony Oxford Inflator algorithm,
+  found on Gearspace.
+*/
+
+desc:RCInflator
+
+slider1:0<-60, 60, 0.1>Input (dB)
+slider2:100<0, 100, 0.1>Effect (%)
+slider3:curve=0<-50, 50, 0.0001>Curve
+
+slider5:0<-60, 6, 0.1>Output (dB)
+
+@init
+
+@slider
+in_db = 2 ^ (slider1 / 6);
+wet = slider2 * 0.01;
+dry = 1 - wet;
+out_db = 2 ^ (slider5 / 6);
+
+curvepct = curve * 0.01;
+// 1 + (curve + 50) / 100
+curveA = 1.5 + curvepct;
+// - curve / 50
+curveB = -(curvepct + curvepct);
+// (curve - 50) / 100
+curveC = curvepct - 0.5;
+// 1 / 16 - curve / 400 + curve ^ 2 / (4 * 10 ^ 4)
+curveD = 0.0625 - curve * 0.0025 + (curve * curve) * 0.000025;
+
+@sample
+s0 = spl0;
+s0 *= in_db;
+s0_2 = s0 * s0;
+s0_3 = s0_2 * s0;
+s0 = curveA * s0 + curveB * s0_2 + curveC * s0_3 + curveD * (s0_2 - 2 * s0_3 + s0_2 * s0_2);
+s0 *= out_db;
+spl0 = s0 * wet + spl0 * dry;
+
+s1 = spl1;
+s1 *= in_db;
+s1_2 = s1 * s1;
+s1_3 = s1_2 * s1;
+s1 = curveA * s1 + curveB * s1_2 + curveC * s1_3 + curveD * (s1_2 - 2 * s1_3 + s1_2 * s1_2);
+s1 *= out_db;
+spl1 = s1 * wet + spl1 * dry;
