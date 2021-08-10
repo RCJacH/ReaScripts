@@ -39,18 +39,18 @@ curveC = curvepct - 0.5;
 curveD = 0.0625 - curve * 0.0025 + (curve * curve) * 0.000025;
 
 @sample
-s0 = spl0;
+s0 = abs(spl0);
 s0 *= in_db;
 s0_2 = s0 * s0;
 s0_3 = s0_2 * s0;
-s0 = curveA * s0 + curveB * s0_2 + curveC * s0_3 + curveD * (s0_2 - 2 * s0_3 + s0_2 * s0_2);
+s0 = curveA * s0 + curveB * s0_2 + curveC * s0_3 - curveD * (s0_2 - 2 * s0_3 + s0_2 * s0_2);
 s0 *= out_db;
-spl0 = s0 * wet + spl0 * dry;
+spl0 = sign(spl0) * s0 * wet + spl0 * dry;
 
-s1 = spl1;
+s1 = abs(spl1);
 s1 *= in_db;
 s1_2 = s1 * s1;
 s1_3 = s1_2 * s1;
-s1 = curveA * s1 + curveB * s1_2 + curveC * s1_3 + curveD * (s1_2 - 2 * s1_3 + s1_2 * s1_2);
+s1 = curveA * s1 + curveB * s1_2 + curveC * s1_3 - curveD * (s1_2 - 2 * s1_3 + s1_2 * s1_2);
 s1 *= out_db;
-spl1 = s1 * wet + spl1 * dry;
+spl1 = sign(spl1) * s1 * wet + spl1 * dry;
