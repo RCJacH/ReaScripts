@@ -19,6 +19,7 @@ slider2:100<0, 100, 0.1>Effect (%)
 slider3:curve=0<-50, 50, 0.0001>Curve
 
 slider5:0<-60, 6, 0.1>Output (dB)
+slider6:clip=0<0,1,1{No,Yes}>Clip
 
 @init
 
@@ -41,6 +42,9 @@ curveD = 0.0625 - curve * 0.0025 + (curve * curve) * 0.000025;
 @sample
 s0 = abs(spl0);
 s0 *= in_db;
+clip ? (
+  s0 = s0 > 1 ? 1 : s0;
+);
 s0_2 = s0 * s0;
 s0_3 = s0_2 * s0;
 s0 = curveA * s0 + curveB * s0_2 + curveC * s0_3 - curveD * (s0_2 - 2 * s0_3 + s0_2 * s0_2);
@@ -49,6 +53,9 @@ spl0 = sign(spl0) * s0 * wet + spl0 * dry;
 
 s1 = abs(spl1);
 s1 *= in_db;
+clip ? (
+  s1 = s1 > 1 ? 1 : s1;
+);
 s1_2 = s1 * s1;
 s1_3 = s1_2 * s1;
 s1 = curveA * s1 + curveB * s1_2 + curveC * s1_3 - curveD * (s1_2 - 2 * s1_3 + s1_2 * s1_2);
