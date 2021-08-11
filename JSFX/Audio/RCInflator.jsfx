@@ -44,20 +44,34 @@ s0 = abs(spl0);
 s0 *= in_db;
 clip ? (
   s0 = s0 > 1 ? 1 : s0;
+  sgn = sign(spl0);
+) : (
+  s0 = 0.5 * s0 - 0.5;
+  frac = s0 - floor(s0);
+  s0 = 2 * abs(0.5 - frac);
+  frac = spl0 * 0.25 - 0.5;
+  sgn = sign(frac - floor(frac) - 0.5);
 );
 s0_2 = s0 * s0;
 s0_3 = s0_2 * s0;
 s0 = curveA * s0 + curveB * s0_2 + curveC * s0_3 - curveD * (s0_2 - 2 * s0_3 + s0_2 * s0_2);
 s0 *= out_db;
-spl0 = sign(spl0) * s0 * wet + spl0 * dry;
+spl0 = sgn * s0 * wet + spl0 * dry;
 
 s1 = abs(spl1);
 s1 *= in_db;
 clip ? (
   s1 = s1 > 1 ? 1 : s1;
+  sgn = sign(spl1);
+) : (
+  s1 = 0.5 * s1 - 0.5;
+  frac = s1 - floor(s1);
+  s1 = 2 * abs(0.5 - frac);
+  frac = spl1 * 0.25 - 0.5;
+  sgn = sign(frac - floor(frac) - 0.5);
 );
 s1_2 = s1 * s1;
 s1_3 = s1_2 * s1;
 s1 = curveA * s1 + curveB * s1_2 + curveC * s1_3 - curveD * (s1_2 - 2 * s1_3 + s1_2 * s1_2);
 s1 *= out_db;
-spl1 = sign(spl1) * s1 * wet + spl1 * dry;
+spl1 = sgn * s1 * wet + spl1 * dry;
