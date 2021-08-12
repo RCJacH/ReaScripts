@@ -2,7 +2,9 @@
 JSFX Name: RCInflator
 Author: RCJacH
 Release Date: Aug 2021
-Link: https://github.com/RCJacH/ReaScripts
+Link:
+  https://github.com/RCJacH/ReaScripts
+  https://forum.cockos.com/showthread.php?t=256286
 Version: 0.4
 Reference:
   tviler
@@ -10,6 +12,18 @@ Reference:
 About:
   JSFX implementation of Sony Oxford Inflator algorithm,
   found on Gearspace.
+Changelog:
+  * v0.4 (2021-08-13)
+    + Accurate decibel to float conversion.
+    + Wrap waveshaper above 0dB.
+    + Refactor waveshaper into function.
+  * v0.3 (2021-08-11)
+    + Apply waveshaper symmetrically.
+    * Fix sign Error.
+  * v0.2 (2021-08-09)
+    * Cleaned up code.
+  * v0.1 (2021-02-06)
+    + Initial alpha release.
 */
 
 desc:RCInflator
@@ -17,9 +31,8 @@ desc:RCInflator
 slider1:0<-60, 60, 0.1>Input (dB)
 slider2:100<0, 100, 0.1>Effect (%)
 slider3:curve=0<-50, 50, 0.0001>Curve
-
+slider4:clip=0<0,1,1{Off,On}>Clip
 slider5:0<-60, 6, 0.1>Output (dB)
-slider6:clip=0<0,1,1{No,Yes}>Clip
 
 @init
 
