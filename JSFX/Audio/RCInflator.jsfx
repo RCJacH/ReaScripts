@@ -9,10 +9,15 @@ Version: 0.4
 Reference:
   tviler
   Sony Oxford
+  samu4199
 About:
   JSFX implementation of Sony Oxford Inflator algorithm,
   found on Gearspace.
 Changelog:
+  * v0.5 (2021-08-13)
+    + Refactor code
+    + Add absolute clipping at 6dB.
+    + Add waveshapeOvershoot
   * v0.4 (2021-08-13)
     + Accurate decibel to float conversion.
     + Wrap waveshaper above 0dB.
@@ -35,6 +40,39 @@ slider4:clip=0<0,1,1{Off,On}>Clip
 slider5:0<-60, 6, 0.1>Output (dB)
 
 @init
+function waveshape(s1)
+local(s2, s3)
+global(curveA, curveB, curveC, curveD)
+(
+  s2 = s1 * s1;
+  s3 = s2 * s1;
+
+  curveA * s1 + curveB * s2 + curveC * s3 - curveD * (s2 - 2 * s3 + s2 * s2)
+);
+
+function waveshapeOvershoot(in)
+local(s)
+(
+  s = min(max(in, -2), 2);
+
+  2 * abs(s) - s * s
+);
+
+function process(in)
+local(s, abs_s, sgn)
+global(clip, dry, in_db, out_db, wet)
+(
+  s = in * in_db;
+  sgn = sign(s);
+  s = clip ? (
+    waveshape(min(max(s, -1), 1));
+  ) : (
+    s > 1 || s < -1 ? waveshapeOvershoot(s) : waveshape(s);
+  );
+  s *= out_db;
+
+  (sgn * s * wet + in * dry)
+);
 
 @slider
 in_db = exp(0.11512925464970229 * slider1);
@@ -53,30 +91,6 @@ curveC = curvepct - 0.5;
 curveD = 0.0625 - curve * 0.0025 + (curve * curve) * 0.000025;
 
 @sample
-function apply_waveshaper(in)
-local(s0, s0_2, s0_3, sgn, frac)
-global(curveA, curveB, curveC, curveD,
-       clip, dry, in_db, out_db, wet)
-(
-  s0 = abs(in);
-  s0 *= in_db;
-  clip ? (
-    s0 = s0 > 1 ? 1 : s0;
-    sgn = sign(in);
-  ) : (
-    s0 = 0.5 * s0 - 0.5;
-    frac = s0 - floor(s0);
-    s0 = 2 * abs(0.5 - frac);
-    frac = in * 0.25 - 0.5;
-    sgn = sign(frac - floor(frac) - 0.5);
-  );
-  s0_2 = s0 * s0;
-  s0_3 = s0_2 * s0;
-  s0 = curveA * s0 + curveB * s0_2 + curveC * s0_3 - curveD * (s0_2 - 2 * s0_3 + s0_2 * s0_2);
-  s0 *= out_db;
-  
-  sgn * s0 * wet + in * dry
-);
 
-spl0 = apply_waveshaper(spl0);
-spl1 = apply_waveshaper(spl1);
+spl0 = process(spl0);
+spl1 = process(spl1);
