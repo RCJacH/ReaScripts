@@ -5,7 +5,7 @@ Release Date: Aug 2021
 Link:
   https://github.com/RCJacH/ReaScripts
   https://forum.cockos.com/showthread.php?t=256286
-Version: 0.4
+Version: 0.6
 Reference:
   tviler
   Sony Oxford
@@ -14,6 +14,8 @@ About:
   JSFX implementation of Sony Oxford Inflator algorithm,
   found on Gearspace.
 Changelog:
+  * v0.6 (2021-08-13)
+    + Fix sign bug in waveshaper.
   * v0.5 (2021-08-13)
     + Refactor code
     + Add absolute clipping at 6dB.
@@ -53,25 +55,23 @@ global(curveA, curveB, curveC, curveD)
 function waveshapeOvershoot(in)
 local(s)
 (
-  s = min(max(in, -2), 2);
-
-  2 * abs(s) - s * s
+  s = min(in, 2);
+  2 * s - s * s
 );
 
 function process(in)
-local(s, abs_s, sgn)
+local(s)
 global(clip, dry, in_db, out_db, wet)
 (
-  s = in * in_db;
-  sgn = sign(s);
+  s = abs(in) * in_db;
   s = clip ? (
-    waveshape(min(max(s, -1), 1));
+    waveshape(min(s, 1));
   ) : (
-    s > 1 || s < -1 ? waveshapeOvershoot(s) : waveshape(s);
+    s > 1 ? waveshapeOvershoot(s) : waveshape(s);
   );
   s *= out_db;
 
-  (sgn * s * wet + in * dry)
+  sign(in) * s * wet + in * dry
 );
 
 @slider
