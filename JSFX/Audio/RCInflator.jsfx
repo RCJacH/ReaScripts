@@ -5,7 +5,7 @@ Release Date: Aug 2021
 Link:
   https://github.com/RCJacH/ReaScripts
   https://forum.cockos.com/showthread.php?t=256286
-Version: 0.4
+Version: 0.5.2
 Reference:
   tviler
   Sony Oxford
@@ -14,6 +14,9 @@ About:
   JSFX implementation of Sony Oxford Inflator algorithm,
   found on Gearspace.
 Changelog:
+  * v0.5.2 (2021-08-13)
+    + Applies in/output gain to dry signal
+    + Refactor for less CPU usage
   * v0.5.1 (2021-08-13)
     * Fix unsymmetrical waveshaping
   * v0.5 (2021-08-13)
@@ -42,39 +45,25 @@ slider4:clip=0<0,1,1{Off,On}>Clip
 slider5:0<-60, 6, 0.1>Output (dB)
 
 @init
-function waveshape(in)
-local(s1, s2, s3)
-global(curveA, curveB, curveC, curveD)
-(
-  s1 = abs(in);
-  s2 = s1 * s1;
-  s3 = s2 * s1;
-
-  curveA * s1 + curveB * s2 + curveC * s3 - curveD * (s2 - 2 * s3 + s2 * s2)
-);
-
-function waveshapeOvershoot(in)
-local(s)
-(
-  s = min(max(in, -2), 2);
-
-  2 * abs(s) - s * s
-);
-
 function process(in)
-local(s, abs_s, sgn)
-global(clip, dry, in_db, out_db, wet)
+local(s, s_2, s_3)
+global(curveA, curveB, curveC, curveD,
+    clip, dry, in_db, out_db, wet)
 (
-  s = in * in_db;
-  sgn = sign(s);
-  s = clip ? (
-    waveshape(min(max(s, -1), 1));
+  in *= in_db;
+  s = abs(in);
+  clip && s > 1.0 ? s = 1.0;
+  s_2 = s * s;
+  s_3 = s_2 * s;
+  s = (s >= 2.0) ? (
+    0.0
+  ) : s > 1.0 ? (
+    2.0 * s - s_2
   ) : (
-    s > 1 || s < -1 ? waveshapeOvershoot(s) : waveshape(s);
+    curveA * s + curveB * s_2 + curveC * s_3 - curveD * (s_2 - 2 * s_3 + s_2 * s_2)
   );
-  s *= out_db;
 
-  (sgn * s * wet + in * dry)
+  (sign(in) * s * wet + in * dry) * out_db
 );
 
 @slider
