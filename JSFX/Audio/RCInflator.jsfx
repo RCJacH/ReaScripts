@@ -14,6 +14,8 @@ About:
   JSFX implementation of Sony Oxford Inflator algorithm,
   found on Gearspace.
 Changelog:
+  * v0.5.1 (2021-08-13)
+    * Fix unsymmetrical waveshaping
   * v0.5 (2021-08-13)
     + Refactor code
     + Add absolute clipping at 6dB.
@@ -40,10 +42,11 @@ slider4:clip=0<0,1,1{Off,On}>Clip
 slider5:0<-60, 6, 0.1>Output (dB)
 
 @init
-function waveshape(s1)
-local(s2, s3)
+function waveshape(in)
+local(s1, s2, s3)
 global(curveA, curveB, curveC, curveD)
 (
+  s1 = abs(in);
   s2 = s1 * s1;
   s3 = s2 * s1;
 
