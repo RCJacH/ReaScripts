@@ -16,6 +16,7 @@ About:
 Changelog:
   * v0.6 (2021-08-13)
     + Fix sign bug in waveshaper.
+    + Apply gain to dry signal like original plugin.
   * v0.5 (2021-08-13)
     + Refactor code
     + Add absolute clipping at 6dB.
@@ -63,15 +64,15 @@ function process(in)
 local(s)
 global(clip, dry, in_db, out_db, wet)
 (
-  s = abs(in) * in_db;
+  in *= in_db;
+  s = abs(in);
   s = clip ? (
     waveshape(min(s, 1));
   ) : (
     s > 1 ? waveshapeOvershoot(s) : waveshape(s);
   );
-  s *= out_db;
 
-  sign(in) * s * wet + in * dry
+  (sign(in) * s * wet + in * dry) * out_db
 );
 
 @slider
