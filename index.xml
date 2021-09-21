@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="3da5db2a1c1d27ccf19c64dfd2d3fc9fbe39285e" name="RCJacH Scripts">
+<index version="1" commit="4f7d00eb27210e3cf55c8402afbc7815b9849c74" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -509,6 +509,29 @@ Potential Addition:
       </version>
     </reapack>
   </category>
+  <category name="Lua/Various">
+    <reapack name="RCJacH_Generate LRC Lyrics and Export to Clipboard.lua" type="script" desc="Generate LRC Lyrics and Export to Clipboard">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 What Does This Do\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 This script generates the lyrics in {\field{\*\fldinst{HYPERLINK "https://en.wikipedia.org/wiki/LRC_(file_format)"}}{\fldrslt{\ul
+LRC
+}}}
+ format from the take name of all items on the first selected track, and export the result to the system clipboard.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Take name starting with # is cosidered as ID tag.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Empty take name is rendered with only time code, usually for spacing purposes.\sa180\par}
+}
+]]></description>
+        <link rel="website" href="https://github.com/RCJacH/ReaScripts">Github Repository</link>
+      </metadata>
+      <version name="1.0" author="RCJacH" time="2021-09-21T12:29:04Z">
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/4f7d00eb27210e3cf55c8402afbc7815b9849c74/Lua/Various/RCJacH_Generate%20LRC%20Lyrics%20and%20Export%20to%20Clipboard.lua</source>
+      </version>
+    </reapack>
+  </category>
   <category name="Lua/Various/Vimper Solo">
     <reapack name="RCJacH_Vimper Solo.lua" type="script" desc="Vimper Solo">
       <metadata>
@@ -521,4 +544,14 @@ Potential Addition:
       </version>
     </reapack>
   </category>
+  <metadata>
+    <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 ReaScripts\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 This is a collection of JSFX and Lua Scripts that I have written for REAPER DAW.\par}
+}
+]]></description>
+  </metadata>
 </index>
