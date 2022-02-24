@@ -1,14 +1,14 @@
 --[[
-  ReaScript Name: Split items under mouse (obey snapping and selection)
-  Author: RCJacH
-  Website: https://github.com/RCJacH/ReaScript
-  Version: 1.0
+  @author RCJacH
+  @description Split items under mouse (obey snapping and selection)
+  @link
+    Github Repository https://github.com/RCJacH/ReaScript
+  @version 1.0
 
-  Description:
-  ------
-  Split selected items at mouse cursor (obey snapping), if no items are selected
-  split only the item under mouse cursor, if there is no item under mouse cursor,
-  split all items with confirmation.
+  @about
+    Split selected items at mouse cursor (obey snapping), if no items are selected
+    split only the item under mouse cursor, if there is no item under mouse cursor,
+    split all items with confirmation.
 ]]
 
 local CMD_SPLIT_SELECTED_ITEM = reaper.NamedCommandLookup("_S&M_SPLIT10")
