@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="919b2884570c37874d4aa6b610e0c13f00582301" name="RCJacH Scripts">
+<index version="1" commit="52b9a3632a304b7261b880d6b18135cddb570afe" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -466,6 +466,14 @@ Potential Addition:
       </metadata>
       <version name="1.0" author="RCJacH" time="2017-03-07T11:30:33Z">
         <source main="main">https://github.com/RCJacH/ReaScripts/raw/bacfc0d2cf9e3a139500cafa86b629917ac1dac6/Lua/Editing/RCJacH_Glue%20Selected%20Items%20Preserve%20First%20Item%20Name.lua</source>
+      </version>
+    </reapack>
+    <reapack name="RCJacH_Quick add or edit take marker under mouse cursor.lua" type="script" desc="Quick add or edit take marker under mouse cursor">
+      <metadata>
+        <link rel="website" href="https://github.com/RCJacH/ReaScript">Github Repository</link>
+      </metadata>
+      <version name="1.0" author="RCJacH" time="2022-02-24T20:24:32Z">
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/52b9a3632a304b7261b880d6b18135cddb570afe/Lua/Editing/RCJacH_Quick%20add%20or%20edit%20take%20marker%20under%20mouse%20cursor.lua</source>
       </version>
     </reapack>
     <reapack name="RCJacH_Select Tracks with Regex.lua" type="script" desc="Select Tracks with Regex">
