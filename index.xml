@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="4f7d00eb27210e3cf55c8402afbc7815b9849c74" name="RCJacH Scripts">
+<index version="1" commit="0d2d2d1bb008a71cf185c2705dd51fd413ffc4ac" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -473,6 +473,14 @@ Potential Addition:
         <changelog><![CDATA[* v1.0a (2021-05-05)
   + Initial Release.]]></changelog>
         <source main="main">https://github.com/RCJacH/ReaScripts/raw/b4f9d05c383a7041a272268f26f0d161b2b4e7ad/Lua/Editing/RCJacH_Select%20Tracks%20with%20Regex.lua</source>
+      </version>
+    </reapack>
+    <reapack name="RCJacH_Split items under mouse cursor (obey snapping and selection).lua" type="script" desc="Split items under mouse (obey snapping and selection)">
+      <metadata>
+        <link rel="website">https://github.com/RCJacH/ReaScript</link>
+      </metadata>
+      <version name="1.0" author="RCJacH" time="2022-02-24T17:31:27Z">
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/0d2d2d1bb008a71cf185c2705dd51fd413ffc4ac/Lua/Editing/RCJacH_Split%20items%20under%20mouse%20cursor%20(obey%20snapping%20and%20selection).lua</source>
       </version>
     </reapack>
     <reapack name="RCJacH_Spread Items Horizontally.lua" type="script" desc="Spread items horizontally">
