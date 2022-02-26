@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="52b9a3632a304b7261b880d6b18135cddb570afe" name="RCJacH Scripts">
+<index version="1" commit="3aec31669454fffaf65b4b2dcfd13660c737fbc2" name="RCJacH Scripts">
   <category name="JSFX/Audio">
     <reapack name="AB Comparison - 1INnOUT Stereo.jsfx" type="effect" desc="AB Comparison - 1INnOUT Stereo">
       <metadata>
@@ -497,6 +497,16 @@ Potential Addition:
       </metadata>
       <version name="1.0" author="RCJacH" time="2021-05-05T14:58:01Z">
         <source main="main">https://github.com/RCJacH/ReaScripts/raw/9813dfcdccd86fd31e81e6897ba069d26074d31a/Lua/Editing/RCJacH_Spread%20Items%20Horizontally.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="Lua/MIDI Editor">
+    <reapack name="RCJacH_Split notes at mouse cursor (obey snapping and selection).lua" type="script" desc="Split notes at mouse cursor (obey snapping and selection)">
+      <metadata>
+        <link rel="website" href="https://github.com/RCJacH/ReaScript">Github Repository</link>
+      </metadata>
+      <version name="1.0" author="RCJacH" time="2022-02-26T10:47:35Z">
+        <source main="main">https://github.com/RCJacH/ReaScripts/raw/3aec31669454fffaf65b4b2dcfd13660c737fbc2/Lua/MIDI%20Editor/RCJacH_Split%20notes%20at%20mouse%20cursor%20(obey%20snapping%20and%20selection).lua</source>
       </version>
     </reapack>
   </category>
