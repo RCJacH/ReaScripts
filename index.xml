@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="3ce64f2d072f75d0ab9a3681c71fff9f46dc2966" name="RCJacH Scripts">
+<index version="1" commit="bbea8c94c1061da0c55576e83dcc45338d78cc67" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -183,6 +183,64 @@ Potential Addition:
 * v1.0 (2017-01-11)
   + Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/3ec444f25cef1206d09bff82bbe48200da3ddb71/JSFX/Audio/RCBitRangeGain.jsfx</source>
+      </version>
+      <version name="1.3" author="RCJacH" time="2022-03-04T15:54:27Z">
+        <changelog><![CDATA[* v1.3 (2018-09-27)
+  + Using PurestGain Fader algorithm to change pan, so panning should be smoother now.
+* v1.2 (2018-04-12)
+  + Added Pan controls
+* v1.1 (2018-02-13)
+  + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
+  * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
+  * Renamed to RCBitRangeGain
+* v1.0a (2017-01-31)
+  + Renamed to BitRangeGain
+* v1.0 (2017-01-11)
+  + Initial Release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/bbea8c94c1061da0c55576e83dcc45338d78cc67/JSFX/Audio/RCBitRangeGain.jsfx</source>
+      </version>
+    </reapack>
+    <reapack name="RCEveryGain.jsfx" type="effect" desc="RCEveryGain">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Suedo bit based gain adjustment for float point audio. 1 bit ~= 6.0206 dB (doubling of distance).\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 RCEveryGain solves two issues of the traditional dB-based gain plugin:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab When doing static gain alternation (meaning no automation) by twice/half of the sound pressure, we often adjust the signal by 6dB. However 6dB is around 1.9952623149688795, rather than the integer 2 which we desired, thus the signal will expand in number of digits, and truncate when it reaches the length of limit of the bit depth used for calculation, cause some sort of distortion, although likely inaudible. This is resolved by the AirWindows BitShiftGain algorithm, which adjusts volume by the exact number that represents bit shifting rather than dB.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab When doing dynamic gain alternation (with automation), there might occur a zipper noise, a sudden high frequency distortion like aliasing (like that of the digital square wave), when moving the volume slider too quickly. This is resolved by the AirWindows PurestGain algorithm, which does the volume change with smoothing effect. The result is no aliasing, but a bit slower reaction to changes. The original PurestGain fader has 4000 samples window of smooth effect, and I reduced it to 800, which in my opinion is a better balance between smoothness and reaction speed.\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 By combining the two AirWindows algorithms, RCBitRangeGain can be used both statically and dynamically. Also I included other controls related to the basic concept so users can still break away from only doing 6dB gains, although when adjusting gains by anything other than bits will cause truncation.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Instruction:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Macro Shift} to increase or decrease audio input by 6.0206 dB per bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Micro Shift} to fine adjust audio within 1 bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Bit Ratio} to adjust the dB representation of one bit.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Fader} is used as a controller of output volume in percentage after bit shifting.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use {\b Fader Curve} to adjust the behavior of {\b Fader} slider.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Increase {\b Smooth Fader} if gain adjustment causes zipper noise.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Gain sliders for rough dialing.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Use Trim sliders for fine toning.\sa180\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.5" author="RCJacH" time="2022-03-04T15:53:16Z">
+        <changelog><![CDATA[* v1.5 (2022-03-04)
+  + Add Trim controls
+  + Renamed to RCEveryGain
+* v1.3 (2018-09-27)
+  + Using PurestGain Fader algorithm to change pan, so panning should be smoother now.
+* v1.2 (2018-04-12)
+  + Added Pan controls
+* v1.1 (2018-02-13)
+  + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
+  * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
+  * Renamed to RCBitRangeGain
+* v1.0a (2017-01-31)
+  + Renamed to BitRangeGain
+* v1.0 (2017-01-11)
+  + Initial Release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/dc233c3cf6fd00e5e492a848c637b095a8634d5d/JSFX/Audio/RCEveryGain.jsfx</source>
       </version>
     </reapack>
     <reapack name="RCInflator.jsfx" type="effect" desc="RCInflator">
