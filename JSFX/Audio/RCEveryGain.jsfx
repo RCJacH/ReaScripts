@@ -1,0 +1,176 @@
+/*
+JSFX Name: RCEveryGain
+Author: RCJacH
+Release Date: Feb 2018
+Link: https://github.com/RCJacH/ReaScripts
+Version: 1.5
+Reference: 
+  AirWindows BitShiftGain
+  AirWindows PurestGain
+  AirWindows EveryTrim
+About:
+  Suedo bit based gain adjustment for float point audio.
+  1 bit ~= 6.0206 dB (doubling of distance).
+  
+  RCEveryGain solves two issues of the traditional dB-based gain plugin:
+    1. When doing static gain alternation (meaning no automation) by twice/half of the sound pressure, 
+       we often adjust the signal by 6dB. However 6dB is around 1.9952623149688795, rather than the 
+       integer 2 which we desired, thus the signal will expand in number of digits, and truncate when
+       it reaches the length of limit of the bit depth used for calculation, cause some sort of distortion,
+       although likely inaudible. This is resolved by the AirWindows BitShiftGain algorithm, which adjusts
+       volume by the exact number that represents bit shifting rather than dB.
+    2. When doing dynamic gain alternation (with automation), there might occur a zipper noise, a sudden 
+       high frequency distortion like aliasing (like that of the digital square wave), when moving the 
+       volume slider too quickly. This is resolved by the AirWindows PurestGain algorithm, which does
+       the volume change with smoothing effect. The result is no aliasing, but a bit slower reaction to
+       changes. The original PurestGain fader has 4000 samples window of smooth effect, and I reduced it
+       to 800, which in my opinion is a better balance between smoothness and reaction speed.
+
+  By combining the two AirWindows algorithms, RCBitRangeGain can be used both statically and dynamically.
+  Also I included other controls related to the basic concept so users can still break away from only
+  doing 6dB gains, although when adjusting gains by anything other than bits will cause truncation.
+  
+  Instruction:
+    * Use **Macro Shift** to increase or decrease audio input by 6.0206 dB per bit.
+    * Use **Micro Shift** to fine adjust audio within 1 bit.
+    * Use **Bit Ratio** to adjust the dB representation of one bit.
+    * **Fader** is used as a controller of output volume in percentage after bit shifting.
+    * Use **Fader Curve** to adjust the behavior of **Fader** slider.
+    * Increase **Smooth Fader** if gain adjustment causes zipper noise.
+    * Use Gain sliders for rough dialing.
+    * Use Trim sliders for fine toning.
+Changelog:
+  * v1.5 (2022-03-04)
+    + Add Trim controls
+    + Renamed to RCEveryGain
+  * v1.3 (2018-09-27)
+    + Using PurestGain Fader algorithm to change pan, so panning should be smoother now.
+  * v1.2 (2018-04-12)
+    + Added Pan controls
+  * v1.1 (2018-02-13)
+    + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
+    * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
+    * Renamed to RCBitRangeGain
+  * v1.0a (2017-01-31)
+    + Renamed to BitRangeGain
+  * v1.0 (2017-01-11)
+    + Initial Release
+*/
+
+// License: GPL- http://www.gnu.org/licenses/gpl.html
+
+desc: RCEveryGain
+
+slider1: 0<-16,16,1>Macro Shift (Bit ~= 6.0206 dB)
+slider2: 0<-100,100,0.000001>Micro Shift (% of a Bit)
+slider3: 1<0,3,0.25>Bit Ratio
+
+slider11: 100<0, 100, 0.0001>Fader (% of total)
+slider12: 2<0,10,0.1>Fader Curve
+slider13: 2<0.1,10,0.1>Smooth Fader
+
+slider21: master_rough_db=0<-60, 60, 0.01>Master Gain
+slider22: left_rough_db=0<-60, 60, 0.01>Left Gain
+slider23: right_rough_db=0<-60, 60, 0.01>Right Gain
+slider24: center_rough_db=0<-60, 60, 0.01>Center Gain
+slider25: side_rough_db=0<-60, 60, 0.01>Side Gain
+
+slider31: 0<-6, 6, 0.000001>Master Trim
+slider32: 0<-6, 6, 0.000001>Left Trim
+slider33: 0<-6, 6, 0.000001>Right Trim
+slider34: 0<-6, 6, 0.000001>Center Trim
+slider35: 0<-6, 6, 0.000001>Side Trim
+
+in_pin: Input L
+in_pin: Input R
+out_pin: Output L
+out_pin: Output R
+
+
+@init
+gain = 1.0;
+fader_tgt = fader_gain = 2.0 ^ ((slider11 * 0.01) ^ slider12) - 1.0;
+
+AMP_dB_i = 0.11512925464970229;
+
+function block_splpos(cur, tgt*, i, slider, d*, splpos*) (
+    splpos = slider_next_chg(i, tgt);
+    splpos > 0 ? (
+      cur = slider;
+    ) : (
+      tgt = slider;
+      splpos = samplesblock;
+    );
+    d = (tgt - cur) / splpos;
+  );
+
+function sample_splpos(cur, tgt, i, d*, splpos*)
+  global(cnt)
+  instance()
+  local()
+  (
+    cnt == splpos ? (
+      d = 0.0;
+      splpos = slider_next_chg(i, tgt);
+      splpos > cnt ? (
+        d = (tgt - cur) / (splpos - cnt);
+      );
+    );
+  );
+
+@slider
+slider1 = min(max(-16.0, slider1),16.0);
+slider2 = min(max(-100.0, slider2),100.0);
+slider11 = min(max(0.0, slider11),100.0);
+shift = 2.0 ^ ((slider1 + slider2 * 0.01) * slider3);
+fader_tgt = 2.0 ^ ((slider11 * 0.01) ^ slider12) - 1.0;
+faderSmooth = 400.0 * slider13;
+_faderSmooth = 1.0 / (faderSmooth + 1.0);
+
+d_master_db = 0.0;
+d_left_db = 0.0;
+d_right_db = 0.0;
+d_center_db = 0.0;
+d_side_db = 0.0;
+
+@block
+
+cnt=0;
+d_master_db=0.0;
+d_left_db=0.0;
+d_right_db=0.0;
+d_center_db=0.0;
+d_side_db=0.0;
+
+block_splpos(master_db, master_tgt, 31, slider31, d_master_db, master_chg_splpos);
+block_splpos(left_db, left_tgt, 32, slider32, d_left_db, left_chg_splpos);
+block_splpos(right_db, right_tgt, 33, slider33, d_right_db, right_chg_splpos);
+block_splpos(center_db, center_tgt, 34, slider34, d_center_db, center_chg_splpos);
+block_splpos(side_db, side_tgt, 35, slider35, d_side_db, side_chg_splpos);
+
+@sample
+fader_gain = ((fader_gain * faderSmooth) + fader_tgt) * _faderSmooth;
+gain = fader_gain * shift;
+
+sample_splpos(master_db, master_tgt, 31, d_master_db, master_chg_splpos);
+sample_splpos(left_db, left_tgt, 32, d_left_db, left_chg_splpos);
+sample_splpos(right_db, right_tgt, 33, d_right_db, right_chg_splpos);
+sample_splpos(center_db, center_tgt, 34, d_center_db, center_chg_splpos);
+sample_splpos(side_db, side_tgt, 35, d_side_db, side_chg_splpos);
+
+center = (spl0 + spl1) * 0.5 * exp((center_rough_db + center_db) * AMP_dB_i);
+side = (spl0 - spl1) * 0.5 * exp((side_rough_db + side_db) * AMP_dB_i);
+
+l_gain = r_gain = gain * exp((master_rough_db + master_db) * AMP_dB_i);
+r_gain *= exp((right_rough_db + right_db) * AMP_dB_i);
+l_gain *= exp((left_rough_db + left_db) * AMP_dB_i);
+
+spl0 = (center + side) * l_gain;
+spl1 = (center - side) * r_gain;
+
+master_db += d_master_db;
+left_db += d_left_db;
+right_db += d_right_db;
+center_db += d_center_db;
+side_db += d_side_db;
+cnt += 1;
