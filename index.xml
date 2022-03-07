@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="2efb05af6d7bf33f3940fcced2c8fe19dd290e5f" name="RCJacH Scripts">
+<index version="1" commit="42c6fc5541edc74a5afa87e484438a975e02ce5b" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -517,6 +517,10 @@ Potential Addition:
       <version name="1.1" author="RCJacH" time="2022-03-07T07:53:37Z">
         <changelog><![CDATA[+ Allow MIDI Bus output assignment]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/2efb05af6d7bf33f3940fcced2c8fe19dd290e5f/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
+      </version>
+      <version name="1.1.1" author="RCJacH" time="2022-03-07T10:47:41Z">
+        <changelog><![CDATA[* Fix Note button not working]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/42c6fc5541edc74a5afa87e484438a975e02ce5b/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
       </version>
     </reapack>
   </category>
