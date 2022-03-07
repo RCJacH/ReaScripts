@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="bbea8c94c1061da0c55576e83dcc45338d78cc67" name="RCJacH Scripts">
+<index version="1" commit="2efb05af6d7bf33f3940fcced2c8fe19dd290e5f" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -501,9 +501,10 @@ Potential Addition:
 {\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 Description\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 RC MIDI Channel Router is a MIDI plugin to send each Note-On/Note-Off/CC event to assigned Channel(s) accordingly.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 How to Use\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Select channel using channel select buttons number 1-16.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Press (and drag) Note button below to toggle note send state. Green means note will be send to selected Channel upon receiving input. Red means not send.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab You can switch to separate CCs assignment window by pressing the CC button at the top-right position.\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Use Left Mouse Button to work with MIDI channel assignments; Use Right Mouse Button to work with MIDI Bus.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Select channel using channel select buttons number 1-16.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab Press (and drag) Note button below to toggle note send state. Green means note will be send to selected Channel upon receiving input. Red means not send.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab You can switch to separate CCs assignment window by pressing the CC button at the top-right position.\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 There are four extra buttons located at the top-center of the plugin. Reset: Reseting all notes and ccs of all channels to default setting. All: Turn all notes/cc of the current channel on (green). None: Turn all notes/cc of the current channel off (red). Flip: Invert all notes/cc of the current channel.\par}
 }
 ]]></description>
@@ -512,6 +513,10 @@ Potential Addition:
       <version name="1.0" author="RCJacH" time="2019-06-30T12:52:13Z">
         <changelog><![CDATA[+ Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/e20d37e5466383052909045840c87c9a45fedcd9/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
+      </version>
+      <version name="1.1" author="RCJacH" time="2022-03-07T07:53:37Z">
+        <changelog><![CDATA[+ Allow MIDI Bus output assignment]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/2efb05af6d7bf33f3940fcced2c8fe19dd290e5f/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
       </version>
     </reapack>
   </category>
