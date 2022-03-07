@@ -3,7 +3,7 @@ JSFX Name: RC MIDI Channel Router
 Author: RCJacH
 Release Date: Jun 2019
 Link: https://github.com/RCJacH/ReaScripts
-Version: 1.1
+Version: 1.1.1
 About:
   ## Description
 
@@ -25,6 +25,8 @@ About:
     Flip: Invert all notes/cc of the current channel.
 
 Changelog:
+  * v1.1.1 (2022-03-07)
+    * Fix Note button not working
   * v1.1 (2022-03-07)
     + Allow MIDI Bus output assignment
   * v1.0 (2019-06-30)
@@ -383,7 +385,7 @@ slider26: ch16=0<0,1,1>-Channel 16
   bt_flip.r_activated ? (flip_value(1); bt_flip.r_activated = 0;);
 
   bt_modeNote.ui_drawClickableButton(a_gridx[10], br2, w, h, !select_mode, "Note");
-  bt_modeNote.l_activated ? (select_mode = 0; bt_modeNote.l_activated = 0; update_sliders(););
+  bt_modeNote.l_activated ? (select_mode = 0; mem = a_notes; bt_modeNote.l_activated = 0; update_sliders(););
   bt_modeCC.ui_drawClickableButton(a_gridx[11], br2, w, h, select_mode, "CC");
   bt_modeCC.l_activated ? (select_mode = 1; mem = a_ccs; bt_modeCC.l_activated = 0; update_sliders(););
 
