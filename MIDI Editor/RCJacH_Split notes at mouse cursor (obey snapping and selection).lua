@@ -3,9 +3,9 @@
   @description Split notes at mouse cursor (obey snapping and selection)
   @link
     Github Repository https://github.com/RCJacH/ReaScript
-  @version 1.1
+  @version 1.1.1
   @changelog
-    fix script occasionally freezing when splitting selected notes
+    fix wrong note length after splitting
 
   @about
     Split selected notes at mouse cursor (obey snapping), if no notes are selected
@@ -21,14 +21,15 @@ function split_no_selection(take, mouse_pos, mouse_pitch)
   while retval do
     if startppqpos < mouse_pos and endppqpos > mouse_pos then
       local v = {take, selected, muted, mouse_pos, endppqpos, chan, pitch, vel, true}
+      reaper.MIDI_SetNote(take, i, selected, muted, startppqpos, mouse_pos, chan, pitch, vel, true)
       if pitch == mouse_pitch then
         reaper.MIDI_InsertNote(table.unpack(v))
         return
       end
       pending[#pending + 1] = v
     end
-    retval, selected, muted, startppqpos, endppqpos, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
     i = i + 1
+    retval, selected, muted, startppqpos, endppqpos, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
   end
 
   for _, v in ipairs(pending) do
@@ -41,6 +42,7 @@ function split_selected(take, cur_sel_note_idx, mouse_pos)
   while cur_sel_note_idx ~= -1 do
     local retval, selected, muted, startppqpos, endppqpos, chan, pitch, vel = reaper.MIDI_GetNote(take, cur_sel_note_idx)
     if startppqpos < mouse_pos and endppqpos > mouse_pos then
+      reaper.MIDI_SetNote(take, cur_sel_note_idx, selected, muted, startppqpos, mouse_pos, chan, pitch, vel, true)
       pending[#pending + 1] = {take, selected, muted, mouse_pos, endppqpos, chan, pitch, vel, true}
     end
     cur_sel_note_idx = reaper.MIDI_EnumSelNotes(take, cur_sel_note_idx)
