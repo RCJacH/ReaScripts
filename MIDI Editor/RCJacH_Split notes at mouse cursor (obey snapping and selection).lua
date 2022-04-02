@@ -3,7 +3,9 @@
   @description Split notes at mouse cursor (obey snapping and selection)
   @link
     Github Repository https://github.com/RCJacH/ReaScript
-  @version 1.0
+  @version 1.1
+  @changelog
+    fix script occasionally freezing when splitting selected notes
 
   @about
     Split selected notes at mouse cursor (obey snapping), if no notes are selected
@@ -35,12 +37,17 @@ function split_no_selection(take, mouse_pos, mouse_pitch)
 end
 
 function split_selected(take, cur_sel_note_idx, mouse_pos)
+  local pending = {}
   while cur_sel_note_idx ~= -1 do
     local retval, selected, muted, startppqpos, endppqpos, chan, pitch, vel = reaper.MIDI_GetNote(take, cur_sel_note_idx)
     if startppqpos < mouse_pos and endppqpos > mouse_pos then
-      reaper.MIDI_InsertNote(take, selected, muted, mouse_pos, endppqpos, chan, pitch, vel, true)
+      pending[#pending + 1] = {take, selected, muted, mouse_pos, endppqpos, chan, pitch, vel, true}
     end
     cur_sel_note_idx = reaper.MIDI_EnumSelNotes(take, cur_sel_note_idx)
+  end
+
+  for _, v in pairs(pending) do
+    reaper.MIDI_InsertNote(table.unpack(v))
   end
 end
 
@@ -59,6 +66,7 @@ function main()
   local active_editor = reaper.MIDIEditor_GetActive()
   local take = reaper.MIDIEditor_GetTake(active_editor)
   local window, segment, details = reaper.BR_GetMouseCursorContext()
+  
   if window ~= "midi_editor" then return end
   if segment == "piano" then return end
 
@@ -68,7 +76,7 @@ function main()
     mouse_time = reaper.SnapToGrid(-1, mouse_time)
   end
   local mouse_pos = reaper.MIDI_GetPPQPosFromProjTime(take, mouse_time)
-
+  
   reaper.MIDI_DisableSort(take)
   split(take, mouse_pos, mouse_pitch)
   reaper.MIDI_Sort(take)
