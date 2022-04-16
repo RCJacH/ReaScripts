@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="d89e0a77f3a3b8974e489b461003e188b1bac166" name="RCJacH Scripts">
+<index version="1" commit="4b5c7e47c5f7f4e2ad272178789a6b5260f07724" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -582,6 +582,11 @@ Potential Addition:
       <version name="1.1.1" author="RCJacH" time="2022-04-02T22:59:03Z">
         <changelog><![CDATA[fix wrong note length after splitting]]></changelog>
         <source main="midi_editor">https://github.com/RCJacH/ReaScripts/raw/d89e0a77f3a3b8974e489b461003e188b1bac166/MIDI%20Editor/RCJacH_Split%20notes%20at%20mouse%20cursor%20(obey%20snapping%20and%20selection).lua</source>
+      </version>
+      <version name="1.1.2" author="RCJacH" time="2022-04-16T18:55:33Z">
+        <changelog><![CDATA[fix snapping to the wrong grid
+add snapping to swinged grid]]></changelog>
+        <source main="midi_editor">https://github.com/RCJacH/ReaScripts/raw/4b5c7e47c5f7f4e2ad272178789a6b5260f07724/MIDI%20Editor/RCJacH_Split%20notes%20at%20mouse%20cursor%20(obey%20snapping%20and%20selection).lua</source>
       </version>
     </reapack>
   </category>
