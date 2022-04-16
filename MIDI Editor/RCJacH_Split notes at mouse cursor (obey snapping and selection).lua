@@ -3,9 +3,10 @@
   @description Split notes at mouse cursor (obey snapping and selection)
   @link
     Github Repository https://github.com/RCJacH/ReaScript
-  @version 1.1.1
+  @version 1.1.2
   @changelog
-    fix wrong note length after splitting
+    fix snapping to the wrong grid
+    add snapping to swinged grid
 
   @about
     Split selected notes at mouse cursor (obey snapping), if no notes are selected
@@ -75,10 +76,14 @@ function main()
   local _, _, mouse_pitch, _, _, _ = reaper.BR_GetMouseCursorContext_MIDI()
   local mouse_time = reaper.BR_GetMouseCursorContext_Position()
   if reaper.MIDIEditor_GetSetting_int(active_editor, "snap_enabled") == 1 then
-    mouse_time = reaper.SnapToGrid(-1, mouse_time)
+    local grid_size, swing = reaper.MIDI_GetGrid(take)
+    local grid_time = reaper.TimeMap_QNToTime(grid_size)
+    local quantized = math.floor((mouse_time - grid_time / 2) / grid_time)
+    local is_swing = quantized % 2 == 0
+    mouse_time = grid_time * quantized + grid_time + (is_swing and grid_time * swing * 0.5 or 0)
   end
   local mouse_pos = reaper.MIDI_GetPPQPosFromProjTime(take, mouse_time)
-  
+
   reaper.MIDI_DisableSort(take)
   split(take, mouse_pos, mouse_pitch)
   reaper.MIDI_Sort(take)
