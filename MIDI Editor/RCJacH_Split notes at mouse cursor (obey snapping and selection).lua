@@ -3,10 +3,9 @@
   @description Split notes at mouse cursor (obey snapping and selection)
   @link
     Github Repository https://github.com/RCJacH/ReaScript
-  @version 1.2
+  @version 1.2.1
   @changelog
-    fix wrong split position
-    fix fausely length modification of other notes when splitting a hovered note
+    fix unmodified origin note length when splitting a hovered unselected note
 
   @about
     Split selected notes at mouse cursor (obey snapping), if no notes are selected
@@ -25,6 +24,7 @@ function split_no_selection(take, mouse_pos, mouse_pitch)
     if startppqpos < mouse_pos and endppqpos > mouse_pos then
       local v = {selected, muted, mouse_pos, endppqpos, chan, pitch, vel, true}
       if pitch == mouse_pitch then
+        reaper.MIDI_SetNote(take, i, selected, muted, startppqpos, mouse_pos, chan, pitch, vel, true)
         reaper.MIDI_InsertNote(take, table.unpack(v))
         return
       end
