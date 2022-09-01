@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="b4e2656a5d6d3275506f81b73c45415369413558" name="RCJacH Scripts">
+<index version="1" commit="bca773a13a583905bceb50e833a6ab716c4a376e" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -596,6 +596,10 @@ fix fausely length modification of other notes when splitting a hovered note]]><
       <version name="1.2.1" author="RCJacH" time="2022-08-09T11:32:41Z">
         <changelog><![CDATA[fix unmodified origin note length when splitting a hovered unselected note]]></changelog>
         <source main="midi_editor">https://github.com/RCJacH/ReaScripts/raw/b4e2656a5d6d3275506f81b73c45415369413558/MIDI%20Editor/RCJacH_Split%20notes%20at%20mouse%20cursor%20(obey%20snapping%20and%20selection).lua</source>
+      </version>
+      <version name="1.2.2" author="RCJacH" time="2022-09-01T06:27:43Z">
+        <changelog><![CDATA[fix wrong splitting position with odd time signature and uncommon grid size]]></changelog>
+        <source main="midi_editor">https://github.com/RCJacH/ReaScripts/raw/bca773a13a583905bceb50e833a6ab716c4a376e/MIDI%20Editor/RCJacH_Split%20notes%20at%20mouse%20cursor%20(obey%20snapping%20and%20selection).lua</source>
       </version>
     </reapack>
   </category>
