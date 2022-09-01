@@ -3,16 +3,15 @@
   @description Split notes at mouse cursor (obey snapping and selection)
   @link
     Github Repository https://github.com/RCJacH/ReaScript
-  @version 1.2.1
+  @version 1.2.2
   @changelog
-    fix unmodified origin note length when splitting a hovered unselected note
+    fix wrong splitting position with odd time signature and uncommon grid size
 
   @about
     Split selected notes at mouse cursor (obey snapping), if no notes are selected
     split only the note under mouse cursor, if there is no note under mouse cursor,
     split all notes.
 ]]
-
 
 function split_no_selection(take, mouse_pos, mouse_pitch)
   local pending_insert = {}
@@ -82,11 +81,13 @@ function main()
   local mouse_time = reaper.BR_GetMouseCursorContext_Position()
   local mouse_pos
   if reaper.MIDIEditor_GetSetting_int(editor, "snap_enabled") == 1 then
+    local _, measures = reaper.TimeMap2_timeToBeats(-1, mouse_time)
+    local _, qn_start, qn_end, _, _, _ = reaper.TimeMap_GetMeasureInfo(-1, measures)
+    local qn = reaper.TimeMap_timeToQN(mouse_time)
+    local qn_in_measure = qn - qn_start
     local grid_size, swing = reaper.MIDI_GetGrid(take)
     local base_grid_size = grid_size * 2
-    local _, _, _, fullbeats, _ = reaper.TimeMap2_timeToBeats(-1, mouse_time)
-    local beat, frac = math.modf(fullbeats)
-    local grid, frac = math.modf(frac / base_grid_size)
+    local grid, frac = math.modf(qn_in_measure / base_grid_size)
     local split_point = 0.5 + 0.25 * swing
     local diff = frac - split_point
     if diff < 0 then
@@ -94,11 +95,11 @@ function main()
     else
       frac = diff > (1 - split_point) / 2 and 1 or split_point
     end
-    mouse_pos = reaper.MIDI_GetPPQPosFromProjQN(take, beat + (grid + frac) * base_grid_size)
+    local final_measure_qn = math.min((grid + frac) * base_grid_size, qn_end)
+    mouse_pos = reaper.MIDI_GetPPQPosFromProjQN(take, qn_start + final_measure_qn)
   else
     mouse_pos = reaper.MIDI_GetPPQPosFromProjTime(take, mouse_time)
   end
-
   reaper.MIDI_DisableSort(take)
   split(take, mouse_pos, mouse_pitch)
   reaper.MIDI_Sort(take)
