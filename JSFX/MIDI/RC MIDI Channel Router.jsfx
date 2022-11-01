@@ -3,7 +3,7 @@ JSFX Name: RC MIDI Channel Router
 Author: RCJacH
 Release Date: Jun 2019
 Link: https://github.com/RCJacH/ReaScripts
-Version: 1.1.1
+Version: 1.1.2
 About:
   ## Description
 
@@ -25,6 +25,10 @@ About:
     Flip: Invert all notes/cc of the current channel.
 
 Changelog:
+  * v1.1.2 (2022-11-01)
+    * Fix flag overflow on bus 15 and 16
+    * Fix note slipping through bus 1 when no flag is on
+    * Fix sliders not updating when clicking on GUI
   * v1.1.1 (2022-03-07)
     * Fix Note button not working
   * v1.1 (2022-03-07)
@@ -68,7 +72,6 @@ slider26: ch16=0<0,1,1>-Channel 16
   ALL_BUS_FLAGS = 4294901760;
   ALL_CH_FLAGS = 65535;
   INITIAL_VALUE = ALL_CH_FLAGS + 2;
-  which_ch = -1;
   click = -1;
   flip_mode = -1;
 
@@ -117,12 +120,19 @@ slider26: ch16=0<0,1,1>-Channel 16
     memset(is_cc ? a_ccs : a_notes, INITIAL_VALUE, 128);
   );
 
+  function get_flag(flag)
+  global()
+  local()
+  (
+    1<<min(flag, 30) * 1<<max(flag-30, 0)
+  );
+
   function set_all_values(is_all, is_bus)
   global(mem, notev, ALL_CH_FLAGS, ALL_BUS_FLAGS, cur_ch, cur_bus)
   local(i, flag)
   (
     i=0;
-    flag = is_bus ? (1<<(cur_bus+16)) : (1<<cur_ch);
+    flag = get_flag(is_bus ? cur_bus + 16 : cur_ch);
     loop(128,
       is_all ? (
         mem[i] |= flag;
@@ -137,7 +147,7 @@ slider26: ch16=0<0,1,1>-Channel 16
   function set_value(i, flag, is_off)
   local(v)
   (
-    v = 1<<flag;
+    v = get_flag(flag);
     is_off ? (
       mem[i] |= v;
       mem[i] ~= v;
@@ -150,7 +160,7 @@ slider26: ch16=0<0,1,1>-Channel 16
   local(i, flag)
   global(mem, notev, cur_ch, cur_bus) (
     i = 0;
-    flag = 1<<(mode ? cur_bus + 16 : cur_ch);
+    flag = get_flag(mode ? cur_bus + 16 : cur_ch);
     loop(128,
       mem[i] ~= flag;
       i += 1;
@@ -181,7 +191,6 @@ slider26: ch16=0<0,1,1>-Channel 16
     ch14=memn&(1<<13)?1;
     ch15=memn&(1<<14)?1;
     ch16=memn&(1<<15)?1;
-
   );
 
   !inited ? (
@@ -207,36 +216,33 @@ slider26: ch16=0<0,1,1>-Channel 16
 
   update_sliders();
 
-
 @block
 
-  while (
-    midirecv(offset, msg1, msg2, msg3) ? (
-      in_ch = msg1&$x0F;
-      in_type = msg1&$xF0;
-      type = (in_type == STATUS_NOTE_ON) || (in_type == STATUS_NOTE_OFF) ? 0 :
-             (in_type == STATUS_CC) ? 1 : -1;
-      type != -1 && (which_ch == -1 || in_ch == which_ch) ? (
-        chNoteV = get_midi_channel_value(msg2, type);
-        chNoteV != 0 ? (
-          i = 0;
-          loop(16,
-            chNoteV&(1 << i) ? (
-              msg1 = in_type + i;
-              j = 16;
-              loop(16,
-                chNoteV&(1 << j) ? (
-                  midi_bus = j-16;
-                  midisend(offset, msg1, msg2, msg3);
-                );
-                j += 1;
+  while (midirecv(offset, msg1, msg2, msg3)) (
+    in_ch = msg1&$x0F;
+    in_type = msg1&$xF0;
+    type = (in_type == STATUS_NOTE_ON) || (in_type == STATUS_NOTE_OFF) ? 0 :
+           (in_type == STATUS_CC) ? 1 : -1;
+    type != -1 ? (
+      chNoteV = get_midi_channel_value(msg2, type);
+      chNoteV != 0 ? (
+        i = 0;
+        loop(16,
+          chNoteV&get_flag(i) ? (
+            msg1 = in_type + i;
+            j = 0;
+            loop(16,
+              chNoteV&get_flag(16+j) ? (
+                midi_bus = j;
+                midisend(offset, msg1, msg2, msg3);
               );
+              j += 1;
             );
-            i += 1;
           );
+          i += 1;
         );
-      ): midisend(offset, msg1, msg2, msg3);
-    );
+      );
+    ) : midisend(offset, msg1, msg2, msg3);
   );
 
 @gfx 604 348
@@ -288,14 +294,14 @@ slider26: ch16=0<0,1,1>-Channel 16
   function ui_drawNote(i) (
     this.ui_drawButton(a_gridx[i%12], a_gridy[floor(i/12)+3], w, h,
       (select_mode ? a_ccs[i]:a_notes[i])&(1<<cur_ch)!=0,
-      (select_mode ? a_ccs[i]:a_notes[i])&(1<<(16+cur_bus))!=0,
+      (select_mode ? a_ccs[i]:a_notes[i])&(get_flag(16+cur_bus))!=0,
       select_mode ? sprintf(#, "%i", i):strcat(strcpy(#,uix_getPitName(i%12)),sprintf(#,"%i",floor(i/12)));
     );
   );
 
   function ui_drawNotes()
   global(click, mouse_x, mouse_y, mouse_cap, a_gridx, a_gridy, w, h, mem, cur_ch, cur_bus)
-  local(i,hi,vi,hold_first)
+  local(i,hi,vi,hold_first,tmp)
   (
     i = 0;
     loop(128,
@@ -309,7 +315,7 @@ slider26: ch16=0<0,1,1>-Channel 16
           update_sliders();
         );
         mouse_cap&2 ? (
-          hold_first == -1 ? hold_first = mem[i]&(1<<(16+cur_bus));
+          hold_first == -1 ? hold_first = mem[i]&get_flag(16+cur_bus);
           click != i ? set_value(i, cur_bus + 16, hold_first);
           click = i;
           update_sliders();
@@ -373,16 +379,16 @@ slider26: ch16=0<0,1,1>-Channel 16
   ui_drawNotes();
 
   bt_reset.ui_drawClickableButton(a_gridx[4], br2, w, h, bt_reset.lclick, "Reset");
-  bt_reset.l_activated ? (set_default(select_mode); bt_reset.l_activated = 0;);
+  bt_reset.l_activated ? (set_default(select_mode); bt_reset.l_activated = 0; update_sliders(););
   bt_all.ui_drawClickableButton(a_gridx[5], br2, w, h, bt_all.lclick, "All");
-  bt_all.l_activated ? (set_all_values(1, 0); bt_all.l_activated = 0;);
-  bt_all.r_activated ? (set_all_values(1, 1); bt_all.r_activated = 0;);
+  bt_all.l_activated ? (set_all_values(1, 0); bt_all.l_activated = 0; update_sliders(););
+  bt_all.r_activated ? (set_all_values(1, 1); bt_all.r_activated = 0; update_sliders(););
   bt_none.ui_drawClickableButton(a_gridx[6], br2, w, h, bt_none.lclick, "None");
-  bt_none.l_activated ? (set_all_values(0, 0); bt_none.l_activated = 0;);
-  bt_none.r_activated ? (set_all_values(0, 1); bt_none.r_activated = 0;);
+  bt_none.l_activated ? (set_all_values(0, 0); bt_none.l_activated = 0; update_sliders(););
+  bt_none.r_activated ? (set_all_values(0, 1); bt_none.r_activated = 0; update_sliders(););
   bt_flip.ui_drawClickableButton(a_gridx[7], br2, w, h, bt_flip.lclick, "Flip");
-  bt_flip.l_activated ? (flip_value(0); bt_flip.l_activated = 0;);
-  bt_flip.r_activated ? (flip_value(1); bt_flip.r_activated = 0;);
+  bt_flip.l_activated ? (flip_value(0); bt_flip.l_activated = 0; update_sliders(););
+  bt_flip.r_activated ? (flip_value(1); bt_flip.r_activated = 0; update_sliders(););
 
   bt_modeNote.ui_drawClickableButton(a_gridx[10], br2, w, h, !select_mode, "Note");
   bt_modeNote.l_activated ? (select_mode = 0; mem = a_notes; bt_modeNote.l_activated = 0; update_sliders(););
