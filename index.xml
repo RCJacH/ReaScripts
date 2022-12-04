@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="58601021034c0663d1a45071fba8fb72687f0218" name="RCJacH Scripts">
+<index version="1" commit="c125c8631582da951cde899075c286bbf8af1bbe" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -527,6 +527,11 @@ Potential Addition:
 * Fix note slipping through bus 1 when no flag is on
 * Fix sliders not updating when clicking on GUI]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/58601021034c0663d1a45071fba8fb72687f0218/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
+      </version>
+      <version name="1.1.3" author="RCJacH" time="2022-12-04T01:03:59Z">
+        <changelog><![CDATA[* Fix some settings not saved in serialize
+* Fix wrong reaction of some controls in cc mode ]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/c125c8631582da951cde899075c286bbf8af1bbe/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
       </version>
     </reapack>
   </category>
