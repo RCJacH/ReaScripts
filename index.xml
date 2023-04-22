@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="c125c8631582da951cde899075c286bbf8af1bbe" name="RCJacH Scripts">
+<index version="1" commit="6b39571436e61e0abb55612f15e417970fc480ed" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -579,6 +579,24 @@ Potential Addition:
     </reapack>
   </category>
   <category name="MIDI Editor">
+    <reapack name="RCJacH_MIDI Humanizer.lua" type="script" desc="Humanize MIDI notes">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Humanize selected notes, or all notes if none selected, in the active MIDI editor, based on how a player would, i.e. timing and velocity drifting based on 1/f noise, and realizing that drift and trying to compensate. This script also keeps legato or non-legato between notes. Plus, timing variation is based on the current grid setting, it mimics how a player feels the subdivision while playing.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Parameters: Experience: A more experienced player drifts less and makes less over-compensation. Tightness: Tighter means putting more effort to compensate when drift happens.\par}
+}
+]]></description>
+        <link rel="website" href="https://github.com/RCJacH/ReaScript">Github Repository</link>
+      </metadata>
+      <version name="0.1" author="RCJacH" time="2023-04-22T14:37:41Z">
+        <changelog><![CDATA[* v0.1 (2023-04-22)
+ + Initial release]]></changelog>
+        <source main="midi_editor">https://github.com/RCJacH/ReaScripts/raw/6b39571436e61e0abb55612f15e417970fc480ed/MIDI%20Editor/RCJacH_MIDI%20Humanizer.lua</source>
+      </version>
+    </reapack>
     <reapack name="RCJacH_Split notes at mouse cursor (obey snapping and selection).lua" type="script" desc="Split notes at mouse cursor (obey snapping and selection)">
       <metadata>
         <link rel="website" href="https://github.com/RCJacH/ReaScript">Github Repository</link>
