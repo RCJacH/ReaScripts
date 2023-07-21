@@ -1,0 +1,87 @@
+/*
+JSFX Name: RC MIDI Harmonizer
+Author: RCJacH
+Release Date: Jul 2023
+Link: https://github.com/RCJacH/ReaScripts
+Version: 1.0.0
+About:
+  ## Description
+
+  RC MIDI Harmonizer is a simple MIDI effect that transposes the input MIDI note at a
+  fixed harmonic interval.
+
+Changelog:
+  * v1.0 (2023-07-22)
+    + Initial Release
+*/
+
+// Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
+
+desc: RC MIDI Harmonizer
+
+slider11: dbl1=0<-127,127,1> Double 1
+slider12: dbl2=0<-127,127,1> Double 2
+slider13: dbl3=0<-127,127,1> Double 3
+slider14: dbl4=0<-127,127,1> Double 4
+slider15: dbl5=0<-127,127,1> Double 5
+slider16: dbl6=0<-127,127,1> Double 6
+slider17: dbl7=0<-127,127,1> Double 7
+slider18: dbl8=0<-127,127,1> Double 8
+slider19: dbl9=0<-127,127,1> Double 9
+slider20: dbl10=0<-127,127,1> Double 10
+
+@init
+
+  ext_midi_bus = 1.0;
+
+  STATUS_NOTE_ON          = $x90; // Note On Message
+  STATUS_NOTE_OFF         = $x80; // Note Off Message
+
+@block
+
+  while (midirecv(offset, msg1, msg2, msg3)) (
+    in_type = msg1&$xF0;
+    (in_type == STATUS_NOTE_ON) || (in_type == STATUS_NOTE_OFF) ? (
+      (dbl1 != 0) ? (
+        new_note = msg2 + dbl1;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, new_note, msg3);
+      );
+      (dbl2 != 0) ? (
+        new_note = msg2 + dbl2;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, new_note, msg3);
+      );
+      (dbl3 != 0) ? (
+        new_note = msg2 + dbl3;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, new_note, msg3);
+      );
+      (dbl4 != 0) ? (
+        new_note = msg2 + dbl4;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, new_note, msg3);
+      );
+      (dbl5 != 0) ? (
+        new_note = msg2 + dbl5;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, new_note, msg3);
+      );
+      (dbl6 != 0) ? (
+        new_note = msg2 + dbl6;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, new_note, msg3);
+      );
+      (dbl7 != 0) ? (
+        new_note = msg2 + dbl7;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, new_note, msg3);
+      );
+      (dbl8 != 0) ? (
+        new_note = msg2 + dbl8;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, new_note, msg3);
+      );
+      (dbl9 != 0) ? (
+        new_note = msg2 + dbl9;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, new_note, msg3);
+      );
+      (dbl10 != 0) ? (
+        new_note = msg2 + dbl10;
+        (new_note <= 127) && (new_note >= 0) ? midisend(offset, msg1, msg2+new_note, msg3);
+      );
+    );
+    midisend(offset, msg1, msg2, msg3);
+  );
