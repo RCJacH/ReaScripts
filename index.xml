@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="6b39571436e61e0abb55612f15e417970fc480ed" name="RCJacH Scripts">
+<index version="1" commit="214eb381d3806c7c0e1388ac0e9382c29293d478" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -532,6 +532,22 @@ Potential Addition:
         <changelog><![CDATA[* Fix some settings not saved in serialize
 * Fix wrong reaction of some controls in cc mode ]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/c125c8631582da951cde899075c286bbf8af1bbe/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
+      </version>
+    </reapack>
+    <reapack name="RC MIDI Harmonizer.jsfx" type="effect" desc="RC MIDI Harmonizer">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 Description\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 RC MIDI Harmonizer is a simple MIDI effect that transposes the input MIDI note at a fixed harmonic interval.\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.0.0" author="RCJacH" time="2023-07-21T20:25:39Z">
+        <source>https://github.com/RCJacH/ReaScripts/raw/214eb381d3806c7c0e1388ac0e9382c29293d478/JSFX/MIDI/RC%20MIDI%20Harmonizer.jsfx</source>
       </version>
     </reapack>
   </category>
