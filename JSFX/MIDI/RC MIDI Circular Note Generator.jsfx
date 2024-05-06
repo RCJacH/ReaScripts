@@ -1,0 +1,2606 @@
+/*
+JSFX Name: RC MIDI Circular Note Generator
+Author: RCJacH
+Link: https://github.com/RCJacH/ReaScripts
+Release Date: May 2024
+Version: 0.1
+Reference:
+  https://www.youtube.com/watch?v=wn3td88w19E
+
+About:
+  ## Description
+
+  RC MIDI Circular Note Generator is a MIDI plugin that generates MIDI notes periodically
+  based on circle rotations.
+
+Changelog:
+  * v0.1 (2024-05-07)
+    + Initial Release
+
+*/
+
+// Licensed under the GNU GPL - http://www.gnu.org/licenses/gpl.html
+
+desc: RC MIDI Circular Note Generator
+
+slider1: 1<0, 1, 1>-ON/OFF
+
+
+@init
+  // Plugin Settings
+
+  MIN_TRIGGER_NOTE = 24;
+  MAX_TRIGGER_NOTE = 80;
+
+  MAX_RADIUS = 24.0;
+  MAX_SPEED_HZ = 4.0;
+  MIN_SPEED_S = 0.3;
+  MAX_SPEED_S = 16.0;
+
+
+  function hue2RGB(p, q, t) local(o) (
+    t = (t + 360) % 360;
+    t < 60 ? p + (q - p) * t / 60 :
+    t < 180 ? q :
+    t < 240 ? p + (q - p) * (240 - t) / 60 : p;
+  );
+
+
+  function calcRGB()
+  local(q, p, s001, l001)
+  instance(h, s, l, r, g, b)
+  (
+    s001 = s * 0.01;
+    l001 = l * 0.01;
+    !s001 ? r=g=b=l001 :
+    !l001 ? r=g=b=l001 :
+    l001 == 1.0 ? r=g=b=l001 :
+    (
+      q = l001 < 0.5 ? l001 * (1.0 + s001) : l001 + s001 - l001 * s001;
+      p = 2.0 * l001 - q;
+      r = hue2RGB(p, q, h + 120);
+      g = hue2RGB(p, q, h);
+      b = hue2RGB(p, q, h - 120);
+    );
+  );
+
+
+  function setColor()
+  instance(r, g, b)
+  (
+    gfx_set(r, g, b);
+  );
+
+
+  function setupHSLColor(hue, saturation, lightness)
+  instance(h, s, l)
+  global()
+  (
+    h = hue; s = saturation; l = lightness;
+    this.calcRGB();
+    this;
+  );
+
+
+  function HSLColorAdjusted(add_h, add_s, add_l)
+  instance(h, s, l)
+  (
+    h = (this..h + add_h + 360) % 360;
+    s = max(0, min(100, this..s + add_s));
+    l = max(0, min(100, this..l + add_l));
+    this.calcRGB();
+    this;
+  );
+
+
+  function HSLColorScaled(scale_h, scale_s, scale_l)
+  instance(h, s, l)
+  (
+    h = (this..h * (scale_h / 360 + 1.0) + 360) % 360;
+    s = (
+          scale_s > 0 ? this..s + (100 - this..s) * (scale_s * 0.01) : 
+          scale_s < 0 ? this..s * abs(scale_s * 0.01 + 1.0) :
+          this..s
+        );
+    l = (
+          scale_l > 0 ? this..l + (100 - this..l) * (scale_l * 0.01) : 
+          scale_l < 0 ? this..l * abs(scale_l * 0.01 + 1.0) :
+          this..l
+        );
+    this.calcRGB();
+    this;
+  );
+
+
+  function getButtonColors(color_index, add_h, add_s, add_l)
+  (
+    this = color_index;
+    this.HSLColorAdjusted(add_h, add_s, add_l);
+    this.BORDER = color_index + 1;
+    this.BORDER.HSLColorScaled(0, -10, 20);
+    this.LABEL = color_index + 2;
+    this.LABEL.HSLColorScaled(0, -10, 50);
+    this.NEXT_INDEX = color_index + 3;
+  );
+
+
+  function getButtonControlsColors(color_index, add_h, add_s, add_l)
+  (
+    this.getButtonColors(color_index, add_h, add_s, add_l);
+    this.HOVER.getButtonColors(this.NEXT_INDEX, 0, -5, 5);
+    this.PRESS.getButtonColors(this.HOVER.NEXT_INDEX, 0, -10, 10);
+    this.NEXT_INDEX = this.PRESS.NEXT_INDEX;
+  );
+
+
+  function getToggleButtonsColors(color_index)
+  (
+    this.getButtonControlsColors(color_index, 0, 20, 15);
+    this.DISABLED.getButtonControlsColors(this.NEXT_INDEX, -90, -30, -20);
+    this.NEXT_INDEX = this.DISABLED.NEXT_INDEX;
+  );
+
+
+  function getTriggerButtonsColors(color_index)
+  (
+    this.getButtonControlsColors(color_index, 0, 20, 15);
+    this.DISABLED.getButtonColors(this.NEXT_INDEX, -90, -30, -20);
+    this.NEXT_INDEX = this.DISABLED.NEXT_INDEX;
+  );
+
+
+  function getSwitchButtonsColors(color_index, num_of_colors)
+  local(i, range, start, dh)
+  (
+    dh = 240 / num_of_colors;
+    i = color_index;
+    this = i;
+    this.HSLColorAdjusted(0, 20, 15); i += 1;
+
+    0 < num_of_colors ? (
+      this.I.getButtonControlsColors(i, dh, 0, 0);
+      i = this.I.NEXT_INDEX;
+    );
+    1 < num_of_colors ? (
+      this.II.getButtonControlsColors(i, 2*dh, 0, 0);
+      i = this.II.NEXT_INDEX;
+    );
+    2 < num_of_colors ? (
+      this.III.getButtonControlsColors(i, 3*dh, 0, 0);
+      i = this.III.NEXT_INDEX;
+    );
+    3 < num_of_colors ? (
+      this.IV.getButtonControlsColors(i, 4*dh, 0, 0);
+      i = this.IV.NEXT_INDEX;
+    );
+    4 < num_of_colors ? (
+      this.V.getButtonControlsColors(i, 5*dh, 0, 0);
+      i = this.V.NEXT_INDEX;
+    );
+    this.NEXT_INDEX = i;
+  );
+
+
+  function setSectionColors(color_index, add_h)
+  (
+    this = color_index;
+    this.HSLColorAdjusted(add_h, 0, 0);
+    this.BG = color_index + 1;
+    this.BG.HSLColorAdjusted(0, 0, 5);
+    this.TEXT_HEADER = color_index + 2;
+    this.TEXT_HEADER.HSLColorScaled(0, 5, 50);
+    this.NEXT_INDEX = color_index + 3;
+  );
+
+
+  function setXYGraphColors(color_index)
+  (
+    this = color_index;
+    this.HSLColorAdjusted(0, 0, 0);
+    this.BG = color_index + 1;
+    this.BG.HSLColorScaled(0, -75, -60);
+    this.LINE = color_index + 2;
+    this.LINE.HSLColorScaled(0, -80, 10);
+    this.DOT = color_index + 3;
+    this.DOT.HSLColorScaled(0, 15, 25);
+    this.BOTTOM = color_index + 4;
+    this.BOTTOM.HSLColorAdjusted(0, 0, 0);
+    this.BOTTOM.BG = color_index + 5;
+    this.BOTTOM.BG.HSLColorScaled(0, 0, -10);
+    this.BOTTOM.LABEL = color_index + 6;
+    this.BOTTOM.LABEL.HSLColorScaled(0, -30, 50);
+    this.NEXT_INDEX = color_index + 7;
+  );
+
+
+  function setCircleOfFifthColors(color_index)
+  local(h)
+  (
+    h = 0;
+
+    this = color_index; color_index += 1;
+    this.HSLColorAdjusted(-120, 10, 45);
+
+    this.CN = color_index; color_index += 1;
+    this.CN.setupHSLColor(this.h, this.s, this.l); h += 30;
+    this.FN = color_index; color_index += 1;
+    this.FN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.BES = color_index; color_index += 1;
+    this.BES.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.EES = color_index; color_index += 1;
+    this.EES.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.AES = color_index; color_index += 1;
+    this.AES.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.DES = color_index; color_index += 1;
+    this.DES.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.GS = color_index; color_index += 1;
+    this.GS.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.CS = color_index; color_index += 1;
+    this.CS.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.FS = color_index; color_index += 1;
+    this.FS.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.BN = color_index; color_index += 1;
+    this.BN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.EN = color_index; color_index += 1;
+    this.EN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.AN = color_index; color_index += 1;
+    this.AN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.DN = color_index; color_index += 1;
+    this.DN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+    this.GN = color_index; color_index += 1;
+    this.GN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
+  );
+
+
+  function setScreenColors(color_index)
+  (
+    this = color_index;
+    this.HSLColorScaled(0, -75, -50);
+    this.BG = color_index + 1;
+    this.BG.HSLColorAdjusted(0, 0, 0);
+    this.BG.FLASH = color_index + 2;
+    this.BG.FLASH.HSLColorScaled(0, 20, 50);
+    this.REGULAR_CIRCLE = color_index + 3;
+    this.REGULAR_CIRCLE.HSLColorScaled(0, -90, 85);
+    this.SELECTED_CIRCLE = color_index + 4;
+    this.SELECTED_CIRCLE.HSLColorScaled(0, 30, 60);
+    this.CURRENT_POSITION = color_index + 5;
+    this.CURRENT_POSITION.HSLColorAdjusted(-60, 75, 60);
+    this.CIRCLE_OF_FIFTH.setCircleOfFifthColors(color_index + 6);
+  );
+
+  ext_midi_bus = 1.0;
+
+  // Plugin Constants
+
+  TWO_PI = 2.0 * $pi;
+
+  STATUS_NOTE_ON          = $x90; // Note On Message
+  STATUS_NOTE_OFF         = $x80; // Note Off Message
+
+  MODE_CIRCLE = 0;
+  MODE_SYNCED = 1;
+  MODE_MIDI = 2;
+
+  MAX_CIRCLE_COUNT = 256;
+  CIRC_PROPERTIES = 8;
+  CIRC_MEM_SIZE = MAX_CIRCLE_COUNT * CIRC_PROPERTIES;
+  CIRC_MODES = 3; // 1 Hz; 2 ms; 3 Bar
+
+  CIRC_ROTATION_OFFSET = 0;
+  CIRC_CX_OFFSET = 1;
+  CIRC_CY_OFFSET = 2;
+  CIRC_MODE_OFFSET = 3;
+  CIRC_RADIUS_OFFSET = 4;
+  CIRC_ROTATION_SPEED_OFFSET = 5;
+  CIRC_SPEED_HZ_OFFSET = 5;
+  CIRC_SPEED_MS_OFFSET = 6;
+  CIRC_SPEED_WN_OFFSET = 7;
+
+  SPEED_MODE_HZ = 0;
+  SPEED_MODE_MS = 1;
+  SPEED_MODE_WN = 2;
+
+  TRIGGER_MODE_OFFSET = 0;
+  TRIGGER_THETA_OFFSET = 1;
+  TRIGGER_HZ_OFFSET = 2;
+  TRIGGER_MS_OFFSET = 3;
+  TRIGGER_WN_OFFSET = 4;
+  TRIGGER_POSITION_OFFSET = 5;
+  TRIGGER_SETTINGS_MEM_SIZE = 6;
+
+  TRIGGER_THETA = 0;
+  TRIGGER_HZ = 1;
+  TRIGGER_MS = 2;
+  TRIGGER_WN = 3;
+
+  NOTELENGTH_MODE_OFFSET = 0;
+  NOTELENGTH_SETTINGS_OFFSET = 1;
+  NOTELENGTH_PCT_OFFSET = 1;
+  NOTELENGTH_MS_OFFSET = 2;
+  NOTELENGTH_WN_OFFSET = 3;
+  NOTELENGTH_SETTINGS_MEM_SIZE = 4;
+
+  NOTELENGTH_PCT = 0;
+  NOTELENGTH_MS = 1;
+  NOTELENGTH_WN = 2;
+  NOTELENGTH_MIN_PCT_MS = 3;
+  NOTELENGTH_MIN_PCT_WN = 4;
+  NOTELENGTH_MIN_MS_WN = 5;
+  NOTELENGTH_MIN_ALL = 6;
+  NOTELENGTH_MAX_PCT_MS = 7;
+  NOTELENGTH_MAX_PCT_WN = 8;
+  NOTELENGTH_MAX_MS_WN = 9;
+  NOTELENGTH_MAX_ALL = 10;
+  NOTELENGTH_MODES = 7;
+
+
+  // GUI Constants
+
+  // Strings
+  TITLE_STRING = "CIRCULAR NOTE GENERATOR";
+  AUTHOR_STRING = "@RCJacH";
+  COMMON_SECTION_HEADER = "COMMON SETTINGS";
+  SCALE_SECTION_HEADER = "SCALE SETTINGS";
+  CIRCLE_SECTION_HEADER = "CIRCLE SETTINGS";
+  LOGARITHMIC_DISTANCE_STRING = "Logarithmic";
+  CIRCLE_OF_FIFTH_STRING = "Circle of Fifth";
+  NO_REPEATITION_STRING = "No Repeated Notes";
+  RADIUS_STRING = "Radius: ";
+  SPEED_STRING = "Speed: ";
+
+  // Status
+  BUTTON_BG_OFFSET = 0;
+  BUTTON_BORDER_OFFSET = 1;
+  BUTTON_TEXT_OFFSET = 2;
+
+  BUTTON_STATUS_INACTIVE = 0;
+  BUTTON_STATUS_HOVER = 1;
+  BUTTON_STATUS_PRESS = 2;
+  BUTTON_STATUS_DISABLED = 3;
+  BUTTON_STATUS_DISABLED_HOVER = 4;
+  BUTTON_STATUS_DISABLED_PRESS = 5;
+
+  // Color
+  COLOR.setupHSLColor(214, 32, 30);
+  COLOR.OUTSIDE = 0;
+  COLOR.OUTSIDE.HSLColorScaled(0, -70, -60);
+  COLOR.PANEL = 1;
+  COLOR.PANEL.HSLColorAdjusted(0, -8, 40);
+  COLOR.PANEL.TEXT_TITLE = 2;
+  COLOR.PANEL.TEXT_TITLE.HSLColorScaled(0, -20, -65);
+  COLOR.PANEL.TEXT_AUTHOR = 3;
+  COLOR.PANEL.TEXT_AUTHOR.HSLColorScaled(0, 50, -50);
+  COLOR.PANEL.BUTTON.getToggleButtonsColors(COLOR.PANEL.TEXT_AUTHOR + 1);
+
+  COLOR.COMMON.setSectionColors(COLOR.PANEL.BUTTON.NEXT_INDEX, 60);
+  COLOR.COMMON.LABEL = COLOR.COMMON.NEXT_INDEX;
+  COLOR.COMMON.LABEL.HSLColorScaled(0, -30, 50);
+  COLOR.COMMON.BUTTON.getToggleButtonsColors(COLOR.COMMON.NEXT_INDEX + 1);
+  COLOR.COMMON.TRIGGERMODE.HSLColorAdjusted(0, 0, 0);
+  COLOR.COMMON.TRIGGERMODE.SWITCH.getSwitchButtonsColors(COLOR.COMMON.BUTTON.NEXT_INDEX, 4);
+  COLOR.COMMON.NOTELENGTH.HSLColorAdjusted(0, 0, 0);
+  COLOR.COMMON.NOTELENGTH.SWITCH.getSwitchButtonsColors(COLOR.COMMON.TRIGGERMODE.SWITCH.NEXT_INDEX, 3);
+  COLOR.COMMON.NOTELENGTH.MIN.HSLColorAdjusted(45, 0, 0);
+  COLOR.COMMON.NOTELENGTH.MIN.SWITCH.getSwitchButtonsColors(COLOR.COMMON.NOTELENGTH.SWITCH.NEXT_INDEX, 4);
+  COLOR.COMMON.NOTELENGTH.MAX.HSLColorAdjusted(-45, 0, 0);
+  COLOR.COMMON.NOTELENGTH.MAX.SWITCH.getSwitchButtonsColors(COLOR.COMMON.NOTELENGTH.MIN.SWITCH.NEXT_INDEX, 4);
+
+  COLOR.SCALE.setSectionColors(COLOR.COMMON.NOTELENGTH.MAX.SWITCH.NEXT_INDEX, -90);
+  COLOR.SCALE.BUTTON.getToggleButtonsColors(COLOR.SCALE.NEXT_INDEX);
+  COLOR.SCALE.TRIGGER.getButtonControlsColors(COLOR.SCALE.BUTTON.NEXT_INDEX, 0, 0, 0);
+  COLOR.CIRCLE.setSectionColors(COLOR.SCALE.TRIGGER.NEXT_INDEX, 180);
+  COLOR.CIRCLE.BUTTON.getTriggerButtonsColors(COLOR.CIRCLE.NEXT_INDEX);
+  COLOR.CIRCLE.XY.setXYGraphColors(COLOR.CIRCLE.BUTTON.NEXT_INDEX);
+  COLOR.CIRCLE.SWITCH.getSwitchButtonsColors(COLOR.CIRCLE.XY.NEXT_INDEX, 3);
+
+  COLOR.SCREEN.setScreenColors(COLOR.CIRCLE.SWITCH.NEXT_INDEX);
+
+  // Fonts Indice
+  FONT_TITLE = 1;
+  FONT_AUTHOR = 2;
+  FONT_SECTION_TITLE = 3;
+  FONT_COMMON_BUTTON = 4;
+  FONT_COMMON_LABEL = 5;
+  FONT_SCALE_BUTTON = 6;
+  FONT_CIRCLE_XY_BUTTON = 7;
+  FONT_CIRCLE_INDEX = 8;
+  FONT_CIRCLE_LABEL = 9;
+  FONT_CIRCLE_SWITCH = 11;
+  FONT_SCREEN_RADIUS = 12;
+  FONT_SCREEN_NOTENAME = 13;
+
+  // Non persistant variable initiation
+
+  g_scaling = 1.0;
+  fontscaling = 1.0;
+  is_pending_note_on = -1;
+  note_duration_in_samples = 0;
+  samples_until_note_off = -1;
+  samples_until_flash = -1;
+  scale_note_count = 0;
+  root_note = 0;
+  note_choice.current = -1;
+  note_choice.last = -1;
+  note_choice.octave = -1;
+  note_choice.last_octave = -1;
+  note_choice.scale_degree = -1;
+  note_choice.last_scale_degree = -1;
+  note_choice.repeat_count = 0;
+  last_note = -1;
+  user_input.is_holding = 0;
+  user_input.base_note = 0;
+  user_input.play_pos = 0;
+  user_input.beat_pos = 0;
+
+  inc = 0;
+
+  a_scale_notes = inc; inc += 12;
+  a_scale_buttons = inc; inc += 12;
+  a_trigger_settings = inc; inc += TRIGGER_SETTINGS_MEM_SIZE;
+  a_notelength_settings = inc; inc += NOTELENGTH_SETTINGS_MEM_SIZE;
+  point = inc; inc += 2;
+  final_point = inc; inc += 2;
+  a_circle_data = inc; inc += CIRC_MEM_SIZE;
+
+
+  function initialize()
+  local(offset)
+  global(
+    base_note, is_no_repetition, circle_count, a_circle_data,
+    CIRC_MEM_SIZE, CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_MODE_OFFSET,
+    CIRC_SPEED_HZ_OFFSET, CIRC_SPEED_MS_OFFSET, CIRC_SPEED_WN_OFFSET,
+    a_scale_notes, a_scale_buttons, is_initiated,
+    a_trigger_settings, TRIGGER_SETTINGS_MEM_SIZE,
+    a_notelength_settings, NOTELENGTH_SETTINGS_MEM_SIZE, NOTELENGTH_PCT_OFFSET
+  )
+  (
+    base_note = 48;
+    is_no_repetition = 1;
+    circle_count = 3;
+    memset(a_trigger_settings, 0.0, TRIGGER_SETTINGS_MEM_SIZE);
+    memset(a_notelength_settings, 0.5, NOTELENGTH_SETTINGS_MEM_SIZE);
+    a_notelength_settings[0] = 0.0;
+    memset(a_circle_data, 0.0, CIRC_MEM_SIZE);
+    a_circle_data[CIRC_RADIUS_OFFSET] = 7.0;
+    a_circle_data[CIRC_SPEED_HZ_OFFSET] = 0.2;
+    a_circle_data[CIRC_SPEED_MS_OFFSET] = 0.2;
+    a_circle_data[CIRC_SPEED_WN_OFFSET] = 0.2;
+    offset = CIRC_PROPERTIES;
+    a_circle_data[offset + CIRC_MODE_OFFSET] = 1;
+    a_circle_data[offset + CIRC_RADIUS_OFFSET] = 5.0;
+    a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.4;
+    a_circle_data[offset + CIRC_SPEED_MS_OFFSET] = 0.4;
+    a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.4;
+    offset += CIRC_PROPERTIES;
+    a_circle_data[offset + CIRC_MODE_OFFSET] = 2;
+    a_circle_data[offset + CIRC_RADIUS_OFFSET] = 2.0;
+    a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.7;
+    a_circle_data[offset + CIRC_SPEED_MS_OFFSET] = 0.7;
+    a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.46;
+    memset(a_scale_notes, 0.0, 12);
+    memset(a_scale_buttons, 0.0, 12);
+    a_scale_buttons[0] = 1;
+    a_scale_buttons[2] = 1;
+    a_scale_buttons[4] = 1;
+    a_scale_buttons[5] = 1;
+    a_scale_buttons[7] = 1;
+    a_scale_buttons[9] = 1;
+    a_scale_buttons[11] = 1;
+    is_initiated = 1;
+  );
+
+
+  function log_curve(x, v)
+  (
+    (log(x + 1) / log(2)) ^ v;
+  );
+
+
+  function get_pitchclass_name(deg)
+  (
+    !deg ? "C" :
+    deg == 1 ? "D" :
+    deg == 2 ? "E" :
+    deg == 3 ? "F" :
+    deg == 4 ? "G" :
+    deg == 5 ? "A" :
+    deg == 6 ? "B";
+  );
+
+
+  function get_pitch_name(tonic, st)
+  local(degx, tonic_pcx, deg_pcx, tonic_str, offset, deg_stx)
+  (
+    // Display flats for b3 and b7, which is more common than #2 and #6
+    (st == 3 || st == 10) ? (st -= 3; tonic += 3);
+
+    degx = floor((st + (st >= 5)) * 0.5);
+    tonic_pcx = ceil((tonic + (tonic >= 5)) * 0.5);
+    deg_pcx = tonic_pcx + degx;
+    tonic_str = strcpy(#, get_pitchclass_name(deg_pcx % 7));
+
+    deg_stx = deg_pcx * 2;
+    offset = st - (deg_stx - tonic - ceil((deg_stx - 4) / 12) - max(0, ceil((deg_stx - 12) / 12))) % 12;
+    strcat(
+      tonic_str,
+      offset == 3 ? "x#" :
+      offset == 2 ? "x" :
+      offset == 1 ? "#" :
+      offset == -1 ? "b" :
+      offset == -2 ? "bb" :
+      offset == -3 ? "bbb" :
+      ""
+    );
+  );
+
+
+  function get_degree_name(pit) (
+    pit == 0 ? "1" :
+    pit == 1 ? "#1" :
+    pit == 2 ? "2" :
+    pit == 3 ? "b3" :
+    pit == 4 ? "3" :
+    pit == 5 ? "4" :
+    pit == 6 ? "#4" :
+    pit == 7 ? "5" :
+    pit == 8 ? "#5" :
+    pit == 9 ? "6" :
+    pit == 10 ? "b7" :
+    pit == 11 ? "7";
+  );
+
+
+  function update_scale()
+  local(i, j)
+  global(a_scale_buttons, a_scale_notes, scale_note_count)
+  (
+    i = j = 0;
+    scale_note_count = 0;
+    memset(a_scale_notes, 0, 12);
+    loop(12,
+      a_scale_buttons[i] ? (
+        a_scale_notes[j] = i;
+        j += 1;
+      );
+      i += 1;
+    );
+    scale_note_count = j;
+  );
+
+
+  function get_current_point_on_circle(index, cx, cy)
+  local(offset, radius, theta)
+  global(
+    circle_count, a_circle_data,
+    CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_ROTATION_OFFSET,
+    TWO_PI, point
+  )
+  (
+    offset = index * CIRC_PROPERTIES;
+    radius = a_circle_data[offset + CIRC_RADIUS_OFFSET];
+    theta = -(a_circle_data[offset + CIRC_ROTATION_OFFSET] + 0.25) * TWO_PI;
+    point[0] = radius * cos(theta) + cx;
+    point[1] = radius * sin(theta) + cy;
+  );
+
+
+  function get_sync_string(v)
+  local(i)
+  (
+    i = floor(v * 50);
+    !i ? "2" : // 2 measures in 4/4
+    i == 1 ? "7/4" : // 1 measure in 7/4
+    i == 2 ? "3/2" : // dotted whole note
+    i == 3 ? "5/4" : // 1 measure in 5/4
+    i == 4 ? "1" : // 1 measure
+    i == 5 ? "7/8" : // 7 8th notes
+    i == 6 ? "6/7" : // 6 quarter note septuplet
+    i == 7 ? "4/5" : // 4 quarter note quintuplet
+    i == 8 ? "3/4" : // dotted half note
+    i == 9 ? "5/7" : // 5 quarter note septuplet
+    i == 10 ? "2/3" : // 2 half note triplet
+    i == 11 ? "5/8" : // 5 8th notes
+    i == 12 ? "3/5" : // 3 quarter note quintuplet
+    i == 13 ? "4/7" : // 4 quarter note septuplet
+    i == 14 ? "1/2" : // half note
+    i == 15 ? "3/7" : // 3 quarter note septuplet
+    i == 16 ? "2/5" : // 2 quarter note quintuplet
+    i == 17 ? "3/8" : // dotted 8th notes
+    i == 18 ? "5/14" : // 5 8th notes septuplet
+    i == 19 ? "1/3" : // half note triplet
+    i == 20 ? "3/10" : // 3 8th notes quintuplet
+    i == 21 ? "2/7" : // 2 quarter note septuplet
+    i == 22 ? "5/18" : // 5 8th note nonuplet
+    i == 23 ? "1/4" : // quarter note
+    i == 24 ? "2/9" : // 2 quarter note nonuplet
+    i == 25 ? "3/14" : // 3 8th note septuplet
+    i == 26 ? "1/5" : // quarter note quintuplet
+    i == 27 ? "7/36" : // 7 16th note nonuplet
+    i == 28 ? "3/16" : // dotted 16th note
+    i == 29 ? "5/28" : // 5 16th note septuplet
+    i == 30 ? "1/6" : // quarter note triplet
+    i == 31 ? "3/20" : // 3 16th note quintuplet
+    i == 32 ? "1/7" : // quarter note septuplet
+    i == 33 ? "5/36" : // 5 16th note nonuplet
+    i == 34 ? "1/8" : // 8th note
+    i == 35 ? "1/9" : // quarter note nonuplet
+    i == 36 ? "3/28" : // 3 16th note septuplet
+    i == 37 ? "1/10" : // 8th note quintuplet
+    i == 38 ? "3/32" : // dotted 16th note
+    i == 39 ? "1/12" : // 8th note triplet
+    i == 40 ? "1/14" : // 8th note septuplet
+    i == 41 ? "1/16" : // 16th note
+    i == 42 ? "3/64" : // dotted 32th note
+    i == 43 ? "1/18" : // 8th note nonuplet
+    i == 44 ? "1/20" : // 16th note quintuplet
+    i == 45 ? "1/24" : // 16th note triplet
+    i == 46 ? "1/28" : // 16th note septuplet
+    i == 47 ? "1/32" : // 32th note
+    i == 48 ? "1/36" : // 16th note nonuplet
+    i == 49 ? "1/64" : // 64th note
+    "1/128"; // 128th note
+  );
+
+
+  function get_sync_ratio(speed)
+  local(i, samples_per_qn)
+  global(srate, tempo)
+  (
+    samples_per_qn = srate * 60 / tempo;
+    i = floor(speed * 50);
+
+    !i ? 8 * samples_per_qn : // 2 measures in 4/4
+    i == 1 ? 7 * samples_per_qn  : // 1 measure in 7/4
+    i == 2 ? 6 * samples_per_qn : // dotted whole note
+    i == 3 ? 5 * samples_per_qn : // 1 measure in 5/4
+    i == 4 ? 4 * samples_per_qn : // 1 measure
+    i == 5 ? 7 * samples_per_qn / 2 : // 7 8th notes
+    i == 6 ? 24 * samples_per_qn / 7 : // 6 quarter note septuplet
+    i == 7 ? 16 * samples_per_qn / 5 : // 4 quarter note quintuplet
+    i == 8 ? 3 * samples_per_qn : // dotted half note
+    i == 9 ? 20 * samples_per_qn / 7 : // 5 quarter note septuplet
+    i == 10 ? 8 * samples_per_qn / 3 : // 2 half note triplet
+    i == 11 ? 5 * samples_per_qn / 2 : // 5 8th notes
+    i == 12 ? 12 * samples_per_qn / 5 : // 3 quarter note quintuplet
+    i == 13 ? 16 * samples_per_qn / 7 : // 4 quarter note septuplet
+    i == 14 ? 2 * samples_per_qn : // half note
+    i == 15 ? 12 * samples_per_qn / 7 : // 3 quarter note septuplet
+    i == 16 ? 8 * samples_per_qn / 5 : // 2 quarter note quintuplet
+    i == 17 ? 3 * samples_per_qn / 2 : // dotted 8th notes
+    i == 18 ? 10 * samples_per_qn / 7 : // 5 8th notes septuplet
+    i == 19 ? 4 * samples_per_qn / 3 : // half note triplet
+    i == 20 ? 6 * samples_per_qn / 5 : // 3 8th notes quintuplet
+    i == 21 ? 8 * samples_per_qn / 7 : // 2 quarter note septuplet
+    i == 22 ? 10 * samples_per_qn / 9 : // 5 8th note nonuplet
+    i == 23 ? samples_per_qn : // quarter note
+    i == 24 ? 8 * samples_per_qn / 9 : // 2 quarter note nonuplet
+    i == 25 ? 6 * samples_per_qn / 7 : // 3 8th note septuplet
+    i == 26 ? 4 * samples_per_qn / 5 : // quarter note quintuplet
+    i == 27 ? 7 * samples_per_qn / 9 : // 7 16th note nonuplet
+    i == 28 ? 3 * samples_per_qn / 4 : // dotted 16th note
+    i == 29 ? 5 * samples_per_qn / 7 : // 5 16th note septuplet
+    i == 30 ? 2 * samples_per_qn / 3 : // quarter note triplet
+    i == 31 ? 3 * samples_per_qn / 5 : // 3 16th note quintuplet
+    i == 32 ? 4 * samples_per_qn / 7 : // quarter note septuplet
+    i == 33 ? 5 * samples_per_qn / 9 : // 5 16th note nonuplet
+    i == 34 ? samples_per_qn / 2 : // 8th note
+    i == 35 ? 4 * samples_per_qn / 9 : // quarter note nonuplet
+    i == 36 ? 3 * samples_per_qn / 7 : // 3 16th note septuplet
+    i == 37 ? 2 * samples_per_qn / 5 : // 8th note quintuplet
+    i == 38 ? 3 * samples_per_qn / 8 : // dotted 16th note
+    i == 39 ? samples_per_qn / 3 : // 8th note triplet
+    i == 40 ? 2 * samples_per_qn / 7 : // 8th note septuplet
+    i == 41 ? samples_per_qn / 4 : // 16th note
+    i == 42 ? 3 * samples_per_qn / 16 : // dotted 32th note
+    i == 43 ? 2 * samples_per_qn / 9 : // 8th note nonuplet
+    i == 44 ? samples_per_qn / 5 : // 16th note quintuplet
+    i == 45 ? samples_per_qn / 6 : // 16th note triplet
+    i == 46 ? samples_per_qn / 7 : // 16th note septuplet
+    i == 47 ? samples_per_qn / 8 : // 32th note
+    i == 48 ? samples_per_qn / 9 : // 16th note nonuplet
+    i == 49 ? samples_per_qn / 16 : // 64th note
+    samples_per_qn / 32; // 128th note
+  );
+
+
+  function get_hz_from_speed(speed)
+  global(MAX_SPEED_HZ)
+  (
+    MAX_SPEED_HZ * log_curve(speed, 3.6);
+  );
+
+
+  function get_ms_from_speed(speed)
+  global(MIN_SPEED_S, MAX_SPEED_S)
+  (
+    MIN_SPEED_S + log_curve(1 - speed, 2.4) * (MAX_SPEED_S - MIN_SPEED_S);
+  );
+
+
+  function get_rotation_delta(mode, speed, delta_samples)
+  global(
+    srate, SPEED_MODE_HZ, SPEED_MODE_MS, SPEED_MODE_WN,
+  )
+  (
+    mode == SPEED_MODE_HZ ? // hz
+      delta_samples * get_hz_from_speed(speed) / srate
+    : mode == SPEED_MODE_MS ?
+      delta_samples / (get_ms_from_speed(speed) * srate)
+    : mode == SPEED_MODE_WN ?
+      delta_samples / get_sync_ratio(speed)
+  );
+
+
+  function get_circle_rotation_delta(amount, offset)
+  local(mode, speed)
+  global(
+    a_circle_data, CIRC_MODE_OFFSET, CIRC_ROTATION_SPEED_OFFSET
+  )
+  (
+    mode = a_circle_data[offset + CIRC_MODE_OFFSET];
+    speed = a_circle_data[offset + CIRC_ROTATION_SPEED_OFFSET + mode];
+
+    get_rotation_delta(mode, speed, amount);
+  );
+
+
+  function update_rotations(amount)
+  local(
+    index, offset, radius, cx, cy, rotation_delta, old_rotation, new_rotation,
+    thres
+  )
+  global(
+    circle_count, a_circle_data,
+    CIRC_PROPERTIES, CIRC_CX_OFFSET, CIRC_CY_OFFSET,
+    CIRC_RADIUS_OFFSET, CIRC_ROTATION_OFFSET,
+    point, final_point, is_pending_note_on,
+    a_trigger_settings, TRIGGER_MODE_OFFSET, TRIGGER_THETA,
+  )
+  (
+    index = 0;
+    memset(point, 0.0, 2);
+    loop(circle_count,
+      offset = index * CIRC_PROPERTIES;
+      a_circle_data[offset + CIRC_CX_OFFSET] = point[0];
+      a_circle_data[offset + CIRC_CY_OFFSET] = point[1];
+      radius = a_circle_data[offset + CIRC_RADIUS_OFFSET];
+      old_rotation = a_circle_data[offset + CIRC_ROTATION_OFFSET];
+      rotation_delta = get_circle_rotation_delta(amount, offset);
+      new_rotation = old_rotation + rotation_delta;
+      a_circle_data[offset + CIRC_ROTATION_OFFSET] = new_rotation - floor(new_rotation);
+      get_current_point_on_circle(index, point[0], point[1]);
+      index += 1;
+    );
+
+    a_trigger_settings[TRIGGER_MODE_OFFSET] == TRIGGER_THETA ? (
+      thres = a_trigger_settings[1 + TRIGGER_THETA];
+      !thres ? thres = 1.0;
+      new_rotation > thres ?
+        is_pending_note_on = floor((thres - old_rotation) / rotation_delta * amount);
+    );
+    memcpy(final_point, point, 2);
+  );
+
+
+  function get_total_radius()
+  local(index, offset, sum)
+  global(
+    circle_count, a_circle_data,
+    CIRC_PROPERTIES, CIRC_RADIUS_OFFSET,
+  )
+  (
+    index = 0;
+    sum = 0.0;
+    while(index < circle_count) (
+      offset = index * CIRC_PROPERTIES;
+      sum += a_circle_data[offset + CIRC_RADIUS_OFFSET];
+      index += 1;
+    );
+    sum;
+  );
+
+
+  function get_distance_from_point(x, y)
+  (
+    sqrt(sqr(x) + sqr(y));
+  );
+
+
+  function add_circle()
+  local(offset)
+  global(
+    circle_count, a_circle_data, currently_selected_circle,
+    CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_ROTATION_OFFSET,
+    CIRC_SPEED_HZ_OFFSET, CIRC_SPEED_MS_OFFSET, CIRC_SPEED_WN_OFFSET
+  )
+  (
+    currently_selected_circle = circle_count;
+    offset = circle_count * CIRC_PROPERTIES;
+    a_circle_data[offset + CIRC_RADIUS_OFFSET] = 1.0;
+    !a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] ?
+      a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.5;
+    !a_circle_data[offset + CIRC_SPEED_MS_OFFSET] ?
+      a_circle_data[offset + CIRC_SPEED_MS_OFFSET] = 0.5;
+    !a_circle_data[offset + CIRC_SPEED_WN_OFFSET] ?
+      a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.5;
+    a_circle_data[offset + CIRC_ROTATION_OFFSET] = 0.0;
+    circle_count += 1;
+  );
+
+
+  function remove_circle()
+  global(currently_selected_circle, circle_count)
+  (
+    circle_count -= 1;
+    currently_selected_circle = min(currently_selected_circle, circle_count - 1);
+  );
+
+
+  function setup_circles(new_count)
+  local(i, j, offset, speed)
+  global(
+    circle_count, a_circle_data,
+    CIRC_PROPERTIES, CIRC_ROTATION_SPEED_OFFSET, CIRC_ROTATION_OFFSET,
+  )
+  (
+    (new_count < circle_count) ? (
+      circle_count = new_count;
+    ) : (new_count > circle_count) ? (
+      i = circle_count;
+      while(i < circle_count) (
+        offset = i * CIRC_PROPERTIES;
+        speed = a_circle_data[offset + CIRC_ROTATION_SPEED_OFFSET];
+        a_circle_data[offset + CIRC_ROTATION_OFFSET] = 0.0;
+        i += 1;
+      );
+    )
+  );
+
+  !is_initiated ? initialize();
+  update_scale();
+  update_rotations(0);
+
+
+@serialize
+
+  file_var(0, is_initiated);
+  file_var(0, is_logarithmic);
+  file_var(0, is_circle_of_fifth);
+  file_var(0, is_circle_of_fifth_outer_circle);
+  file_var(0, is_no_repetition);
+  file_var(0, scale_note_count);
+  file_var(0, circle_count);
+  file_var(0, currently_selected_circle);
+  file_var(0, samples_until_note_off);
+  file_var(0, note_choice.last);
+  file_var(0, is_scale_name_pitch_not_degree);
+  file_mem(0, a_trigger_settings, TRIGGER_SETTINGS_MEM_SIZE);
+  file_mem(0, a_notelength_settings, NOTELENGTH_SETTINGS_MEM_SIZE);
+  file_mem(0, a_scale_buttons, 12);
+  file_mem(0, a_circle_data, CIRC_MEM_SIZE);
+
+
+@slider
+  is_on = slider1;
+
+
+@block
+
+  function update_last_note()
+  instance(
+    current, last, scale_degree, last_scale_degree, octave, last_octave
+  )
+  global()
+  (
+    last = current;
+    last_octave = octave;
+    last_scale_degree = scale_degree;
+  );
+
+
+  function update_current_root()
+  local(
+    x, y, rotation, index
+  )
+  global(
+    is_circle_of_fifth, is_circle_of_fifth_outer_circle, TWO_PI, current_root,
+    final_point, a_circle_data, CIRC_ROTATION_OFFSET
+  )
+  (
+    is_circle_of_fifth ? (
+      rotation = is_circle_of_fifth_outer_circle ?
+        (atan2(final_point[0], final_point[1]) + $pi) / TWO_PI :
+        a_circle_data[CIRC_ROTATION_OFFSET];
+      index = floor(rotation * 12 + 0.5);
+      current_root = ((index + 12) * 5) % 12;
+    );
+  );
+
+
+  function snap_to_scale(note_distance)
+  local(
+    i, note_in_octave, cur_scale_note, diff, inv_diff, min_diff
+  )
+  instance(current, scale_degree, octave)
+  global(
+    a_scale_notes, scale_note_count, current_root
+  )
+  (
+    octave = floor(note_distance / 12);
+    note_in_octave = note_distance % 12;
+    i = 0;
+    min_diff = 12 * scale_note_count;
+    loop(scale_note_count,
+      cur_scale_note = current_root + a_scale_notes[i];
+      diff = (cur_scale_note - note_in_octave + 12) % 12;
+      inv_diff = diff - 12;
+      abs(diff) > abs(inv_diff) ? diff = inv_diff;
+      abs(diff) < abs(min_diff) ? (
+        scale_degree = i;
+        min_diff = diff;
+      );
+      i += 1;
+    );
+    current = note_distance + min_diff;
+    octave = floor(current / 12);
+    this;
+  );
+
+
+  function fix_repeated_note()
+  local(
+    repeat, degree_shift, new_octave, new_scale_degree
+  )
+  instance(
+    current, last, octave, last_octave, scale_degree, last_scale_degree, repeat_count
+  )
+  global(
+    scale_note_count, a_scale_notes,
+  )
+  (
+    repeat_count += (
+      current == last ||
+      (scale_degree == last_scale_degree && octave == last_octave)
+    ) ? 1 : -repeat_count;
+    repeat = ((repeat_count + 1) % 4 - 1);
+    degree_shift = (repeat % 2) * sign(repeat);
+    new_octave = floor((scale_degree + degree_shift) / scale_note_count);
+    new_scale_degree = (scale_degree + degree_shift) % scale_note_count;
+    new_scale_degree < 0 ? new_scale_degree += scale_note_count;
+    current += new_octave * 12 + a_scale_notes[new_scale_degree] - a_scale_notes[scale_degree];
+    octave = floor(current / 12);
+
+    current == last ? (
+      degree_shift = (repeat % 2) * 2 - 1;
+      new_octave = floor((scale_degree + degree_shift) / scale_note_count);
+      new_scale_degree = (scale_degree + degree_shift) % scale_note_count;
+      new_scale_degree < 0 ? new_scale_degree += scale_note_count;
+      current += new_octave * 12 + a_scale_notes[new_scale_degree] - a_scale_notes[scale_degree];
+      octave = floor(current / 12);
+    );
+  );
+
+
+  function get_current_note()
+  local(
+    distance_from_center, note_distance, note, repeat, tmp
+  )
+  global(
+    final_point, note_choice.last, is_no_repetition, is_logarithmic,
+    base_note, note_choice.current,
+    note_choice.update_last_note, note_choice.snap_to_scale, note_choice.fix_repeated_note
+  )
+  (
+    update_current_root();
+    distance_from_center = get_distance_from_point(final_point[0], final_point[1]);
+    tmp = distance_from_center;
+    is_logarithmic ? (
+      distance_from_center = (log(distance_from_center + 1.0) / log(1.8)) ^ (12 ^ 0.210355);
+    );
+    note_distance = floor(distance_from_center + 0.5);
+    note_choice.snap_to_scale(base_note + note_distance);
+    is_no_repetition ? (
+      note_choice.fix_repeated_note();
+    );
+    note_choice.update_last_note();
+    note_choice.current;
+  );
+
+
+  function maybe_send_note_off()
+  global(
+    samples_until_note_off, samples_until_flash,
+    STATUS_NOTE_OFF, note_choice.last, samplesblock
+  )
+  (
+    samples_until_note_off >= 0 && samples_until_note_off < samplesblock ? (
+      midisend(samples_until_note_off, STATUS_NOTE_OFF, note_choice.last, 0);
+      samples_until_note_off = -1;
+    );
+  );
+
+
+  function calculate_trigger_counters(sblock, pstate)
+  local(
+    trigger_mode, speed, sblock_pct, thres,
+    cur_pos_diffed, cur_pos_pct, new_pos_pct
+  )
+  global(
+    a_trigger_settings, is_pending_note_on,
+    TRIGGER_MODE_OFFSET, TRIGGER_POSITION_OFFSET,
+    TRIGGER_HZ, TRIGGER_MS, TRIGGER_WN, TRIGGER_THETA,
+    srate, play_position,
+    user_input.play_pos
+  )
+  (
+    trigger_mode = a_trigger_settings[TRIGGER_MODE_OFFSET];
+    trigger_mode != TRIGGER_THETA ? (
+      speed = a_trigger_settings[1 + trigger_mode];
+      sblock_pct = get_rotation_delta(
+        trigger_mode - 1,
+        speed,
+        sblock
+      );
+      trigger_mode == TRIGGER_WN && pstate&1 ? (
+        cur_pos_diffed = play_position - user_input.play_pos;
+        cur_pos_diffed >= 0.0 ? (
+          cur_pos_pct = cur_pos_diffed * srate / get_sync_ratio(speed);
+          cur_pos_pct = cur_pos_pct - floor(cur_pos_pct);
+          new_pos_pct = cur_pos_pct + sblock_pct;
+          new_pos_pct >= 1.0 ? is_pending_note_on = (sblock_pct + 1.0 - new_pos_pct) * sblock;
+        );
+      ) : (
+        cur_pos_pct = a_trigger_settings[TRIGGER_POSITION_OFFSET];
+        cur_pos_pct += sblock_pct;
+        cur_pos_pct >= 1.0 ? (
+          is_pending_note_on = (sblock_pct + 1.0 - cur_pos_pct) * sblock;
+          cur_pos_pct -= 1.0;
+        );
+        a_trigger_settings[TRIGGER_POSITION_OFFSET] = cur_pos_pct;
+      );
+    );
+  );
+
+
+  function get_pct_per_sample()
+  local(trigger_mode)
+  global(
+    a_trigger_settings, TRIGGER_MODE_OFFSET, TRIGGER_POSITION_OFFSET,
+    TRIGGER_THETA, circle_count, CIRC_PROPERTIES
+  )
+  (
+    trigger_mode = a_trigger_settings[TRIGGER_MODE_OFFSET];
+    trigger_mode == TRIGGER_THETA ? (
+      get_circle_rotation_delta(1.0, (circle_count - 1) * CIRC_PROPERTIES);
+    ) : (
+      get_rotation_delta(trigger_mode - 1, a_trigger_settings[1 + trigger_mode], 1.0);
+    );
+  );
+
+
+  function get_note_length_by_mode(mode, setting)
+  global(
+    NOTELENGTH_PCT, NOTELENGTH_MS, NOTELENGTH_WN, srate
+  )
+  (
+    mode == NOTELENGTH_PCT ? (
+      setting / get_pct_per_sample()
+    ) : mode == NOTELENGTH_MS ? (
+      get_ms_from_speed(setting) * srate
+    ) : mode == NOTELENGTH_WN ? (
+      get_sync_ratio(setting)
+    );
+  );
+
+
+  function get_note_length()
+  local(notelength_mode, mode1, mode2, offset1, offset2, offset3)
+  global(
+    a_notelength_settings, NOTELENGTH_MODE_OFFSET,
+    NOTELENGTH_SETTINGS_OFFSET,
+    NOTELENGTH_PCT, NOTELENGTH_MS, NOTELENGTH_WN,
+    NOTELENGTH_MIN_PCT_MS, NOTELENGTH_MIN_PCT_WN,
+    NOTELENGTH_MIN_MS_WN, NOTELENGTH_MIN_ALL,
+  )
+  (
+    notelength_mode = a_notelength_settings[NOTELENGTH_MODE_OFFSET];
+    notelength_mode < 3 ? (
+      get_note_length_by_mode(
+        notelength_mode,
+        a_notelength_settings[NOTELENGTH_SETTINGS_OFFSET + notelength_mode]
+      );
+    ) : notelength_mode < NOTELENGTH_MIN_ALL ? (
+      notelength_mode -= 3;
+      mode1 = notelength_mode > 1;
+      mode2 = 1 + (notelength_mode > 0);
+      offset1 = a_notelength_settings + NOTELENGTH_SETTINGS_OFFSET + mode1;
+      offset2 = a_notelength_settings + NOTELENGTH_SETTINGS_OFFSET + mode2;
+      min(
+        get_note_length_by_mode(mode1, offset1[]),
+        get_note_length_by_mode(mode2, offset2[])
+      );
+    ) : notelength_mode == NOTELENGTH_MIN_ALL ? (
+      offset1 = a_notelength_settings + NOTELENGTH_SETTINGS_OFFSET + NOTELENGTH_PCT;
+      offset2 = a_notelength_settings + NOTELENGTH_SETTINGS_OFFSET + NOTELENGTH_MS;
+      offset3 = a_notelength_settings + NOTELENGTH_SETTINGS_OFFSET + NOTELENGTH_WN;
+      min(
+        min(
+          get_note_length_by_mode(NOTELENGTH_PCT, offset1[]),
+          get_note_length_by_mode(NOTELENGTH_MS, offset2[])
+        ),
+        get_note_length_by_mode(NOTELENGTH_WN, offset3[])
+      );
+    );
+  );
+
+
+  function maybe_send_note_on()
+  local(note)
+  global(
+    is_pending_note_on, STATUS_NOTE_ON, STATUS_NOTE_OFF,
+    samples_until_note_off,
+    pending_flash, pending_midi_output, note_choice.last
+  )
+  (
+    is_pending_note_on >= 0 ? (
+      pending_flash = 1;
+      samples_until_note_off >= 0 ?
+        midisend(pending_midi_output - 1, STATUS_NOTE_OFF, note_choice.last, 0);
+      note = get_current_note();
+      midisend(pending_midi_output, STATUS_NOTE_ON, note, 127);
+      samples_until_note_off = get_note_length();
+      is_pending_note_on = -1;
+    );
+  );
+
+
+  function maybe_parse_input()
+  local(offset, msg1, msg2, msg3, in_type)
+  global(
+    user_input.is_holding, user_input.base_note,
+    user_input.play_pos, user_input.beat_pos,
+    STATUS_NOTE_ON, STATUS_NOTE_OFF,
+    MIN_TRIGGER_NOTE, MAX_TRIGGER_NOTE,
+    play_position, beat_position
+  )
+  (
+    while (midirecv(offset, msg1, msg2, msg3)) (
+      in_type = msg1&$xF0;
+      (in_type == STATUS_NOTE_ON) ? (
+        msg3 && (msg2 >= MIN_TRIGGER_NOTE && msg2 <= MAX_TRIGGER_NOTE) ? (
+          user_input.is_holding = 1;
+          user_input.base_note = msg2;
+          user_input.play_pos = play_position;
+          user_input.beat_pos = beat_position;
+        );
+      ) : in_type == STATUS_NOTE_OFF ? ( 
+        msg2 == user_input.base_note ? (
+          user_input.is_holding =
+          user_input.base_note =
+          user_input.play_pos =
+          user_input.beat_pos = 0;
+        );
+      );
+    );
+  );
+
+
+  maybe_send_note_off();
+  samples_until_note_off -= samplesblock;
+
+  is_on ? (
+    maybe_parse_input();
+    update_rotations(samplesblock);
+    calculate_trigger_counters(samplesblock, play_state);
+    maybe_send_note_on();
+  );
+
+
+@gfx 800 600
+  w_scaling = gfx_w / 800;
+  h_scaling = gfx_h / 600;
+  g_scaling = min(w_scaling, h_scaling);
+  g_border_size = floor(4.0 * g_scaling);
+  g_button_border_size = floor(2.0 * g_scaling);
+  g_padding_size = floor(2.0 * g_scaling);
+
+
+  fontscaling = g_scaling;
+  gfx_setfont(FONT_TITLE, "Arial", 32 * fontscaling, 'b');
+  gfx_setfont(FONT_AUTHOR, "Arial", 16 * fontscaling, 'b');
+  gfx_setfont(FONT_SECTION_TITLE, "Arial", 16 * fontscaling, 'b');
+  gfx_setfont(FONT_COMMON_BUTTON, "Arial", 16 * fontscaling, 'b');
+  gfx_setfont(FONT_SCALE_BUTTON, "Arial", 16 * fontscaling, 'b');
+  gfx_setfont(FONT_CIRCLE_INDEX, "Arial", 16 * fontscaling, 'b');
+  gfx_setfont(FONT_CIRCLE_LABEL, "Arial", 12 * fontscaling);
+  gfx_setfont(FONT_SCREEN_RADIUS, "Arial", 12 * fontscaling);
+  gfx_setfont(FONT_SCREEN_NOTENAME, "Arial", 144 * fontscaling);
+
+
+  function uix_setPosition(x, y)
+  global(gfx_x, gfx_y)
+  (
+    gfx_x = x; gfx_y = y;
+  );
+
+
+  function uix_setColor(i)
+  local(n, r, g, b)
+  (
+    i == COLOR.OUTSIDE ? COLOR.OUTSIDE.setColor() :
+    i == COLOR.PANEL ? COLOR.PANEL.setColor() :
+    i == COLOR.COMMON.BG ? COLOR.COMMON.BG.setColor() :
+    i == COLOR.SCALE.BG ? COLOR.SCALE.BG.setColor() :
+    i == COLOR.PANEL.TEXT_TITLE ? COLOR.PANEL.TEXT_TITLE.setColor() :
+    i == COLOR.PANEL.TEXT_AUTHOR ? COLOR.PANEL.TEXT_AUTHOR.setColor() :
+    i == COLOR.PANEL.BUTTON ? COLOR.PANEL.BUTTON.setColor() :
+    i == COLOR.PANEL.BUTTON.BORDER ? COLOR.PANEL.BUTTON.BORDER.setColor() :
+    i == COLOR.PANEL.BUTTON.LABEL ? COLOR.PANEL.BUTTON.LABEL.setColor() :
+    i == COLOR.PANEL.BUTTON.HOVER ? COLOR.PANEL.BUTTON.HOVER.setColor() :
+    i == COLOR.PANEL.BUTTON.HOVER.BORDER ? COLOR.PANEL.BUTTON.HOVER.BORDER.setColor() :
+    i == COLOR.PANEL.BUTTON.HOVER.LABEL ? COLOR.PANEL.BUTTON.HOVER.LABEL.setColor() :
+    i == COLOR.PANEL.BUTTON.PRESS ? COLOR.PANEL.BUTTON.PRESS.setColor() :
+    i == COLOR.PANEL.BUTTON.PRESS.BORDER ? COLOR.PANEL.BUTTON.PRESS.BORDER.setColor() :
+    i == COLOR.PANEL.BUTTON.PRESS.LABEL ? COLOR.PANEL.BUTTON.PRESS.LABEL.setColor() :
+    i == COLOR.PANEL.BUTTON.DISABLED ? COLOR.PANEL.BUTTON.DISABLED.setColor() :
+    i == COLOR.PANEL.BUTTON.DISABLED.BORDER ? COLOR.PANEL.BUTTON.DISABLED.BORDER.setColor() :
+    i == COLOR.PANEL.BUTTON.DISABLED.LABEL ? COLOR.PANEL.BUTTON.DISABLED.LABEL.setColor() :
+    i == COLOR.PANEL.BUTTON.DISABLED.HOVER ? COLOR.PANEL.BUTTON.DISABLED.HOVER.setColor() :
+    i == COLOR.PANEL.BUTTON.DISABLED.HOVER.BORDER ? COLOR.PANEL.BUTTON.DISABLED.HOVER.BORDER.setColor() :
+    i == COLOR.PANEL.BUTTON.DISABLED.HOVER.LABEL ? COLOR.PANEL.BUTTON.DISABLED.HOVER.LABEL.setColor() :
+    i == COLOR.PANEL.BUTTON.DISABLED.PRESS ? COLOR.PANEL.BUTTON.DISABLED.PRESS.setColor() :
+    i == COLOR.PANEL.BUTTON.DISABLED.PRESS.BORDER ? COLOR.PANEL.BUTTON.DISABLED.PRESS.BORDER.setColor() :
+    i == COLOR.PANEL.BUTTON.DISABLED.PRESS.LABEL ? COLOR.PANEL.BUTTON.DISABLED.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.TEXT_HEADER ? COLOR.COMMON.TEXT_HEADER.setColor() :
+    i == COLOR.COMMON.LABEL ? COLOR.COMMON.LABEL.setColor() :
+    i == COLOR.COMMON.BUTTON ? COLOR.COMMON.BUTTON.setColor() :
+    i == COLOR.COMMON.BUTTON.BORDER ? COLOR.COMMON.BUTTON.BORDER.setColor() :
+    i == COLOR.COMMON.BUTTON.LABEL ? COLOR.COMMON.BUTTON.LABEL.setColor() :
+    i == COLOR.COMMON.BUTTON.HOVER ? COLOR.COMMON.BUTTON.HOVER.setColor() :
+    i == COLOR.COMMON.BUTTON.HOVER.BORDER ? COLOR.COMMON.BUTTON.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.BUTTON.HOVER.LABEL ? COLOR.COMMON.BUTTON.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.BUTTON.PRESS ? COLOR.COMMON.BUTTON.PRESS.setColor() :
+    i == COLOR.COMMON.BUTTON.PRESS.BORDER ? COLOR.COMMON.BUTTON.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.BUTTON.PRESS.LABEL ? COLOR.COMMON.BUTTON.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.BUTTON.DISABLED ? COLOR.COMMON.BUTTON.DISABLED.setColor() :
+    i == COLOR.COMMON.BUTTON.DISABLED.BORDER ? COLOR.COMMON.BUTTON.DISABLED.BORDER.setColor() :
+    i == COLOR.COMMON.BUTTON.DISABLED.LABEL ? COLOR.COMMON.BUTTON.DISABLED.LABEL.setColor() :
+    i == COLOR.COMMON.BUTTON.DISABLED.HOVER ? COLOR.COMMON.BUTTON.DISABLED.HOVER.setColor() :
+    i == COLOR.COMMON.BUTTON.DISABLED.HOVER.BORDER ? COLOR.COMMON.BUTTON.DISABLED.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.BUTTON.DISABLED.HOVER.LABEL ? COLOR.COMMON.BUTTON.DISABLED.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.BUTTON.DISABLED.PRESS ? COLOR.COMMON.BUTTON.DISABLED.PRESS.setColor() :
+    i == COLOR.COMMON.BUTTON.DISABLED.PRESS.BORDER ? COLOR.COMMON.BUTTON.DISABLED.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.BUTTON.DISABLED.PRESS.LABEL ? COLOR.COMMON.BUTTON.DISABLED.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.I ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.HOVER ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.HOVER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.HOVER.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.HOVER.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.PRESS ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.PRESS.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.PRESS.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.PRESS.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.II ? COLOR.COMMON.TRIGGERMODE.SWITCH.II.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.II.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.II.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.II.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.II.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.II.HOVER ? COLOR.COMMON.TRIGGERMODE.SWITCH.II.HOVER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.II.HOVER.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.II.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.II.HOVER.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.II.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.II.PRESS ? COLOR.COMMON.TRIGGERMODE.SWITCH.II.PRESS.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.II.PRESS.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.II.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.II.PRESS.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.II.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.III ? COLOR.COMMON.TRIGGERMODE.SWITCH.III.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.III.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.III.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.III.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.III.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.III.HOVER ? COLOR.COMMON.TRIGGERMODE.SWITCH.III.HOVER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.III.HOVER.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.III.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.III.HOVER.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.III.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.III.PRESS ? COLOR.COMMON.TRIGGERMODE.SWITCH.III.PRESS.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.III.PRESS.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.III.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.III.PRESS.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.III.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.IV ? COLOR.COMMON.TRIGGERMODE.SWITCH.IV.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.IV.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.IV.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.IV.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.IV.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.IV.HOVER ? COLOR.COMMON.TRIGGERMODE.SWITCH.IV.HOVER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.IV.HOVER.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.IV.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.IV.HOVER.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.IV.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.IV.PRESS ? COLOR.COMMON.TRIGGERMODE.SWITCH.IV.PRESS.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.IV.PRESS.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.IV.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.TRIGGERMODE.SWITCH.IV.PRESS.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.IV.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.I ? COLOR.COMMON.NOTELENGTH.SWITCH.I.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.I.BORDER ? COLOR.COMMON.NOTELENGTH.SWITCH.I.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.I.LABEL ? COLOR.COMMON.NOTELENGTH.SWITCH.I.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.I.HOVER ? COLOR.COMMON.NOTELENGTH.SWITCH.I.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.I.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.SWITCH.I.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.I.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.SWITCH.I.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.I.PRESS ? COLOR.COMMON.NOTELENGTH.SWITCH.I.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.I.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.SWITCH.I.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.I.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.SWITCH.I.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.II ? COLOR.COMMON.NOTELENGTH.SWITCH.II.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.II.BORDER ? COLOR.COMMON.NOTELENGTH.SWITCH.II.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.II.LABEL ? COLOR.COMMON.NOTELENGTH.SWITCH.II.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.II.HOVER ? COLOR.COMMON.NOTELENGTH.SWITCH.II.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.II.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.SWITCH.II.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.II.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.SWITCH.II.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.II.PRESS ? COLOR.COMMON.NOTELENGTH.SWITCH.II.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.II.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.SWITCH.II.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.II.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.SWITCH.II.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.III ? COLOR.COMMON.NOTELENGTH.SWITCH.III.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.III.BORDER ? COLOR.COMMON.NOTELENGTH.SWITCH.III.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.III.LABEL ? COLOR.COMMON.NOTELENGTH.SWITCH.III.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.III.HOVER ? COLOR.COMMON.NOTELENGTH.SWITCH.III.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.III.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.SWITCH.III.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.III.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.SWITCH.III.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.III.PRESS ? COLOR.COMMON.NOTELENGTH.SWITCH.III.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.III.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.SWITCH.III.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.SWITCH.III.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.SWITCH.III.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.HOVER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.PRESS ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.I.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.HOVER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.PRESS ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.II.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.HOVER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.PRESS ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.III.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.HOVER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.PRESS ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.MIN.SWITCH.IV.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.HOVER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.PRESS ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.I.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.HOVER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.PRESS ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.II.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.HOVER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.PRESS ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.III.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.HOVER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.HOVER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.HOVER.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.HOVER.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.PRESS ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.PRESS.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.PRESS.BORDER ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.PRESS.LABEL ? COLOR.COMMON.NOTELENGTH.MAX.SWITCH.IV.PRESS.LABEL.setColor() :
+    i == COLOR.SCALE.TEXT_HEADER ? COLOR.SCALE.TEXT_HEADER.setColor() :
+    i == COLOR.SCALE.BUTTON ? COLOR.SCALE.BUTTON.setColor() :
+    i == COLOR.SCALE.BUTTON.BORDER ? COLOR.SCALE.BUTTON.BORDER.setColor() :
+    i == COLOR.SCALE.BUTTON.LABEL ? COLOR.SCALE.BUTTON.LABEL.setColor() :
+    i == COLOR.SCALE.BUTTON.DISABLED ? COLOR.SCALE.BUTTON.DISABLED.setColor() :
+    i == COLOR.SCALE.BUTTON.DISABLED.BORDER ? COLOR.SCALE.BUTTON.DISABLED.BORDER.setColor() :
+    i == COLOR.SCALE.BUTTON.DISABLED.LABEL ? COLOR.SCALE.BUTTON.DISABLED.LABEL.setColor() :
+    i == COLOR.SCALE.BUTTON.DISABLED.HOVER ? COLOR.SCALE.BUTTON.DISABLED.HOVER.setColor() :
+    i == COLOR.SCALE.BUTTON.DISABLED.HOVER.BORDER ? COLOR.SCALE.BUTTON.DISABLED.HOVER.BORDER.setColor() :
+    i == COLOR.SCALE.BUTTON.DISABLED.HOVER.LABEL ? COLOR.SCALE.BUTTON.DISABLED.HOVER.LABEL.setColor() :
+    i == COLOR.SCALE.BUTTON.DISABLED.PRESS ? COLOR.SCALE.BUTTON.DISABLED.PRESS.setColor() :
+    i == COLOR.SCALE.BUTTON.DISABLED.PRESS.BORDER ? COLOR.SCALE.BUTTON.DISABLED.PRESS.BORDER.setColor() :
+    i == COLOR.SCALE.BUTTON.DISABLED.PRESS.LABEL ? COLOR.SCALE.BUTTON.DISABLED.PRESS.LABEL.setColor() :
+    i == COLOR.SCALE.BUTTON.HOVER ? COLOR.SCALE.BUTTON.HOVER.setColor() :
+    i == COLOR.SCALE.BUTTON.HOVER.BORDER ? COLOR.SCALE.BUTTON.HOVER.BORDER.setColor() :
+    i == COLOR.SCALE.BUTTON.HOVER.LABEL ? COLOR.SCALE.BUTTON.HOVER.LABEL.setColor() :
+    i == COLOR.SCALE.BUTTON.PRESS ? COLOR.SCALE.BUTTON.PRESS.setColor() :
+    i == COLOR.SCALE.BUTTON.PRESS.BORDER ? COLOR.SCALE.BUTTON.PRESS.BORDER.setColor() :
+    i == COLOR.SCALE.BUTTON.PRESS.LABEL ? COLOR.SCALE.BUTTON.PRESS.LABEL.setColor() :
+    i == COLOR.SCALE.TRIGGER ? COLOR.SCALE.TRIGGER.setColor() :
+    i == COLOR.SCALE.TRIGGER.BORDER ? COLOR.SCALE.TRIGGER.BORDER.setColor() :
+    i == COLOR.SCALE.TRIGGER.LABEL ? COLOR.SCALE.TRIGGER.LABEL.setColor() :
+    i == COLOR.SCALE.TRIGGER.HOVER ? COLOR.SCALE.TRIGGER.HOVER.setColor() :
+    i == COLOR.SCALE.TRIGGER.HOVER.BORDER ? COLOR.SCALE.TRIGGER.HOVER.BORDER.setColor() :
+    i == COLOR.SCALE.TRIGGER.HOVER.LABEL ? COLOR.SCALE.TRIGGER.HOVER.LABEL.setColor() :
+    i == COLOR.SCALE.TRIGGER.PRESS ? COLOR.SCALE.TRIGGER.PRESS.setColor() :
+    i == COLOR.SCALE.TRIGGER.PRESS.BORDER ? COLOR.SCALE.TRIGGER.PRESS.BORDER.setColor() :
+    i == COLOR.SCALE.TRIGGER.PRESS.LABEL ? COLOR.SCALE.TRIGGER.PRESS.LABEL.setColor() :
+    i == COLOR.CIRCLE.XY.BG ? COLOR.CIRLCE.XY.BG.setColor() :
+    i == COLOR.CIRCLE.XY.LINE ? COLOR.CIRCLE.XY.LINE.setColor() :
+    i == COLOR.CIRCLE.XY.DOT ? COLOR.CIRCLE.XY.DOT.setColor() :
+    i == COLOR.CIRCLE.XY.BOTTOM.BG ? COLOR.CIRCLE.XY.BOTTOM.BG.setColor() :
+    i == COLOR.CIRCLE.XY.BOTTOM.LABEL ? COLOR.CIRCLE.XY.BOTTOM.LABEL.setColor() :
+    i == COLOR.CIRCLE.BG ? COLOR.CIRCLE.BG.setColor() :
+    i == COLOR.CIRCLE.TEXT_HEADER ? COLOR.CIRCLE.TEXT_HEADER.setColor() :
+    i == COLOR.CIRCLE.BUTTON ? COLOR.CIRCLE.BUTTON.setColor() :
+    i == COLOR.CIRCLE.BUTTON.BORDER ? COLOR.CIRCLE.BUTTON.BORDER.setColor() :
+    i == COLOR.CIRCLE.BUTTON.LABEL ? COLOR.CIRCLE.BUTTON.LABEL.setColor() :
+    i == COLOR.CIRCLE.BUTTON.HOVER ? COLOR.CIRCLE.BUTTON.HOVER.setColor() :
+    i == COLOR.CIRCLE.BUTTON.HOVER.BORDER ? COLOR.CIRCLE.BUTTON.HOVER.BORDER.setColor() :
+    i == COLOR.CIRCLE.BUTTON.HOVER.LABEL ? COLOR.CIRCLE.BUTTON.HOVER.LABEL.setColor() :
+    i == COLOR.CIRCLE.BUTTON.PRESS ? COLOR.CIRCLE.BUTTON.PRESS.setColor() :
+    i == COLOR.CIRCLE.BUTTON.PRESS.BORDER ? COLOR.CIRCLE.BUTTON.PRESS.BORDER.setColor() :
+    i == COLOR.CIRCLE.BUTTON.PRESS.LABEL ? COLOR.CIRCLE.BUTTON.PRESS.LABEL.setColor() :
+    i == COLOR.CIRCLE.BUTTON.DISABLED ? COLOR.CIRCLE.BUTTON.DISABLED.setColor() :
+    i == COLOR.CIRCLE.BUTTON.DISABLED.BORDER ? COLOR.CIRCLE.BUTTON.DISABLED.BORDER.setColor() :
+    i == COLOR.CIRCLE.BUTTON.DISABLED.LABEL ? COLOR.CIRCLE.BUTTON.DISABLED.LABEL.setColor() :
+    i == COLOR.CIRCLE.SWITCH.I ? COLOR.CIRCLE.SWITCH.I.setColor() :
+    i == COLOR.CIRCLE.SWITCH.I.BORDER ? COLOR.CIRCLE.SWITCH.I.BORDER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.I.LABEL ? COLOR.CIRCLE.SWITCH.I.LABEL.setColor() :
+    i == COLOR.CIRCLE.SWITCH.I.HOVER ? COLOR.CIRCLE.SWITCH.I.HOVER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.I.HOVER.BORDER ? COLOR.CIRCLE.SWITCH.I.HOVER.BORDER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.I.HOVER.LABEL ? COLOR.CIRCLE.SWITCH.I.HOVER.LABEL.setColor() :
+    i == COLOR.CIRCLE.SWITCH.I.PRESS ? COLOR.CIRCLE.SWITCH.I.PRESS.setColor() :
+    i == COLOR.CIRCLE.SWITCH.I.PRESS.BORDER ? COLOR.CIRCLE.SWITCH.I.PRESS.BORDER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.I.PRESS.LABEL ? COLOR.CIRCLE.SWITCH.I.PRESS.LABEL.setColor() :
+    i == COLOR.CIRCLE.SWITCH.II ? COLOR.CIRCLE.SWITCH.II.setColor() :
+    i == COLOR.CIRCLE.SWITCH.II.BORDER ? COLOR.CIRCLE.SWITCH.II.BORDER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.II.LABEL ? COLOR.CIRCLE.SWITCH.II.LABEL.setColor() :
+    i == COLOR.CIRCLE.SWITCH.II.HOVER ? COLOR.CIRCLE.SWITCH.II.HOVER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.II.HOVER.BORDER ? COLOR.CIRCLE.SWITCH.II.HOVER.BORDER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.II.HOVER.LABEL ? COLOR.CIRCLE.SWITCH.II.HOVER.LABEL.setColor() :
+    i == COLOR.CIRCLE.SWITCH.II.PRESS ? COLOR.CIRCLE.SWITCH.II.PRESS.setColor() :
+    i == COLOR.CIRCLE.SWITCH.II.PRESS.BORDER ? COLOR.CIRCLE.SWITCH.II.PRESS.BORDER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.II.PRESS.LABEL ? COLOR.CIRCLE.SWITCH.II.PRESS.LABEL.setColor() :
+    i == COLOR.CIRCLE.SWITCH.III ? COLOR.CIRCLE.SWITCH.III.setColor() :
+    i == COLOR.CIRCLE.SWITCH.III.BORDER ? COLOR.CIRCLE.SWITCH.III.BORDER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.III.LABEL ? COLOR.CIRCLE.SWITCH.III.LABEL.setColor() :
+    i == COLOR.CIRCLE.SWITCH.III.HOVER ? COLOR.CIRCLE.SWITCH.III.HOVER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.III.HOVER.BORDER ? COLOR.CIRCLE.SWITCH.III.HOVER.BORDER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.III.HOVER.LABEL ? COLOR.CIRCLE.SWITCH.III.HOVER.LABEL.setColor() :
+    i == COLOR.CIRCLE.SWITCH.III.PRESS ? COLOR.CIRCLE.SWITCH.III.PRESS.setColor() :
+    i == COLOR.CIRCLE.SWITCH.III.PRESS.BORDER ? COLOR.CIRCLE.SWITCH.III.PRESS.BORDER.setColor() :
+    i == COLOR.CIRCLE.SWITCH.III.PRESS.LABEL ? COLOR.CIRCLE.SWITCH.III.PRESS.LABEL.setColor() :
+    i == COLOR.SCREEN.BG ? COLOR.SCREEN_BG.setColor() :
+    i == COLOR.SCREEN.BG.FLASH ? COLOR.SCREEN.BG.FLASH.setColor() :
+    i == COLOR.SCREEN.REGULAR_CIRCLE ? COLOR.SCREEN.REGULAR_CIRCLE.setColor() :
+    i == COLOR.SCREEN.SELECTED_CIRCLE ? COLOR.SCREEN.SELECTED_CIRCLE.setColor() :
+    i == COLOR.SCREEN.CURRENT_POSITION ? COLOR.SCREEN.CURRENT_POSITION.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.CN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.CN.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.FN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.FN.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.BES ? COLOR.SCREEN.CIRCLE_OF_FIFTH.BES.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.EES ? COLOR.SCREEN.CIRCLE_OF_FIFTH.EES.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.AES ? COLOR.SCREEN.CIRCLE_OF_FIFTH.AES.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.DES ? COLOR.SCREEN.CIRCLE_OF_FIFTH.DES.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.GS ? COLOR.SCREEN.CIRCLE_OF_FIFTH.GS.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.CS ? COLOR.SCREEN.CIRCLE_OF_FIFTH.CS.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.FS ? COLOR.SCREEN.CIRCLE_OF_FIFTH.FS.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.BN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.BN.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.EN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.EN.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.AN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.AN.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.DN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.DN.setColor() :
+    i == COLOR.SCREEN.CIRCLE_OF_FIFTH.GN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.GN.setColor() :
+    gfx_set(0, 0, 0);
+  );
+
+
+  function uix_centered(base, size)
+  (
+    base + size * 0.5;
+  );
+
+  function uix_isMouseInRect(x, y, w, h)
+  global(mouse_x, mouse_y)
+  (
+    (
+      mouse_x > x && mouse_x < x + w
+      && mouse_y > y && mouse_y < y + h
+    );
+  );
+
+
+  function ui_drawBGRect(x, y, w, h, color)
+  (
+    uix_setColor(color);
+    gfx_rect(x, y, w, h)
+  );
+
+
+  function ui_drawCenteredText(x, y, w, h, color, s)
+  local(sw, sh)
+  (
+    uix_setColor(color);
+    gfx_measurestr(s, sw, sh);
+    uix_setPosition(
+      uix_centered(x, w - sw), uix_centered(y, h - sh)
+    );
+    gfx_drawstr(s);
+  );
+
+
+  function ui_drawButtonFill(x, y, w, h, offset)
+  global(g_button_border_size)
+  (
+    ui_drawBGRect(
+      x + g_button_border_size,
+      y + g_button_border_size,
+      w - g_button_border_size - g_button_border_size,
+      h - g_button_border_size - g_button_border_size,
+      offset
+    );
+  );
+
+
+  function ui_drawButtonBorder(x, y, w, h, offset)
+  global(
+    BUTTON_BORDER_OFFSET
+  )
+  (
+    ui_drawBGRect(x, y, w, h, offset + BUTTON_BORDER_OFFSET);
+  );
+
+
+  function ui_drawButtonText(x, y, w, h, offset, s)
+  global(
+    BUTTON_TEXT_OFFSET
+  )
+  (
+    ui_drawCenteredText(x, y, w, h, offset + BUTTON_TEXT_OFFSET, s);
+  );
+
+
+  function ui_drawButton(x, y, w, h, color, status, s)
+  local(offset)
+  global(
+    g_button_border_size,
+  )
+  (
+    offset = color + status * 3;
+    ui_drawButtonBorder(x, y, w, h, offset);
+    ui_drawButtonFill(x, y, w, h, offset);
+    ui_drawButtonText(x, y, w, h, offset, s);
+  );
+
+
+  function ui_drawTriggerButton(x, y, w, h, color, active, s)
+  local(status)
+  instance(in_section, click, activated)
+  global(
+    mouse_x, mouse_y, mouse_cap,
+    BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
+    BUTTON_STATUS_PRESS, BUTTON_STATUS_ACTIVE,
+  )
+  (
+    active ? (
+      uix_isMouseInRect(x, y, w, h) ? (
+        !mouse_cap ? in_section = 1;
+        in_section ? (
+          mouse_cap&1 ? click = 1;
+          click && mouse_cap == 0 ? click = 2;
+          click == 2 ? (activated = 1; click = 0);
+          status = click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
+        );
+      ) : (
+        status = BUTTON_STATUS_INACTIVE;
+        !mouse_cap ? (
+          in_section = click = 0;
+        );
+      );
+    ) : (
+      status = BUTTON_STATUS_DISABLED;
+      activated = click = in_section = 0;
+    );
+    ui_drawButton(x, y, w, h, color, status, s);
+  );
+
+
+  function ui_drawToggleButton(x, y, w, h, color, active, s)
+  local(status)
+  instance(
+    in_section, lclick, rclick, l_activated, r_activated
+  )
+  global(
+    mouse_x, mouse_y, mouse_cap,
+    BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
+    BUTTON_STATUS_PRESS, BUTTON_STATUS_ACTIVE,
+  )
+  (
+    status = active ? BUTTON_STATUS_INACTIVE : BUTTON_STATUS_DISABLED;
+    uix_isMouseInRect(x, y, w, h) ? (
+      !mouse_cap ? in_section = 1;
+      in_section ? (
+        mouse_cap&1 ? lclick = 1;
+        lclick && mouse_cap == 0 ? lclick = 2;
+        lclick == 2 ? (l_activated = 1; lclick = 0);
+        mouse_cap&2 ? rclick = 1;
+        rclick && mouse_cap == 0 ? rclick = 2;
+        rclick == 2 ? (r_activated = 1; rclick = 0);
+
+        status += lclick || rclick ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
+      );
+    ) : (
+      !mouse_cap ? (
+        in_section = lclick = rclick = 0;
+      );
+    );
+    ui_drawButton(x, y, w, h, color, status, s);
+  );
+
+
+  function ui_drawSwitchButton(x, y, w, h, color, mode, s)
+  local(status)
+  instance(in_section, click, activated)
+  global(
+    mouse_x, mouse_y, mouse_cap,
+    BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
+    BUTTON_STATUS_PRESS, BUTTON_STATUS_ACTIVE, CIRC_MODES
+  )
+  (
+    status = mode * CIRC_MODES;
+    uix_isMouseInRect(x, y, w, h) ? (
+      !mouse_cap ? in_section = 1;
+      in_section ? (
+        mouse_cap&1 ? click = 1;
+        click && mouse_cap == 0 ? click = 2;
+        click == 2 ? (activated = 1; click = 0);
+        status += (click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER);
+      );
+    ) : (
+      !mouse_cap ? (
+        in_section = click = 0;
+      );
+    );
+    ui_drawButton(x, y, w, h, color + 1, status, s);
+  );
+
+
+  function ui_drawDragbox(x, y, w, h, base_color, color, v, s)
+  local(status, cx, cw, offset)
+  instance(in_section, omx, dragging, pos_x)
+  global(
+    mouse_x, mouse_y, mouse_cap, g_button_border_size,
+    BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
+    BUTTON_STATUS_PRESS, BUTTON_STATUS_ACTIVE, CIRC_MODES, BUTTON_TEXT_OFFSET
+  )
+  (
+    status = BUTTON_STATUS_INACTIVE;
+    cx = x + g_button_border_size;
+    cw = w - g_button_border_size - g_button_border_size;
+
+    uix_isMouseInRect(x, y, w, h) ? (
+      !mouse_cap ? in_section = 1;
+      in_section ? (
+        mouse_cap&1 ? (
+          !dragging ? (
+            omx = mouse_x; dragging = 1;
+          );
+        );
+        !dragging ? status += BUTTON_STATUS_HOVER;
+      );
+    ) : (
+      !mouse_cap ? in_section = 0;
+    );
+
+    mouse_cap&1 ? (
+      dragging ? (
+        pos_x = max(0.0, min(1.0, (mouse_x - cx) / cw));
+        status += BUTTON_STATUS_PRESS;
+      );
+    ) : !mouse_cap ? (
+      dragging = 0;
+    );
+
+    offset = color + status * 3;
+    ui_drawButtonBorder(x, y, w, h, offset);
+    ui_drawButtonFill(x, y, w, h, base_color);
+    ui_drawButtonFill(x, y, w * v, h, offset);
+    ui_drawButtonText(x, y, w, h, offset, s);
+  );
+
+
+  function ui_drawSwitchDragbox(x, y, w, h, base_color, color, mode, v, s)
+  local(status, cx, cw, offset)
+  instance(
+    in_section, click, activated, omx, omy, dragging, pos_x
+  )
+  global(
+    mouse_x, mouse_y, mouse_cap, g_button_border_size,
+    BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
+    BUTTON_STATUS_PRESS, BUTTON_STATUS_ACTIVE, CIRC_MODES, BUTTON_TEXT_OFFSET
+  )
+  (
+    status = mode * CIRC_MODES;
+    cx = x + g_button_border_size;
+    cw = w - g_button_border_size - g_button_border_size;
+
+    uix_isMouseInRect(x, y, w, h) ? (
+      !mouse_cap ? in_section = 1;
+      in_section ? (
+        mouse_cap&1 ? (
+          !click && !dragging ? (
+            omx = mouse_x; omy = mouse_y;
+            click = 1;
+          );
+          abs(mouse_x - omx) >= 2.0 || abs(mouse_y - omy) >= 2.0 ? (
+            dragging = 1;
+            click = 0;
+          );
+        );
+        click && mouse_cap == 0 ? click = 2;
+        click == 2 ? (activated = 1; click = 0);
+        status += (click || dragging ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER);
+      );
+    ) : (
+      !mouse_cap ? in_section = 0;
+    );
+
+    mouse_cap&1 ? (
+      dragging ? (
+        pos_x = max(0.0, min(1.0, (mouse_x - cx) / cw));
+      );
+    ) : !mouse_cap ? (
+      click = dragging = 0;
+    );
+
+    offset = color + 1 + status * 3;
+    ui_drawButtonBorder(x, y, w, h, offset);
+    ui_drawButtonFill(x, y, w, h, base_color);
+    ui_drawButtonFill(x, y, w * v, h, offset);
+    ui_drawButtonText(x, y, w, h, offset, s);
+  );
+
+
+  function ui_drawScreenNoteName(x, y, w, h)
+  local(s, sw, sh)
+  global(
+    gfx_a, COLOR.SCREEN.REGULAR_CIRCLE,
+    FONT_SCREEN_NOTENAME, base_note, current_root,
+    note_choice.current, note_choice.octave, scale_note_count
+  )
+  (
+    note_choice.current > base_note ? (
+      gfx_setfont(FONT_SCREEN_NOTENAME);
+      uix_setColor(COLOR.SCREEN.REGULAR_CIRCLE);
+      gfx_a = 0.12;
+      s = #;
+      sprintf(
+        s, "%s",
+        get_pitch_name(current_root, (note_choice.current + 12 - current_root) % 12)
+      );
+      sprintf(s, "%s%i", s, note_choice.octave);
+      gfx_measurestr(s, sw, sh);
+      uix_setPosition(
+        uix_centered(x, w - sw), uix_centered(y, h - sh)
+      );
+      gfx_drawstr(s);
+      gfx_a = 1.0;
+    );
+  );
+
+  function ui_drawScreenRadiusLabel(x, y, w, h, s)
+  local(text_w, text_h, cur_x, cur_y, hw)
+  global(
+    g_padding_size, COLOR.SCREEN.REGULAR_CIRCLE, gfx_a,
+    FONT_SCREEN_RADIUS
+  )
+  (
+    gfx_setfont(FONT_SCREEN_RADIUS);
+    gfx_measurestr("Radius: ", text_w, text_h);
+    cur_x = x + g_padding_size;
+    cur_y = y + h - text_h;
+    hw = w * 0.5;
+    uix_setColor(COLOR.SCREEN.REGULAR_CIRCLE);
+    gfx_a = 0.7;
+    uix_setPosition(cur_x, cur_y);
+    gfx_lineto(cur_x, cur_y + text_h * 0.5);
+    gfx_lineto(cur_x + hw, cur_y + text_h * 0.5);
+    gfx_lineto(cur_x + hw, cur_y);
+    cur_y -= text_h;
+    uix_setPosition(cur_x, cur_y);
+    gfx_drawstr("TOTAL RADIUS: ");
+    gfx_drawnumber(s, 5);
+    gfx_drawstr(" SEMITONES");
+  );
+
+
+  function ui_drawScreen(x, y, w, h)
+  local(
+    x_base, y_base, total_radius,
+    index, offset, cx, cy, radius, circle_scale,
+  )
+  global(
+    currently_selected_circle, circle_count, a_circle_data,
+    CIRC_PROPERTIES, CIRC_CX_OFFSET, CIRC_CY_OFFSET,
+    CIRC_RADIUS_OFFSET, CIRC_ROTATION_OFFSET,
+    COLOR.SCREEN.BG, COLOR.SCREEN.REGULAR_CIRCLE, COLOR.SCREEN.SELECTED_CIRCLE,
+    COLOR.SCREEN.CURRENT_POSITION, COLOR.SCREEN.BG.FLASH, gfx_a,
+    final_point, g_scaling, pending_flash
+  )
+  (
+    ui_drawBGRect(x, y, w, h, COLOR.SCREEN.BG);
+    ui_drawScreenNoteName(x, y ,w, h);
+    total_radius = get_total_radius();
+    ui_drawScreenRadiusLabel(x, y, w, h, total_radius);
+
+    index = 0;
+    circle_scale = (min(w, h) - 20.0 * g_scaling) * 0.5 / total_radius;
+    x_base = uix_centered(x, w);
+    y_base = uix_centered(y, h);
+
+    while(index < circle_count) (
+      offset = index * CIRC_PROPERTIES;
+      radius = a_circle_data[offset + CIRC_RADIUS_OFFSET] * circle_scale;
+      cx = x_base + a_circle_data[offset + CIRC_CX_OFFSET] * circle_scale;
+      cy = y_base + a_circle_data[offset + CIRC_CY_OFFSET] * circle_scale;
+      uix_setColor(
+        index == currently_selected_circle ?
+        COLOR.SCREEN.SELECTED_CIRCLE : COLOR.SCREEN.REGULAR_CIRCLE
+      );
+      gfx_circle(cx, cy, radius);
+      gfx_circle(cx, cy, 0.1 * circle_scale, 1);
+      index += 1;
+    );
+
+    uix_setColor(COLOR.SCREEN.CURRENT_POSITION);
+    gfx_circle(
+      x_base + final_point[0] * circle_scale,
+      y_base + final_point[1] * circle_scale,
+      0.15 * circle_scale,
+      1
+    );
+    pending_flash ? (
+      uix_setColor(COLOR.SCREEN.BG.FLASH);
+      gfx_a = 0.15;
+      gfx_rect(x, y, w, h);
+      pending_flash -= 0.5;
+    );
+  );
+
+
+  function ui_drawTitle(x, y, w, h)
+  local(
+    title_w, author_w, title_h, author_h
+  )
+  global(
+    FONT_TITLE, FONT_AUTHOR, TITLE_STRING, AUTHOR_STRING,
+    COLOR.PANEL.TEXT_TITLE, COLOR.PANEL.TEXT_AUTHOR,
+  )
+  (
+    gfx_setfont(FONT_AUTHOR);
+    gfx_measurestr(AUTHOR_STRING, author_w, author_h);
+
+    gfx_setfont(FONT_TITLE);
+    gfx_measurestr(TITLE_STRING, title_w, title_h);
+    uix_setPosition(
+      uix_centered(x, w - title_w),
+      uix_centered(y, h - title_h)
+    );
+
+    uix_setColor(COLOR.PANEL.TEXT_TITLE);
+    gfx_drawstr(TITLE_STRING);
+    uix_setPosition(
+      uix_centered(x, w + title_w) - author_w * 0.85,
+      uix_centered(y, h + title_h - author_h)
+    );
+    uix_setColor(COLOR.PANEL.TEXT_AUTHOR);
+    gfx_setfont(FONT_AUTHOR);
+    gfx_drawstr(AUTHOR_STRING);
+  );
+
+
+  function ui_drawONOFFButton(x, y, w, h, c, active)
+  local(status, offset, cx, cy, size, i)
+  instance(in_section, click, activated)
+  global(
+    mouse_x, mouse_y, mouse_cap,
+    BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
+    BUTTON_STATUS_PRESS,
+    g_scaling
+  )
+  (
+    status = active ? BUTTON_STATUS_INACTIVE : BUTTON_STATUS_DISABLED;
+    uix_isMouseInRect(x, y, w, h) ? (
+      !mouse_cap ? in_section = 1;
+      in_section ? (
+        mouse_cap&1 ? click = 1;
+        click && mouse_cap == 0 ? click = 2;
+        click == 2 ? (activated = 1; click = 0);
+        status += click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
+      );
+    ) : (
+      !mouse_cap ? activated = click = in_section = 0;
+    );
+
+    offset = c + status * 3;
+    uix_setColor(offset);
+    cx = x + w * 0.5;
+    cy = y + h * 0.5;
+    size = ceil(4 * g_scaling);
+    i = size;
+    loop(size,
+      gfx_circle(cx, cy, w * 0.5 - i);
+      i += 1;
+    );
+    gfx_rect(cx - size * 0.25, size * 4.0, size, cy - size * 4.0);
+  );
+
+
+  function ui_drawSectionTitle(x, y, w, h, c, s)
+  global(FONT_SECTION_TITLE)
+  (
+    // Draw Section Title
+    gfx_setfont(FONT_SECTION_TITLE);
+    ui_drawCenteredText(x, y, w, h, c, s);
+  );
+
+
+  function ui_drawTriggerModeSettings(x, y, w, h)
+  local(hw, trigger_mode, trigger_str)
+  instance(bt_triggerMode)
+  global(
+    g_padding_size, COLOR.COMMON.LABEL, COLOR.COMMON.BG,
+    COLOR.COMMON.TRIGGERMODE.SWITCH,
+    a_trigger_settings, TRIGGER_MODE_OFFSET,
+    TRIGGER_THETA, TRIGGER_HZ, TRIGGER_MS, TRIGGER_WN
+  )
+  (
+    hw = ceil((w - g_padding_size) * 0.5);
+    ui_drawCenteredText(x, y, hw, h, COLOR.COMMON.LABEL, "Trigger Mode:");
+
+    trigger_mode = a_trigger_settings[TRIGGER_MODE_OFFSET];
+    trigger_str = #;
+    trigger_mode == TRIGGER_THETA ? (
+      sprintf(trigger_str, "@%d deg", floor(a_trigger_settings[1 + TRIGGER_THETA] * 360));
+    ) : trigger_mode == TRIGGER_HZ ? (
+      sprintf(trigger_str, "%.6f Hz", get_hz_from_speed(a_trigger_settings[1 + TRIGGER_HZ]));
+    ) : trigger_mode == TRIGGER_MS ? (
+      sprintf(trigger_str, "%.1f ms", get_ms_from_speed(a_trigger_settings[1 + TRIGGER_MS]) * 1000.0);
+    ) : trigger_mode == TRIGGER_WN ? (
+      sprintf(trigger_str, "%s 4QN", get_sync_string(a_trigger_settings[1 + TRIGGER_WN]));
+    );
+    bt_triggerMode.ui_drawSwitchDragbox(
+      x + w - hw, y, hw, h,
+      COLOR.COMMON.BG,
+      COLOR.COMMON.TRIGGERMODE.SWITCH,
+      trigger_mode,
+      a_trigger_settings[1 + trigger_mode],
+      trigger_str
+    );
+    bt_triggerMode.activated ? (
+      a_trigger_settings[TRIGGER_MODE_OFFSET] = (trigger_mode + 1) % 4;
+      bt_triggerMode.activated = 0;
+    );
+    bt_triggerMode.dragging ? (
+      trigger_mode == TRIGGER_THETA ? (
+        a_trigger_settings[1 + TRIGGER_THETA] = floor(bt_triggerMode.pos_x * 360.0) / 360.0;
+      ) : (
+        a_trigger_settings[1 + trigger_mode] = bt_triggerMode.pos_x;
+      );
+    );
+  );
+
+
+  function ui_drawNoteLengthSettings(x, y, w, h)
+  local(hw, offset, length_mode, length_str)
+  instance(bt_lengthMode)
+  global(
+    g_padding_size, COLOR.COMMON.LABEL, COLOR.COMMON.BG,
+    COLOR.COMMON.NOTELENGTH.SWITCH,
+    COLOR.COMMON.NOTELENGTH.MIN.SWITCH,
+    COLOR.COMMON.NOTELENGTH.MAX.SWITCH,
+    a_notelength_settings, NOTELENGTH_MODE_OFFSET,
+    NOTELENGTH_SETTINGS_OFFSET, NOTELENGTH_MODES,
+    NOTELENGTH_PCT, NOTELENGTH_MS, NOTELENGTH_WN,
+    NOTELENGTH_MIN_PCT_MS, NOTELENGTH_MIN_PCT_WN,
+    NOTELENGTH_MIN_MS_WN, NOTELENGTH_MIN_ALL,
+  )
+  (
+    hw = ceil((w - g_padding_size) * 0.5);
+    ui_drawCenteredText(x, y, hw, h, COLOR.COMMON.LABEL, "Note Length:");
+
+    length_mode = a_notelength_settings[NOTELENGTH_MODE_OFFSET];
+    offset = NOTELENGTH_SETTINGS_OFFSET + length_mode;
+    length_str = #;
+    length_mode == NOTELENGTH_PCT ? (
+      sprintf(length_str, "%.1f%%", floor(a_notelength_settings[offset] * 100));
+    ) : length_mode == NOTELENGTH_MS ? (
+      sprintf(length_str, "%.1f ms", get_ms_from_speed(a_notelength_settings[offset]) * 1000.0);
+    ) : length_mode == NOTELENGTH_WN ? (
+      sprintf(length_str, "%s 4QN", get_sync_string(a_notelength_settings[offset]));
+    ) : (
+      length_str = (
+        length_mode == NOTELENGTH_MIN_PCT_MS ? "min(%, ms)" :
+        length_mode == NOTELENGTH_MIN_PCT_WN ? "min(%, 4QN)" :
+        length_mode == NOTELENGTH_MIN_MS_WN ? "min(ms, 4QN)" :
+        length_mode == NOTELENGTH_MIN_ALL ? "min(%, ms, 4QN)";
+      );
+    );
+    (length_mode / 3) < 1 ? (
+      bt_lengthMode.ui_drawSwitchDragbox(
+        x + w - hw, y, hw, h,
+        COLOR.COMMON.BG,
+        COLOR.COMMON.NOTELENGTH.SWITCH,
+        length_mode,
+        a_notelength_settings[offset],
+        length_str
+      );
+      bt_lengthMode.dragging ? a_notelength_settings[offset] = bt_lengthMode.pos_x;
+    ) : (
+      bt_lengthMode.ui_drawSwitchButton(
+        x + w - hw, y, hw, h,
+        COLOR.COMMON.NOTELENGTH.MIN.SWITCH,
+        length_mode - 3,
+        length_str
+      );
+    );
+    bt_lengthMode.activated ? (
+      a_notelength_settings[NOTELENGTH_MODE_OFFSET] = (length_mode + 1) % NOTELENGTH_MODES;
+      bt_lengthMode.activated = 0;
+    );
+  );
+
+
+  function ui_drawTonicSettings(x, y, w, h)
+  local(hw, tonic, tonic_str)
+  instance(db_tonic)
+  global(
+    COLOR.COMMON.BG, COLOR.COMMON.LABEL, g_padding_size,
+    COLOR.COMMON.BUTTON, base_note, current_root
+  )
+  (
+    hw = ceil((w - g_padding_size) * 0.5);
+    ui_drawCenteredText(x, y, hw, h, COLOR.COMMON.LABEL, "Key Center:");
+
+    tonic = base_note % 12;
+    tonic_str = #;
+    sprintf(tonic_str, " (%s)", get_pitch_name(current_root, 0));
+    db_tonic.ui_drawDragbox(
+      x + w - hw, y, hw, h,
+      COLOR.COMMON.BG,
+      COLOR.COMMON.BUTTON,
+      tonic / 11,
+      strcat(get_pitch_name(tonic, 0), tonic_str)
+    );
+    db_tonic.dragging ? (
+      base_note = floor(db_tonic.pos_x * 11) + 48;
+    );
+  );
+
+
+  function ui_drawCommonSettings(x, y, w, h)
+  local(header_h, cx, cy, cw, ch, button_h, column_w, cur_y)
+  instance(
+    bt_logarithmic, bt_noRepetition,
+    bt_circleFifth, bt_circleFifthBasis
+  )
+  global(
+    g_scaling, g_padding_size, FONT_COMMON_BUTTON,
+    COLOR.COMMON.BG, COLOR.COMMON.TEXT_HEADER, COMMON_SECTION_HEADER,
+    COLOR.COMMON.BUTTON,
+    is_logarithmic, is_circle_of_fifth, is_circle_of_fifth_outer_circle,
+    is_no_repetition,
+    LOGARITHMIC_DISTANCE_STRING, CIRCLE_OF_FIFTH_STRING, NO_REPEATITION_STRING
+  )
+  (
+    header_h = ceil(24.0 * g_scaling);
+    ui_drawBGRect(x, y, w, h, COLOR.COMMON.BG);
+    ui_drawSectionTitle(
+      x, y, w, header_h,
+      COLOR.COMMON.TEXT_HEADER, COMMON_SECTION_HEADER
+    );
+
+    button_h = ceil(24.0 * g_scaling);
+
+    cx = ceil(x + g_padding_size);
+    cw = w - g_padding_size - g_padding_size;
+    ch = h - header_h - g_padding_size;
+    cur_y = y + header_h;
+    column_w = ceil((cw - g_padding_size) * 0.5);
+    ui_drawTriggerModeSettings(cx, cur_y, cw, button_h);
+
+    cur_y += button_h + g_padding_size;
+    ui_drawNoteLengthSettings(cx, cur_y, cw, button_h);
+
+    cur_y += button_h + g_padding_size;
+    ui_drawTonicSettings(cx, cur_y, cw, button_h);
+
+    cur_y += button_h + g_padding_size;
+    bt_circleFifth.ui_drawToggleButton(
+      cx, cur_y, column_w, button_h,
+      COLOR.COMMON.BUTTON, is_circle_of_fifth, CIRCLE_OF_FIFTH_STRING
+    );
+    bt_circleFifth.l_activated ? (
+      is_circle_of_fifth = !is_circle_of_fifth;
+      bt_circleFifth.l_activated = 0;
+    );
+    bt_circleFifth.r_activated ? (
+      is_circle_of_fifth = 0;
+      bt_circleFifth.r_activated = 0;
+    );
+
+    bt_noRepetition.ui_drawToggleButton(
+      cx + cw - column_w, cur_y, column_w, button_h,
+      COLOR.COMMON.BUTTON, is_no_repetition, NO_REPEATITION_STRING
+    );
+    bt_noRepetition.l_activated ? (
+      is_no_repetition = !is_no_repetition;
+      bt_noRepetition.l_activated = 0;
+    );
+    bt_noRepetition.r_activated ? (
+      is_no_repetition = 0;
+      bt_noRepetition.r_activated = 0;
+    );
+
+    cur_y += button_h + g_padding_size;
+    bt_circleFifthBasis.ui_drawToggleButton(
+      cx, cur_y, column_w, button_h,
+      COLOR.COMMON.BUTTON,
+      is_circle_of_fifth_outer_circle,
+      is_circle_of_fifth_outer_circle ? "⮡  Active Point Theta" : "⮡  Inner Circle"
+    );
+    bt_circleFifthBasis.l_activated ? (
+      is_circle_of_fifth_outer_circle = !is_circle_of_fifth_outer_circle;
+      bt_circleFifthBasis.l_activated = 0;
+    );
+    bt_circleFifthBasis.r_activated ? (
+      is_circle_of_fifth_outer_circle = 0;
+      bt_circleFifthBasis.r_activated = 0;
+    );
+
+    bt_logarithmic.ui_drawToggleButton(
+      cx + cw - column_w, cur_y, column_w, button_h,
+      COLOR.COMMON.BUTTON, is_logarithmic, LOGARITHMIC_DISTANCE_STRING
+    );
+    bt_logarithmic.l_activated ? (
+      is_logarithmic = !is_logarithmic;
+      bt_logarithmic.l_activated = 0;
+    );
+    bt_logarithmic.r_activated ? (
+      is_logarithmic = 0;
+      bt_logarithmic.r_activated = 0;
+    );
+  );
+
+
+  function ui_drawNotes(x, y, w, h)
+  local(
+    ROWS, COLUMNS, SEP,
+    i, bx, by, button_w, button_h, row, column, hold_first, status
+  )
+  instance(in_section, init_click, hold_first)
+  global(
+    a_scale_buttons, COLOR.SCALE.BUTTON,
+    BUTTON_STATUS_INACTIVE, BUTTON_STATUS_DISABLED,
+    BUTTON_STATUS_HOVER, BUTTON_STATUS_PRESS,
+    g_scaling, current_root, is_scale_name_pitch_not_degree,
+    mouse_x, mouse_y, mouse_cap,
+    FONT_SCALE_BUTTON
+  )
+  (
+    ROWS = 2;
+    COLUMNS = 6;
+    SEP = 2.0 * g_scaling;
+    button_w = (w - sep * (COLUMNS - 1)) / COLUMNS;
+    button_h = (h - sep * (ROWS - 1)) / ROWS;
+
+    uix_isMouseInRect(x, y, w, h) ? (
+      !mouse_cap ? (
+        in_section = 1;
+      ) : mouse_cap&1 || mouse_cap&2 ? (
+        init_click = in_section;
+      );
+    ) : (
+      !mouse_cap ? in_section = 0;
+    );
+    !mouse_cap ? (init_click = 0; hold_first = -1);
+
+    gfx_setfont(FONT_SCALE_BUTTON);
+    i = 0;
+    loop(12,
+      row = floor(i / COLUMNS);
+      column = i % COLUMNS;
+      bx = (x + button_w * column + SEP * column);
+      by = (y + 2 + row * button_h + row * SEP);
+      status = a_scale_buttons[i] ? BUTTON_STATUS_INACTIVE : BUTTON_STATUS_DISABLED;
+      uix_isMouseInRect(bx, by, button_w, button_h) ? (
+        init_click ? (
+          hold_first == -1 ? hold_first = !a_scale_buttons[i];
+          mouse_cap&1 ? (
+            status += BUTTON_STATUS_PRESS;
+            a_scale_buttons[i] = hold_first;
+          ) : mouse_cap&2 ? a_scale_buttons[i] = 0;
+          update_scale();
+        ) : (
+          status += BUTTON_STATUS_HOVER;
+        );
+      );
+      ui_drawButton(
+        bx, by, button_w, button_h,
+        COLOR.SCALE.BUTTON,
+        status,
+        is_scale_name_pitch_not_degree ? get_pitch_name(current_root, i) : get_degree_name(i)
+      );
+      i += 1;
+    );
+  );
+
+
+  function ui_drawScaleSettings(x, y, w, h)
+  local(header_h)
+  instance(sw_name)
+  global(
+    g_scaling, g_padding_size,
+    COLOR.SCALE.BG, COLOR.SCALE.TEXT_HEADER, COLOR.SCALE.TRIGGER,
+    COLOR.SCALE.BUTTON,
+    is_scale_name_pitch_not_degree
+  )
+  (
+    header_h = ceil(24.0 * g_scaling);
+    ui_drawBGRect(x, y, w, h, COLOR.SCALE.BG);
+    sw_name.ui_drawTriggerButton(
+      x, y, w, header_h,
+      COLOR.SCALE.TRIGGER,
+      1,
+      ""
+    );
+    sw_name.activated ? (
+      is_scale_name_pitch_not_degree = !is_scale_name_pitch_not_degree;
+      sw_name.activated = 0;
+    );
+    ui_drawSectionTitle(x, y, w, header_h, COLOR.SCALE.TEXT_HEADER, "SCALE SETTINGS");
+
+    ui_drawNotes(x + g_padding_size, y + header_h, w - g_padding_size * 2.0, h - header_h - g_padding_size);
+  );
+
+
+  function ui_drawCircleXY(x, y, w, h)
+  local(
+    half_w, half_h,
+  )
+  instance(in_section, lclicked, l_activated, pos_x, pos_y)
+  global(
+    mouse_x, mouse_y, mouse_cap,
+    g_scaling,
+    COLOR.CIRCLE.XY.BG, COLOR.CIRCLE.XY.LINE, COLOR.CIRCLE.XY.DOT,
+  )
+  (
+    half_w = w * 0.5;
+    half_h = h * 0.5;
+
+    ui_drawBGRect(x, y, w, h, COLOR.CIRCLE.XY.BG);
+
+    uix_setColor(COLOR.CIRCLE.XY.LINE);
+    gfx_line(x, y + half_h, x + w, y + half_h);
+    gfx_line(x + half_w, y, x + half_w, y + h);
+
+    uix_setColor(COLOR.CIRCLE.XY.DOT);
+    gfx_circle(
+      x + pos_x * w,
+      y + pos_y * h,
+      2.0 * g_scaling, 1, 1
+    );
+
+    uix_isMouseInRect(x, y, w, h) ? (
+      !mouse_cap ? (in_section = 1; lclicked = 0;);
+      mouse_cap&1 && in_section ? lclicked = 1;
+    ) : (
+      !mouse_cap ? in_section = lclicked = 0;
+    );
+    lclicked ? (
+      pos_x = max(0.0, min(1.0, (mouse_x - x) / w));
+      pos_y = max(0.0, min(1.0, (h - mouse_y + y) / h));
+    );
+  );
+
+
+  function ui_drawCircleControlsMiddle(x, y, w, h)
+  local(
+    half_h, scaled_btrx, scaled_bt_w, offset, pad_radius_offset, pad_speed_offset, mode
+  )
+  instance(
+    bt_remove, bt_add, bt_prev, bt_next, pad_xy
+  )
+  global(
+    currently_selected_circle, circle_count, a_circle_data,
+    CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_ROTATION_SPEED_OFFSET, CIRC_MODE_OFFSET,
+    MAX_CIRCLE_COUNT, COLOR.CIRCLE.BUTTON, MAX_RADIUS,
+    g_scaling, g_padding_size, gfx_x, gfx_y,
+  )
+  (
+    half_h = floor(h * 0.5);
+    scaled_bt_w = ceil(32.0 * g_scaling);
+    scaled_btrx = x + w - scaled_bt_w;
+
+    // Side Section
+    bt_remove.ui_drawTriggerButton(
+      x, y, scaled_bt_w, half_h,
+      COLOR.CIRCLE.BUTTON,
+      circle_count > 1,
+      "-"
+    );
+    bt_remove.activated ? (
+      remove_circle();
+      bt_remove.activated = 0;
+    );
+    bt_add.ui_drawTriggerButton(
+      scaled_btrx, y, scaled_bt_w, half_h,
+      COLOR.CIRCLE.BUTTON,
+      circle_count < MAX_CIRCLE_COUNT,
+      "+"
+    );
+    bt_add.activated ? (
+      add_circle();
+      bt_add.activated = 0;
+    );
+    bt_prev.ui_drawTriggerButton(
+      x, y + half_h, scaled_bt_w, half_h,
+      COLOR.CIRCLE.BUTTON,
+      currently_selected_circle > 0,
+      "<"
+    );
+    bt_prev.activated ? (
+      currently_selected_circle -= 1;
+      bt_prev.activated = 0;
+    );
+    bt_next.ui_drawTriggerButton(
+      scaled_btrx, y + half_h, scaled_bt_w, half_h,
+      COLOR.CIRCLE.BUTTON,
+      currently_selected_circle < circle_count - 1,
+      ">"
+    );
+    bt_next.activated ? (
+      currently_selected_circle += 1;
+      bt_next.activated = 0;
+    );
+
+    // Mid Section
+    offset = currently_selected_circle * CIRC_PROPERTIES;
+    mode = a_circle_data[offset + CIRC_MODE_OFFSET];
+    pad_radius_offset = offset + CIRC_RADIUS_OFFSET;
+    pad_speed_offset = offset + CIRC_ROTATION_SPEED_OFFSET + mode;
+    pad_xy.pos_x = a_circle_data[pad_radius_offset] / MAX_RADIUS;
+    pad_xy.pos_y = 1 - a_circle_data[pad_speed_offset];
+    pad_xy.ui_drawCircleXY(
+      x + scaled_bt_w + g_padding_size,
+      y,
+      w - scaled_bt_w - scaled_bt_w - g_padding_size - g_padding_size,
+      h
+    );
+    pad_xy.lclicked ? (
+      a_circle_data[pad_radius_offset] = pad_xy.pos_x * MAX_RADIUS;
+      a_circle_data[pad_speed_offset] = pad_xy.pos_y;
+    );
+  );
+
+
+  function ui_drawCircleControlsBottom(x, y, w, h)
+  local(
+    index_str, radius_str, radius, speed, speed_str,
+    offset, mode
+  )
+  instance(sw_mode)
+  global(
+    currently_selected_circle, a_circle_data,
+    CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_ROTATION_SPEED_OFFSET,
+    FONT_CIRCLE_INDEX,
+    COLOR.CIRCLE.XY.BOTTOM.BG, COLOR.CIRCLE.TEXT_HEADER, COLOR.CIRCLE.XY.BOTTOM.LABEL,
+    CIRC_MODE_OFFSET, COLOR.CIRCLE.SWITCH, CIRC_MODES,
+    RADIUS_STRING, SPEED_STRING,
+    SPEED_MODE_HZ, SPEED_MODE_MS, SPEED_MODE_WN,
+    MAX_SPEED_HZ, MIN_SPEED_S, MAX_SPEED_S
+  )
+  (
+    ui_drawBGRect(x, y, w, h, COLOR.CIRCLE.XY.BOTTOM.BG);
+    gfx_setfont(FONT_CIRCLE_INDEX);
+    index_str = #;
+    sprintf(index_str, "%i", currently_selected_circle + 1);
+    ui_drawCenteredText(x, y, h, h, COLOR.CIRCLE.XY.BOTTOM.LABEL, index_str);
+
+    offset = currently_selected_circle * CIRC_PROPERTIES;
+    radius = a_circle_data[offset + CIRC_RADIUS_OFFSET];
+    radius_str = #;
+    sprintf(radius_str, "%.1f", radius);
+    ui_drawCenteredText(
+      x + h, y, w * 0.5 - h, h,
+      COLOR.CIRCLE.XY.BOTTOM.LABEL,
+      strcat(strcpy(#, RADIUS_STRING), radius_str)
+    );
+
+    mode = a_circle_data[offset + CIRC_MODE_OFFSET];
+    speed = a_circle_data[offset + CIRC_ROTATION_SPEED_OFFSET + mode];
+    speed_str = #;
+    mode == SPEED_MODE_HZ ? (
+      sprintf(speed_str, "%.5f", get_hz_from_speed(speed));
+    ) : mode == SPEED_MODE_WN ? (
+      speed_str = get_sync_string(speed);
+    ) : mode == SPEED_MODE_MS ? (
+      sprintf(speed_str, "%.1f", get_ms_from_speed(speed) * 1000.0);
+    );
+    speed_str = strcat(strcpy(#, SPEED_STRING), speed_str);
+    ui_drawCenteredText(
+      x + w * 0.5, y, w * 0.5 - h, h,
+      COLOR.CIRCLE.XY.BOTTOM.LABEL,
+      speed_str
+    );
+
+    sw_mode.ui_drawSwitchButton(
+      x + w - h, y, h, h,
+      COLOR.CIRCLE.SWITCH,
+      mode,
+      mode == SPEED_MODE_MS ? "ms" :
+        mode == SPEED_MODE_WN ? "4QN" :
+        mode == SPEED_MODE_HZ ? "Hz"
+    );
+    sw_mode.activated ? (
+      a_circle_data[offset + CIRC_MODE_OFFSET] = (mode + 1) % CIRC_MODES;
+      sw_mode.activated = 0;
+    );
+  );
+
+
+  function ui_drawCircleControls(x, y, w, h)
+  local(bottom_h, mid_h)
+  global(g_scaling)
+  (
+    bottom_h = ceil(32.0 * g_scaling);
+    mid_h = h - bottom_h;
+    ui_drawCircleControlsBottom(x, y + mid_h, w, bottom_h);
+    ui_drawCircleControlsMiddle(x, y, w, mid_h);
+  );
+
+
+  function ui_drawCircleSettings(x, y, w, h)
+  local(header_h)
+  global(
+    g_scaling, g_padding_size, g_border_size,
+    COLOR.CIRCLE.BG, COLOR.CIRCLE.TEXT_HEADER, CIRCLE_SECTION_HEADER,
+  )
+  (
+    header_h = ceil(24.0 * g_scaling);
+    ui_drawBGRect(x, y, w, h, COLOR.CIRCLE.BG);
+    ui_drawSectionTitle(x, y, w, header_h, COLOR.CIRCLE.TEXT_HEADER, CIRCLE_SECTION_HEADER);
+    ui_drawCircleControls(
+      x + g_padding_size,
+      y + header_h,
+      w - g_padding_size - g_padding_size,
+      h - header_h
+    );
+  );
+
+
+  function ui_drawRightSection(x, y, w, h)
+  local(border, w_minus_border)
+  global(g_scaling, g_border_size)
+  (
+    w_minus_border = w - g_border_size;
+    ui_drawCommonSettings(
+      x,
+      ceil(72 * g_scaling + g_border_size),
+      w_minus_border,
+      floor(164 * g_scaling - g_border_size * 2.0)
+    );
+    ui_drawScaleSettings(
+      x,
+      floor(236 * g_scaling),
+      w_minus_border,
+      floor(120 * g_scaling) - g_border_size
+    );
+    ui_drawCircleSettings(
+      x,
+      floor(356.0 * g_scaling),
+      w_minus_border,
+      floor(244.0 * g_scaling) - g_border_size
+    );
+  );
+
+
+  function ui_drawPluginBG(w, h)
+  local(color_index)
+  (
+    is_circle_of_fifth ? (
+      color_index =
+      !current_root ? COLOR.SCREEN.CIRCLE_OF_FIFTH.CN :
+      current_root == 1 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.CS :
+      current_root == 2 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.DN :
+      current_root == 3 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.EES :
+      current_root == 4 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.EN :
+      current_root == 5 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.FN :
+      current_root == 6 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.FS :
+      current_root == 7 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.GN :
+      current_root == 8 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.AES :
+      current_root == 9 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.AN :
+      current_root == 10 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.BES :
+      current_root == 11 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.BN;
+    ) : (
+      color_index = COLOR.PANEL;
+    );
+    ui_drawBGRect(0.0, 0.0, w, h, color_index);
+  );
+
+
+  function ui_draw()
+  local(
+    scaled_w, scaled_h, header_h, lower_h, left_w, screen_size,
+    bt_padding
+  )
+  instance(bt_on)
+  global(
+    w_scaling, h_scaling, g_scaling, g_border_size, g_padding_size,
+    current_root, gfx_w, gfx_h, gfx_a, COLOR.OUTSIDE, COLOR.PANEL,
+    is_on, COLOR.PANEL.BUTTON,
+  )
+  (
+    w_scaling > h_scaling ? (
+      scaled_w = floor(gfx_w / w_scaling * h_scaling);
+      scaled_h = gfx_h;
+    ) : h_scaling > w_scaling ? (
+      scaled_w = gfx_w;
+      scaled_h = floor(gfx_h / h_scaling * w_scaling);
+    ) : (
+      scaled_w = gfx_w;
+      scaled_h = gfx_h;
+    );
+    ui_drawBGRect(0.0, 0.0, gfx_w, gfx_h, COLOR.OUTSIDE);
+    ui_drawPluginBG(scaled_w, scaled_h);
+
+    header_h = ceil(72.0 * g_scaling);
+    lower_h = scaled_h - header_h;
+    left_w = floor(528.0 * g_scaling);
+    screen_size = left_w - g_border_size * 2.0;
+      uix_setColor(COLOR.OUTSIDE);
+
+    ui_drawTitle(
+      header_h,
+      g_border_size,
+      left_w - header_h * 1.5 - g_padding_size * 2.0,
+      header_h - g_border_size
+    );
+
+    ui_drawScreen(g_border_size, header_h + g_border_size, screen_size, screen_size);
+    !is_on ? (
+      uix_setColor(COLOR.OUTSIDE);
+      gfx_a = 0.35;
+      gfx_rect(0.0, 0.0, scaled_w, scaled_h);
+    );
+    bt_padding = header_h * 0.2;
+    bt_on.ui_drawONOFFButton(
+      g_border_size + bt_padding,
+      g_border_size + bt_padding,
+      header_h - g_border_size - bt_padding * 2.0,
+      header_h - g_border_size - bt_padding * 2.0,
+      COLOR.PANEL.BUTTON,
+      is_on
+    );
+    bt_on.activated ? (
+      is_on = !is_on;
+      bt_on.activated = 0;
+    );
+    ui_drawRightSection(left_w, header_h, scaled_w - left_w, lower_h);
+    !is_on ? (
+      uix_setColor(COLOR.OUTSIDE);
+      gfx_a = 0.15;
+      gfx_rect(0.0, 0.0, scaled_w, scaled_h);
+    );
+  );
+
+  ui_draw();
