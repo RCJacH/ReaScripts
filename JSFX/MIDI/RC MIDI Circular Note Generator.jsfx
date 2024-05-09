@@ -1,7 +1,9 @@
 /*
 JSFX Name: RC MIDI Circular Note Generator
 Author: RCJacH
-Link: https://github.com/RCJacH/ReaScripts
+Link:
+  Forum Thread: https://forum.cockos.com/showthread.php?p=2781013
+  Github Repository: https://github.com/RCJacH/ReaScripts
 Release Date: May 2024
 Version: 0.1
 Reference:
@@ -14,6 +16,12 @@ About:
   based on circle rotations.
 
 Changelog:
+  * v0.2 (2024-05-10)
+    + add change base note octave through dragbox
+    * fix on/off state not persisting/ add slider1 automation request
+    * fix wrong note names
+    * fix wrong note when no repeated note is on
+    * fix note name not displaying
   * v0.1 (2024-05-07)
     + Initial Release
 
@@ -444,53 +452,6 @@ slider1: 1<0, 1, 1>-ON/OFF
   a_circle_data = inc; inc += CIRC_MEM_SIZE;
 
 
-  function initialize()
-  local(offset)
-  global(
-    base_note, is_no_repetition, circle_count, a_circle_data,
-    CIRC_MEM_SIZE, CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_MODE_OFFSET,
-    CIRC_SPEED_HZ_OFFSET, CIRC_SPEED_MS_OFFSET, CIRC_SPEED_WN_OFFSET,
-    a_scale_notes, a_scale_buttons, is_initiated,
-    a_trigger_settings, TRIGGER_SETTINGS_MEM_SIZE,
-    a_notelength_settings, NOTELENGTH_SETTINGS_MEM_SIZE, NOTELENGTH_PCT_OFFSET
-  )
-  (
-    base_note = 48;
-    is_no_repetition = 1;
-    circle_count = 3;
-    memset(a_trigger_settings, 0.0, TRIGGER_SETTINGS_MEM_SIZE);
-    memset(a_notelength_settings, 0.5, NOTELENGTH_SETTINGS_MEM_SIZE);
-    a_notelength_settings[0] = 0.0;
-    memset(a_circle_data, 0.0, CIRC_MEM_SIZE);
-    a_circle_data[CIRC_RADIUS_OFFSET] = 7.0;
-    a_circle_data[CIRC_SPEED_HZ_OFFSET] = 0.2;
-    a_circle_data[CIRC_SPEED_MS_OFFSET] = 0.2;
-    a_circle_data[CIRC_SPEED_WN_OFFSET] = 0.2;
-    offset = CIRC_PROPERTIES;
-    a_circle_data[offset + CIRC_MODE_OFFSET] = 1;
-    a_circle_data[offset + CIRC_RADIUS_OFFSET] = 5.0;
-    a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.4;
-    a_circle_data[offset + CIRC_SPEED_MS_OFFSET] = 0.4;
-    a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.4;
-    offset += CIRC_PROPERTIES;
-    a_circle_data[offset + CIRC_MODE_OFFSET] = 2;
-    a_circle_data[offset + CIRC_RADIUS_OFFSET] = 2.0;
-    a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.7;
-    a_circle_data[offset + CIRC_SPEED_MS_OFFSET] = 0.7;
-    a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.46;
-    memset(a_scale_notes, 0.0, 12);
-    memset(a_scale_buttons, 0.0, 12);
-    a_scale_buttons[0] = 1;
-    a_scale_buttons[2] = 1;
-    a_scale_buttons[4] = 1;
-    a_scale_buttons[5] = 1;
-    a_scale_buttons[7] = 1;
-    a_scale_buttons[9] = 1;
-    a_scale_buttons[11] = 1;
-    is_initiated = 1;
-  );
-
-
   function log_curve(x, v)
   (
     (log(x + 1) / log(2)) ^ v;
@@ -513,15 +474,15 @@ slider1: 1<0, 1, 1>-ON/OFF
   local(degx, tonic_pcx, deg_pcx, tonic_str, offset, deg_stx)
   (
     // Display flats for b3 and b7, which is more common than #2 and #6
-    (st == 3 || st == 10) ? (st -= 3; tonic += 3);
 
     degx = floor((st + (st >= 5)) * 0.5);
+    (st == 3 || st == 10) ? degx += 1;
     tonic_pcx = ceil((tonic + (tonic >= 5)) * 0.5);
     deg_pcx = tonic_pcx + degx;
     tonic_str = strcpy(#, get_pitchclass_name(deg_pcx % 7));
 
     deg_stx = deg_pcx * 2;
-    offset = st - (deg_stx - tonic - ceil((deg_stx - 4) / 12) - max(0, ceil((deg_stx - 12) / 12))) % 12;
+    offset = st - (deg_stx - tonic - ceil((deg_stx - 5) / 13) - max(0, ceil((deg_stx - 12) / 12))) % 12;
     strcat(
       tonic_str,
       offset == 3 ? "x#" :
@@ -548,6 +509,15 @@ slider1: 1<0, 1, 1>-ON/OFF
     pit == 9 ? "6" :
     pit == 10 ? "b7" :
     pit == 11 ? "7";
+  );
+
+
+  function set_base_note(midi)
+  global(base_note, base_note.semitone, base_note.octave)
+  (
+    base_note = midi;
+    base_note.semitone = midi % 12;
+    base_note.octave = floor(midi / 12);
   );
 
 
@@ -857,6 +827,54 @@ slider1: 1<0, 1, 1>-ON/OFF
     )
   );
 
+
+  function initialize()
+  local(offset)
+  global(
+    is_no_repetition, circle_count, a_circle_data,
+    CIRC_MEM_SIZE, CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_MODE_OFFSET,
+    CIRC_SPEED_HZ_OFFSET, CIRC_SPEED_MS_OFFSET, CIRC_SPEED_WN_OFFSET,
+    a_scale_notes, a_scale_buttons, is_initiated,
+    a_trigger_settings, TRIGGER_SETTINGS_MEM_SIZE,
+    a_notelength_settings, NOTELENGTH_SETTINGS_MEM_SIZE, NOTELENGTH_PCT_OFFSET
+  )
+  (
+    set_base_note(48);
+    is_no_repetition = 1;
+    circle_count = 3;
+    memset(a_trigger_settings, 0.0, TRIGGER_SETTINGS_MEM_SIZE);
+    memset(a_notelength_settings, 0.5, NOTELENGTH_SETTINGS_MEM_SIZE);
+    a_notelength_settings[0] = 0.0;
+    memset(a_circle_data, 0.0, CIRC_MEM_SIZE);
+    a_circle_data[CIRC_RADIUS_OFFSET] = 7.0;
+    a_circle_data[CIRC_SPEED_HZ_OFFSET] = 0.2;
+    a_circle_data[CIRC_SPEED_MS_OFFSET] = 0.2;
+    a_circle_data[CIRC_SPEED_WN_OFFSET] = 0.2;
+    offset = CIRC_PROPERTIES;
+    a_circle_data[offset + CIRC_MODE_OFFSET] = 1;
+    a_circle_data[offset + CIRC_RADIUS_OFFSET] = 5.0;
+    a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.4;
+    a_circle_data[offset + CIRC_SPEED_MS_OFFSET] = 0.4;
+    a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.4;
+    offset += CIRC_PROPERTIES;
+    a_circle_data[offset + CIRC_MODE_OFFSET] = 2;
+    a_circle_data[offset + CIRC_RADIUS_OFFSET] = 2.0;
+    a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.7;
+    a_circle_data[offset + CIRC_SPEED_MS_OFFSET] = 0.7;
+    a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.46;
+    memset(a_scale_notes, 0.0, 12);
+    memset(a_scale_buttons, 0.0, 12);
+    a_scale_buttons[0] = 1;
+    a_scale_buttons[2] = 1;
+    a_scale_buttons[4] = 1;
+    a_scale_buttons[5] = 1;
+    a_scale_buttons[7] = 1;
+    a_scale_buttons[9] = 1;
+    a_scale_buttons[11] = 1;
+    is_initiated = 1;
+  );
+
+
   !is_initiated ? initialize();
   update_scale();
   update_rotations(0);
@@ -882,7 +900,10 @@ slider1: 1<0, 1, 1>-ON/OFF
 
 
 @slider
-  is_on = slider1;
+  sl1 != slider1 ? (
+    sl1 = slider1;
+    is_on = slider1;
+  );
 
 
 @block
@@ -964,19 +985,23 @@ slider1: 1<0, 1, 1>-ON/OFF
       (scale_degree == last_scale_degree && octave == last_octave)
     ) ? 1 : -repeat_count;
     repeat = ((repeat_count + 1) % 4 - 1);
+
     degree_shift = (repeat % 2) * sign(repeat);
-    new_octave = floor((scale_degree + degree_shift) / scale_note_count);
-    new_scale_degree = (scale_degree + degree_shift) % scale_note_count;
+    new_scale_degree = scale_degree + degree_shift;
+    new_octave = floor(new_scale_degree / scale_note_count);
     new_scale_degree < 0 ? new_scale_degree += scale_note_count;
+    new_scale_degree = new_scale_degree % scale_note_count;
     current += new_octave * 12 + a_scale_notes[new_scale_degree] - a_scale_notes[scale_degree];
     octave = floor(current / 12);
 
     current == last ? (
-      degree_shift = (repeat % 2) * 2 - 1;
-      new_octave = floor((scale_degree + degree_shift) / scale_note_count);
-      new_scale_degree = (scale_degree + degree_shift) % scale_note_count;
+      degree_shift = 1 - floor((repeat_count + 1) % 4 * 0.5) * 2;
+      new_scale_degree = scale_degree + degree_shift;
+      new_octave = floor(new_scale_degree / scale_note_count);
       new_scale_degree < 0 ? new_scale_degree += scale_note_count;
+      new_scale_degree = new_scale_degree % scale_note_count;
       current += new_octave * 12 + a_scale_notes[new_scale_degree] - a_scale_notes[scale_degree];
+      scale_degree = new_scale_degree;
       octave = floor(current / 12);
     );
   );
@@ -1158,11 +1183,11 @@ slider1: 1<0, 1, 1>-ON/OFF
   function maybe_parse_input()
   local(offset, msg1, msg2, msg3, in_type)
   global(
-    user_input.is_holding, user_input.base_note,
-    user_input.play_pos, user_input.beat_pos,
+    user_input.is_holding, user_input.base_note, base_note,
+    user_input.play_pos,
     STATUS_NOTE_ON, STATUS_NOTE_OFF,
     MIN_TRIGGER_NOTE, MAX_TRIGGER_NOTE,
-    play_position, beat_position
+    play_position
   )
   (
     while (midirecv(offset, msg1, msg2, msg3)) (
@@ -1171,15 +1196,17 @@ slider1: 1<0, 1, 1>-ON/OFF
         msg3 && (msg2 >= MIN_TRIGGER_NOTE && msg2 <= MAX_TRIGGER_NOTE) ? (
           user_input.is_holding = 1;
           user_input.base_note = msg2;
+          set_base_note(msg2);
           user_input.play_pos = play_position;
-          user_input.beat_pos = beat_position;
         );
-      ) : in_type == STATUS_NOTE_OFF ? ( 
+      ) : in_type == STATUS_NOTE_OFF ? (
         msg2 == user_input.base_note ? (
+          base_note == user_input.base_note ? (
+            set_base_note(48);
+          );
           user_input.is_holding =
           user_input.base_note =
-          user_input.play_pos =
-          user_input.beat_pos = 0;
+          user_input.play_pos = 0;
         );
       );
     );
@@ -1188,9 +1215,9 @@ slider1: 1<0, 1, 1>-ON/OFF
 
   maybe_send_note_off();
   samples_until_note_off -= samplesblock;
+  maybe_parse_input();
 
   is_on ? (
-    maybe_parse_input();
     update_rotations(samplesblock);
     calculate_trigger_counters(samplesblock, play_state);
     maybe_send_note_on();
@@ -1552,18 +1579,14 @@ slider1: 1<0, 1, 1>-ON/OFF
 
 
   function ui_drawButtonBorder(x, y, w, h, offset)
-  global(
-    BUTTON_BORDER_OFFSET
-  )
+  global(BUTTON_BORDER_OFFSET)
   (
     ui_drawBGRect(x, y, w, h, offset + BUTTON_BORDER_OFFSET);
   );
 
 
   function ui_drawButtonText(x, y, w, h, offset, s)
-  global(
-    BUTTON_TEXT_OFFSET
-  )
+  global(BUTTON_TEXT_OFFSET)
   (
     ui_drawCenteredText(x, y, w, h, offset + BUTTON_TEXT_OFFSET, s);
   );
@@ -1571,9 +1594,7 @@ slider1: 1<0, 1, 1>-ON/OFF
 
   function ui_drawButton(x, y, w, h, color, status, s)
   local(offset)
-  global(
-    g_button_border_size,
-  )
+  global()
   (
     offset = color + status * 3;
     ui_drawButtonBorder(x, y, w, h, offset);
@@ -1675,8 +1696,8 @@ slider1: 1<0, 1, 1>-ON/OFF
 
 
   function ui_drawDragbox(x, y, w, h, base_color, color, v, s)
-  local(status, cx, cw, offset)
-  instance(in_section, omx, dragging, pos_x)
+  local(status, cx, cw, offset, raw_pos_x)
+  instance(in_section, dragging, omx, pos_x, overflow_x, overflowed)
   global(
     mouse_x, mouse_y, mouse_cap, g_button_border_size,
     BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
@@ -1692,7 +1713,7 @@ slider1: 1<0, 1, 1>-ON/OFF
       in_section ? (
         mouse_cap&1 ? (
           !dragging ? (
-            omx = mouse_x; dragging = 1;
+            omx = mouse_x - cw * pos_x; dragging = 1;
           );
         );
         !dragging ? status += BUTTON_STATUS_HOVER;
@@ -1703,11 +1724,19 @@ slider1: 1<0, 1, 1>-ON/OFF
 
     mouse_cap&1 ? (
       dragging ? (
-        pos_x = max(0.0, min(1.0, (mouse_x - cx) / cw));
+        raw_pos_x = (mouse_x - omx) / cw;
+        raw_pos_x < 0.0 || raw_pos_x > 1.0 ? (
+          overflow_x = floor(raw_pos_x);
+        );
+        pos_x = raw_pos_x - overflow_x;
+        overflowed ? (
+          omx += cw * overflow_x;
+          overflow_x = overflowed = 0;
+        );
         status += BUTTON_STATUS_PRESS;
       );
     ) : !mouse_cap ? (
-      dragging = 0;
+      dragging = overflow_x = 0;
     );
 
     offset = color + status * 3;
@@ -1778,23 +1807,21 @@ slider1: 1<0, 1, 1>-ON/OFF
     note_choice.current, note_choice.octave, scale_note_count
   )
   (
-    note_choice.current > base_note ? (
-      gfx_setfont(FONT_SCREEN_NOTENAME);
-      uix_setColor(COLOR.SCREEN.REGULAR_CIRCLE);
-      gfx_a = 0.12;
-      s = #;
-      sprintf(
-        s, "%s",
-        get_pitch_name(current_root, (note_choice.current + 12 - current_root) % 12)
-      );
-      sprintf(s, "%s%i", s, note_choice.octave);
-      gfx_measurestr(s, sw, sh);
-      uix_setPosition(
-        uix_centered(x, w - sw), uix_centered(y, h - sh)
-      );
-      gfx_drawstr(s);
-      gfx_a = 1.0;
+    gfx_setfont(FONT_SCREEN_NOTENAME);
+    uix_setColor(COLOR.SCREEN.REGULAR_CIRCLE);
+    gfx_a = 0.12;
+    s = #;
+    sprintf(
+      s, "%s",
+      get_pitch_name(current_root, (note_choice.current + 12 - current_root) % 12)
     );
+    sprintf(s, "%s%i", s, note_choice.octave);
+    gfx_measurestr(s, sw, sh);
+    uix_setPosition(
+      uix_centered(x, w - sw), uix_centered(y, h - sh)
+    );
+    gfx_drawstr(s);
+    gfx_a = 1.0;
   );
 
   function ui_drawScreenRadiusLabel(x, y, w, h, s)
@@ -2064,16 +2091,16 @@ slider1: 1<0, 1, 1>-ON/OFF
   local(hw, tonic, tonic_str)
   instance(db_tonic)
   global(
-    COLOR.COMMON.BG, COLOR.COMMON.LABEL, g_padding_size,
-    COLOR.COMMON.BUTTON, base_note, current_root
+    COLOR.COMMON.BG, COLOR.COMMON.LABEL, COLOR.COMMON.BUTTON,
+    g_padding_size, base_note.semitone, base_note.octave, current_root
   )
   (
     hw = ceil((w - g_padding_size) * 0.5);
     ui_drawCenteredText(x, y, hw, h, COLOR.COMMON.LABEL, "Key Center:");
 
-    tonic = base_note % 12;
+    tonic = base_note.semitone;
     tonic_str = #;
-    sprintf(tonic_str, " (%s)", get_pitch_name(current_root, 0));
+    sprintf(tonic_str, "%i (%s)", base_note.octave, get_pitch_name(current_root, 0));
     db_tonic.ui_drawDragbox(
       x + w - hw, y, hw, h,
       COLOR.COMMON.BG,
@@ -2082,8 +2109,12 @@ slider1: 1<0, 1, 1>-ON/OFF
       strcat(get_pitch_name(tonic, 0), tonic_str)
     );
     db_tonic.dragging ? (
-      base_note = floor(db_tonic.pos_x * 11) + 48;
+      set_base_note(floor(db_tonic.pos_x * 12) + base_note.octave * 12);
     );
+    db_tonic.overflow_x ? (
+      set_base_note(max(0, min(127, base_note.semitone + (base_note.octave + db_tonic.overflow_x) * 12)));
+      db_tonic.overflowed = 1;
+    )
   );
 
 
@@ -2547,7 +2578,7 @@ slider1: 1<0, 1, 1>-ON/OFF
   global(
     w_scaling, h_scaling, g_scaling, g_border_size, g_padding_size,
     current_root, gfx_w, gfx_h, gfx_a, COLOR.OUTSIDE, COLOR.PANEL,
-    is_on, COLOR.PANEL.BUTTON,
+    is_on, slider1, COLOR.PANEL.BUTTON,
   )
   (
     w_scaling > h_scaling ? (
@@ -2593,6 +2624,8 @@ slider1: 1<0, 1, 1>-ON/OFF
     );
     bt_on.activated ? (
       is_on = !is_on;
+      slider1 = is_on;
+      slider_automate(slider1);
       bt_on.activated = 0;
     );
     ui_drawRightSection(left_w, header_h, scaled_w - left_w, lower_h);
