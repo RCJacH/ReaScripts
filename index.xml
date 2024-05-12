@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="0ec6f48b749f7883f1ce377931da724f7acfe423" name="RCJacH Scripts">
+<index version="1" commit="850e62553bc8ec85c6058c40380eda71c80293c2" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -542,6 +542,14 @@ Potential Addition:
       <version name="0.1" author="RCJacH" time="2024-05-06T22:35:44Z">
         <changelog><![CDATA[+ Initial Release]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/f0dbabf770299e60ff272531cfbc25127a0d58b2/JSFX/MIDI/RC%20MIDI%20Circular%20Note%20Generator.jsfx</source>
+      </version>
+      <version name="0.3" author="RCJacH" time="2024-05-12T03:10:20Z">
+        <changelog><![CDATA[+ add sliders
++ add reset circle rotations with midi note input
++ add set scale notes with midi note input
++ add toggling common buttons with midi note input
+* fix active point on screen too small when total radius is large]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/850e62553bc8ec85c6058c40380eda71c80293c2/JSFX/MIDI/RC%20MIDI%20Circular%20Note%20Generator.jsfx</source>
       </version>
     </reapack>
     <reapack name="RC MIDI Harmonizer.jsfx" type="effect" desc="RC MIDI Harmonizer">
