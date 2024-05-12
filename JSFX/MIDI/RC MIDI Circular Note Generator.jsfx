@@ -5,7 +5,7 @@ Link:
   Forum Thread: https://forum.cockos.com/showthread.php?p=2781013
   Github Repository: https://github.com/RCJacH/ReaScripts
 Release Date: May 2024
-Version: 0.1
+Version: 0.3
 Reference:
   https://www.youtube.com/watch?v=wn3td88w19E
 
@@ -16,6 +16,12 @@ About:
   based on circle rotations.
 
 Changelog:
+  * v0.3 (2024-05-)
+    + add sliders
+    + add reset circle rotations with midi note input
+    + add set scale notes with midi note input
+    + add toggling common buttons with midi note input
+    * fix active point on screen too small when total radius is large
   * v0.2 (2024-05-10)
     + add change base note octave through dragbox
     * fix on/off state not persisting/ add slider1 automation request
@@ -32,6 +38,28 @@ Changelog:
 desc: RC MIDI Circular Note Generator
 
 slider1: 1<0, 1, 1>-ON/OFF
+slider2: 0<0, 3, 1{Theta,Hz,Ms,Sync}>-Trigger Mode
+slider3: 0<0, 360, 1>-Trigger Theta
+slider4: 0<0, 1>-Trigger Hz
+slider5: 0<0, 1>-Trigger Millisecond
+slider6: 0<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Trigger Sync
+slider7: 0<0, 6, 1{Percent,Millisecond,Whole Note,min(Percent | Millisecond),min(Percent | Whole Note),min(Millisecond | Whole Note), min(Percent | Millisecond | Whole Note)}>-Note Length Mode
+slider8: 0<0, 1>-Note Length Percent
+slider9: 0<0, 1>-Note Length Millisecond
+slider10: 0<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Note Length Whole Note
+
+slider20: 1<0, 1, 1>-Scale degree 1
+slider21: 0<0, 1, 1>-Scale degree #1
+slider22: 1<0, 1, 1>-Scale degree 2
+slider23: 0<0, 1, 1>-Scale degree b3
+slider24: 1<0, 1, 1>-Scale degree 3
+slider25: 1<0, 1, 1>-Scale degree 4
+slider26: 0<0, 1, 1>-Scale degree #4
+slider27: 1<0, 1, 1>-Scale degree 5
+slider28: 0<0, 1, 1>-Scale degree #5
+slider29: 1<0, 1, 1>-Scale degree 6
+slider30: 0<0, 1, 1>-Scale degree b7
+slider31: 1<0, 1, 1>-Scale degree 7
 
 
 @init
@@ -539,6 +567,24 @@ slider1: 1<0, 1, 1>-ON/OFF
   );
 
 
+  function update_scale_sliders(i, v)
+  (
+    i == 0 ? sl20 = slider20 = v :
+    i == 1 ? sl21 = slider21 = v :
+    i == 2 ? sl22 = slider22 = v :
+    i == 3 ? sl23 = slider23 = v :
+    i == 4 ? sl24 = slider24 = v :
+    i == 5 ? sl25 = slider25 = v :
+    i == 6 ? sl26 = slider26 = v :
+    i == 7 ? sl27 = slider27 = v :
+    i == 8 ? sl28 = slider28 = v :
+    i == 9 ? sl29 = slider29 = v :
+    i == 10 ? sl30 = slider30 = v :
+    i == 11 ? sl31 = slider31 = v;
+    slider_automate(2 ^ (i + 19));
+  );
+
+
   function get_current_point_on_circle(index, cx, cy)
   local(offset, radius, theta)
   global(
@@ -828,6 +874,29 @@ slider1: 1<0, 1, 1>-ON/OFF
   );
 
 
+  function automate_trigger_slider(mode, v)
+  (
+    v == -1 ? (
+      slider_automate(2 ^ (mode + 2), 1);
+    ) : (
+      mode == TRIGGER_THETA ? sl3 = slider3 = v :
+      mode == TRIGGER_HZ ? sl4 = slider4 = v :
+      mode == TRIGGER_MS ? sl5 = slider5 = v :
+      mode == TRIGGER_WN ? sl6 = slider6 = v * 50.0;
+      slider_automate(2 ^ (mode + 2));
+    );
+  );
+
+
+  function automate_notelength_slider(mode, v)
+  (
+    mode == NOTELENGTH_PCT ? sl8 = slider8 = v :
+    mode == NOTELENGTH_MS ? sl9 = slider9 = v :
+    mode == NOTELENGTH_WN ? sl10 = slider10 = v * 50.0;
+    slider_automate(2 ^ (mode + 7));
+  );
+
+
   function initialize()
   local(offset)
   global(
@@ -901,10 +970,48 @@ slider1: 1<0, 1, 1>-ON/OFF
 
 @slider
   sl1 != slider1 ? (
-    sl1 = slider1;
-    is_on = slider1;
+    sl1 = is_on = slider1;
+  );
+  sl2 != slider2 ? (
+    sl2 = a_trigger_settings[TRIGGER_MODE_OFFSET] = slider2;
+  );
+  sl3 != slider3 ? (
+    sl3 = a_trigger_settings[TRIGGER_THETA_OFFSET] = slider3 / 360.0;
+  );
+  sl4 != slider4 ? (
+    sl4 = a_trigger_settings[TRIGGER_HZ_OFFSET] = slider4;
+  );
+  sl5 != slider5 ? (
+    sl5 = a_trigger_settings[TRIGGER_MS_OFFSET] = slider5;
+  );
+  sl6 != slider6 ? (
+    sl6 = a_trigger_settings[TRIGGER_WN_OFFSET] = slider6 * 0.02;
+  );
+  sl7 != slider7 ? (
+    sl7 = a_notelength_settings[NOTELENGTH_MODE_OFFSET] = slider7;
+  );
+  sl8 != slider8 ? (
+    sl8 = a_notelength_settings[NOTELENGTH_PCT_OFFSET] = slider8;
+  );
+  sl9 != slider9 ? (
+    sl9 = a_notelength_settings[NOTELENGTH_MS_OFFSET] = slider9;
+  );
+  sl10 != slider10 ? (
+    sl10 = a_notelength_settings[NOTELENGTH_WN_OFFSET] = slider10 * 0.02;
   );
 
+  sl20 != slider21 ? (a_scale_buttons[0] = sl20 = slider20; update_scale(););
+  sl21 != slider22 ? (a_scale_buttons[1] = sl21 = slider21; update_scale(););
+  sl22 != slider23 ? (a_scale_buttons[2] = sl22 = slider22; update_scale(););
+  sl23 != slider24 ? (a_scale_buttons[3] = sl23 = slider23; update_scale(););
+  sl24 != slider25 ? (a_scale_buttons[4] = sl24 = slider24; update_scale(););
+  sl25 != slider26 ? (a_scale_buttons[5] = sl25 = slider25; update_scale(););
+  sl26 != slider27 ? (a_scale_buttons[6] = sl26 = slider26; update_scale(););
+  sl27 != slider28 ? (a_scale_buttons[7] = sl27 = slider27; update_scale(););
+  sl28 != slider29 ? (a_scale_buttons[8] = sl28 = slider28; update_scale(););
+  sl29 != slider30 ? (a_scale_buttons[9] = sl29 = slider29; update_scale(););
+  sl30 != slider31 ? (a_scale_buttons[10] = sl30 = slider30; update_scale(););
+  sl31 != slider32 ? (a_scale_buttons[11] = sl31 = slider31; update_scale(););
 
 @block
 
@@ -1180,6 +1287,56 @@ slider1: 1<0, 1, 1>-ON/OFF
   );
 
 
+  function set_scale_from_note_on(i, is_on)
+  global(a_scale_buttons, a_scale_notes)
+  (
+    a_scale_notes[i] = is_on;
+    a_scale_buttons[i] = is_on;
+    update_scale_sliders(i, is_on);
+  );
+
+
+  function toggle_logarithmic(v)
+  global(is_logarithmic)
+  (
+    is_logarithmic = v;
+  );
+
+
+  function toggle_no_repetition(v)
+  global(is_no_repetition)
+  (
+    is_no_repetition = v;
+  );
+
+
+  function toggle_active_point(v)
+  global(is_circle_of_fifth_outer_circle)
+  (
+    is_circle_of_fifth_outer_circle = v;
+  );
+
+
+  function toggle_circle_of_fifth(v)
+  global(is_circle_of_fifth)
+  (
+    is_circle_of_fifth = v;
+  );
+
+  function reset_all_circle_rotations()
+  local(i)
+  global(
+    a_circle_data, circle_count, CIRC_PROPERTIES, CIRC_ROTATION_OFFSET
+  )
+  (
+    i = 0;
+    loop(circle_count,
+      a_circle_data[i * CIRC_PROPERTIES + CIRC_ROTATION_OFFSET] = 0.0;
+      i += 1;
+    );
+  );
+
+
   function maybe_parse_input()
   local(offset, msg1, msg2, msg3, in_type)
   global(
@@ -1192,8 +1349,14 @@ slider1: 1<0, 1, 1>-ON/OFF
   (
     while (midirecv(offset, msg1, msg2, msg3)) (
       in_type = msg1&$xF0;
-      (in_type == STATUS_NOTE_ON) ? (
-        msg3 && (msg2 >= MIN_TRIGGER_NOTE && msg2 <= MAX_TRIGGER_NOTE) ? (
+      (in_type == STATUS_NOTE_ON && msg3) ? (
+        !msg2 ? reset_all_circle_rotations() :
+        msg2 == 5 ? toggle_circle_of_fifth(msg3 >= 64) :
+        msg2 == 7 ? toggle_active_point(msg3 >= 64) :
+        msg2 == 9 ? toggle_no_repetition(msg3 >= 64) :
+        msg2 == 11 ? toggle_logarithmic(msg3 >= 64) :
+        (msg2 >= 12 && msg2 < 24) ? set_scale_from_note_on(msg2 % 12, msg3 >= 64) :
+        (msg2 >= MIN_TRIGGER_NOTE && msg2 <= MAX_TRIGGER_NOTE) ? (
           user_input.is_holding = 1;
           user_input.base_note = msg2;
           set_base_note(msg2);
@@ -1603,33 +1766,47 @@ slider1: 1<0, 1, 1>-ON/OFF
   );
 
 
-  function ui_drawTriggerButton(x, y, w, h, color, active, s)
+  function ui_parseButtonState(x, y, w, h, status)
   local(status)
-  instance(in_section, click, activated)
+  instance(in_section, l_click, r_click, l_clicked, r_clicked)
   global(
-    mouse_x, mouse_y, mouse_cap,
-    BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
-    BUTTON_STATUS_PRESS, BUTTON_STATUS_ACTIVE,
+    BUTTON_STATUS_HOVER, BUTTON_STATUS_PRESS, mouse_cap
   )
   (
+    uix_isMouseInRect(x, y, w, h) ? (
+      !mouse_cap ? in_section = 1;
+      in_section ? (
+        mouse_cap&1 ? l_click = 1;
+        l_click && mouse_cap == 0 ? l_click = 2;
+        l_click == 2 ? (l_clicked = 1; l_click = 0);
+        mouse_cap&2 ? r_click = 1;
+        r_click && mouse_cap == 0 ? r_click = 2;
+        r_click == 2 ? (r_clicked = 1; r_click = 0);
+
+        status += l_click || r_click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
+      );
+    ) : (
+      !mouse_cap ? (
+        in_section = l_click = r_click = 0;
+      );
+    );
+    status
+  );
+
+
+  function ui_drawTriggerButton(x, y, w, h, color, active, s)
+  local(status)
+  instance(in_section, l_click, r_click)
+  global(BUTTON_STATUS_INACTIVE, BUTTON_STATUS_DISABLED)
+  (
     active ? (
-      uix_isMouseInRect(x, y, w, h) ? (
-        !mouse_cap ? in_section = 1;
-        in_section ? (
-          mouse_cap&1 ? click = 1;
-          click && mouse_cap == 0 ? click = 2;
-          click == 2 ? (activated = 1; click = 0);
-          status = click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
-        );
-      ) : (
-        status = BUTTON_STATUS_INACTIVE;
-        !mouse_cap ? (
-          in_section = click = 0;
-        );
+      status = this.ui_parseButtonState(
+        x, y, w, h,
+        active ? BUTTON_STATUS_INACTIVE : BUTTON_STATUS_DISABLED
       );
     ) : (
       status = BUTTON_STATUS_DISABLED;
-      activated = click = in_section = 0;
+      l_click = r_click = in_section = 0;
     );
     ui_drawButton(x, y, w, h, color, status, s);
   );
@@ -1637,32 +1814,11 @@ slider1: 1<0, 1, 1>-ON/OFF
 
   function ui_drawToggleButton(x, y, w, h, color, active, s)
   local(status)
-  instance(
-    in_section, lclick, rclick, l_activated, r_activated
-  )
-  global(
-    mouse_x, mouse_y, mouse_cap,
-    BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
-    BUTTON_STATUS_PRESS, BUTTON_STATUS_ACTIVE,
-  )
+  global(BUTTON_STATUS_INACTIVE, BUTTON_STATUS_DISABLED)
   (
-    status = active ? BUTTON_STATUS_INACTIVE : BUTTON_STATUS_DISABLED;
-    uix_isMouseInRect(x, y, w, h) ? (
-      !mouse_cap ? in_section = 1;
-      in_section ? (
-        mouse_cap&1 ? lclick = 1;
-        lclick && mouse_cap == 0 ? lclick = 2;
-        lclick == 2 ? (l_activated = 1; lclick = 0);
-        mouse_cap&2 ? rclick = 1;
-        rclick && mouse_cap == 0 ? rclick = 2;
-        rclick == 2 ? (r_activated = 1; rclick = 0);
-
-        status += lclick || rclick ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
-      );
-    ) : (
-      !mouse_cap ? (
-        in_section = lclick = rclick = 0;
-      );
+    status = this.ui_parseButtonState(
+      x, y, w, h,
+      active ? BUTTON_STATUS_INACTIVE : BUTTON_STATUS_DISABLED
     );
     ui_drawButton(x, y, w, h, color, status, s);
   );
@@ -1670,34 +1826,17 @@ slider1: 1<0, 1, 1>-ON/OFF
 
   function ui_drawSwitchButton(x, y, w, h, color, mode, s)
   local(status)
-  instance(in_section, click, activated)
-  global(
-    mouse_x, mouse_y, mouse_cap,
-    BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
-    BUTTON_STATUS_PRESS, BUTTON_STATUS_ACTIVE, CIRC_MODES
-  )
+  global(CIRC_MODES)
   (
     status = mode * CIRC_MODES;
-    uix_isMouseInRect(x, y, w, h) ? (
-      !mouse_cap ? in_section = 1;
-      in_section ? (
-        mouse_cap&1 ? click = 1;
-        click && mouse_cap == 0 ? click = 2;
-        click == 2 ? (activated = 1; click = 0);
-        status += (click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER);
-      );
-    ) : (
-      !mouse_cap ? (
-        in_section = click = 0;
-      );
-    );
+    status = this.ui_parseButtonState(x, y, w, h, status);
     ui_drawButton(x, y, w, h, color + 1, status, s);
   );
 
 
   function ui_drawDragbox(x, y, w, h, base_color, color, v, s)
   local(status, cx, cw, offset, raw_pos_x)
-  instance(in_section, dragging, omx, pos_x, overflow_x, overflowed)
+  instance(in_section, l_dragging, l_dragged, omx, pos_x, overflow_x, overflowed)
   global(
     mouse_x, mouse_y, mouse_cap, g_button_border_size,
     BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
@@ -1712,18 +1851,20 @@ slider1: 1<0, 1, 1>-ON/OFF
       !mouse_cap ? in_section = 1;
       in_section ? (
         mouse_cap&1 ? (
-          !dragging ? (
-            omx = mouse_x - cw * pos_x; dragging = 1;
+          !l_dragging ? (
+            omx = mouse_x - cw * pos_x;
+            l_dragging = 1;
+            l_dragged = 0;
           );
         );
-        !dragging ? status += BUTTON_STATUS_HOVER;
+        !l_dragging ? status += BUTTON_STATUS_HOVER;
       );
     ) : (
       !mouse_cap ? in_section = 0;
     );
 
     mouse_cap&1 ? (
-      dragging ? (
+      l_dragging ? (
         raw_pos_x = (mouse_x - omx) / cw;
         raw_pos_x < 0.0 || raw_pos_x > 1.0 ? (
           overflow_x = floor(raw_pos_x);
@@ -1736,7 +1877,8 @@ slider1: 1<0, 1, 1>-ON/OFF
         status += BUTTON_STATUS_PRESS;
       );
     ) : !mouse_cap ? (
-      dragging = overflow_x = 0;
+      l_dragging ? l_dragged = 1;
+      l_dragging = overflow_x = 0;
     );
 
     offset = color + status * 3;
@@ -1750,7 +1892,7 @@ slider1: 1<0, 1, 1>-ON/OFF
   function ui_drawSwitchDragbox(x, y, w, h, base_color, color, mode, v, s)
   local(status, cx, cw, offset)
   instance(
-    in_section, click, activated, omx, omy, dragging, pos_x
+    in_section, l_click, l_clicked, omx, omy, l_dragging, pos_x
   )
   global(
     mouse_x, mouse_y, mouse_cap, g_button_border_size,
@@ -1766,29 +1908,29 @@ slider1: 1<0, 1, 1>-ON/OFF
       !mouse_cap ? in_section = 1;
       in_section ? (
         mouse_cap&1 ? (
-          !click && !dragging ? (
+          !l_click && !l_dragging ? (
             omx = mouse_x; omy = mouse_y;
-            click = 1;
+            l_click = 1;
           );
           abs(mouse_x - omx) >= 2.0 || abs(mouse_y - omy) >= 2.0 ? (
-            dragging = 1;
-            click = 0;
+            l_dragging = 1;
+            l_click = 0;
           );
         );
-        click && mouse_cap == 0 ? click = 2;
-        click == 2 ? (activated = 1; click = 0);
-        status += (click || dragging ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER);
+        l_click && mouse_cap == 0 ? l_click = 2;
+        l_click == 2 ? (l_clicked = 1; l_click = 0);
+        status += (l_click || l_dragging ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER);
       );
     ) : (
       !mouse_cap ? in_section = 0;
     );
 
     mouse_cap&1 ? (
-      dragging ? (
+      l_dragging ? (
         pos_x = max(0.0, min(1.0, (mouse_x - cx) / cw));
       );
     ) : !mouse_cap ? (
-      click = dragging = 0;
+      l_click = l_dragging = 0;
     );
 
     offset = color + 1 + status * 3;
@@ -1892,7 +2034,7 @@ slider1: 1<0, 1, 1>-ON/OFF
     gfx_circle(
       x_base + final_point[0] * circle_scale,
       y_base + final_point[1] * circle_scale,
-      0.15 * circle_scale,
+      2.5 * g_scaling,
       1
     );
     pending_flash ? (
@@ -1937,7 +2079,7 @@ slider1: 1<0, 1, 1>-ON/OFF
 
   function ui_drawONOFFButton(x, y, w, h, c, active)
   local(status, offset, cx, cy, size, i)
-  instance(in_section, click, activated)
+  instance(in_section, l_click, l_clicked)
   global(
     mouse_x, mouse_y, mouse_cap,
     BUTTON_STATUS_DISABLED, BUTTON_STATUS_INACTIVE, BUTTON_STATUS_HOVER,
@@ -1949,13 +2091,13 @@ slider1: 1<0, 1, 1>-ON/OFF
     uix_isMouseInRect(x, y, w, h) ? (
       !mouse_cap ? in_section = 1;
       in_section ? (
-        mouse_cap&1 ? click = 1;
-        click && mouse_cap == 0 ? click = 2;
-        click == 2 ? (activated = 1; click = 0);
-        status += click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
+        mouse_cap&1 ? l_click = 1;
+        l_click && mouse_cap == 0 ? l_click = 2;
+        l_click == 2 ? (l_clicked = 1; l_click = 0);
+        status += l_click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
       );
     ) : (
-      !mouse_cap ? activated = click = in_section = 0;
+      !mouse_cap ? l_clicked = l_click = in_section = 0;
     );
 
     offset = c + status * 3;
@@ -1982,13 +2124,14 @@ slider1: 1<0, 1, 1>-ON/OFF
 
 
   function ui_drawTriggerModeSettings(x, y, w, h)
-  local(hw, trigger_mode, trigger_str)
+  local(hw, trigger_mode, trigger_str, v)
   instance(bt_triggerMode)
   global(
     g_padding_size, COLOR.COMMON.LABEL, COLOR.COMMON.BG,
     COLOR.COMMON.TRIGGERMODE.SWITCH,
     a_trigger_settings, TRIGGER_MODE_OFFSET,
-    TRIGGER_THETA, TRIGGER_HZ, TRIGGER_MS, TRIGGER_WN
+    TRIGGER_THETA, TRIGGER_HZ, TRIGGER_MS, TRIGGER_WN,
+    slider2, sl2
   )
   (
     hw = ceil((w - g_padding_size) * 0.5);
@@ -2013,17 +2156,23 @@ slider1: 1<0, 1, 1>-ON/OFF
       a_trigger_settings[1 + trigger_mode],
       trigger_str
     );
-    bt_triggerMode.activated ? (
-      a_trigger_settings[TRIGGER_MODE_OFFSET] = (trigger_mode + 1) % 4;
-      bt_triggerMode.activated = 0;
+    bt_triggerMode.l_clicked ? (
+      sl2 = slider2 = a_trigger_settings[TRIGGER_MODE_OFFSET] = (trigger_mode + 1) % 4;
+      slider_automate(slider2);
+      bt_triggerMode.l_clicked = 0;
     );
-    bt_triggerMode.dragging ? (
+    bt_triggerMode.l_dragging ? (
       trigger_mode == TRIGGER_THETA ? (
-        a_trigger_settings[1 + TRIGGER_THETA] = floor(bt_triggerMode.pos_x * 360.0) / 360.0;
+        v = floor(bt_triggerMode.pos_x * 360.0);
+        a_trigger_settings[1 + TRIGGER_THETA] = v / 360.0;
       ) : (
-        a_trigger_settings[1 + trigger_mode] = bt_triggerMode.pos_x;
+        v = a_trigger_settings[1 + trigger_mode] = bt_triggerMode.pos_x;
       );
+      automate_trigger_slider(trigger_mode, v);
     );
+    bt_triggerMode.l_dragged ? (
+      automate_trigger_slider(trigger_mode, -1);
+    )
   );
 
 
@@ -2040,6 +2189,7 @@ slider1: 1<0, 1, 1>-ON/OFF
     NOTELENGTH_PCT, NOTELENGTH_MS, NOTELENGTH_WN,
     NOTELENGTH_MIN_PCT_MS, NOTELENGTH_MIN_PCT_WN,
     NOTELENGTH_MIN_MS_WN, NOTELENGTH_MIN_ALL,
+    slider7
   )
   (
     hw = ceil((w - g_padding_size) * 0.5);
@@ -2071,7 +2221,10 @@ slider1: 1<0, 1, 1>-ON/OFF
         a_notelength_settings[offset],
         length_str
       );
-      bt_lengthMode.dragging ? a_notelength_settings[offset] = bt_lengthMode.pos_x;
+      bt_lengthMode.l_dragging ? (
+        a_notelength_settings[offset] = bt_lengthMode.pos_x;
+        automate_notelength_slider(length_mode, bt_lengthMode.pos_x);
+      );
     ) : (
       bt_lengthMode.ui_drawSwitchButton(
         x + w - hw, y, hw, h,
@@ -2080,9 +2233,11 @@ slider1: 1<0, 1, 1>-ON/OFF
         length_str
       );
     );
-    bt_lengthMode.activated ? (
+    bt_lengthMode.l_clicked ? (
       a_notelength_settings[NOTELENGTH_MODE_OFFSET] = (length_mode + 1) % NOTELENGTH_MODES;
-      bt_lengthMode.activated = 0;
+      slider7 = a_notelength_settings[NOTELENGTH_MODE_OFFSET];
+      slider_automate(slider7);
+      bt_lengthMode.l_clicked = 0;
     );
   );
 
@@ -2092,7 +2247,8 @@ slider1: 1<0, 1, 1>-ON/OFF
   instance(db_tonic)
   global(
     COLOR.COMMON.BG, COLOR.COMMON.LABEL, COLOR.COMMON.BUTTON,
-    g_padding_size, base_note.semitone, base_note.octave, current_root
+    g_padding_size, base_note.semitone, base_note.octave, current_root,
+    MIN_TRIGGER_NOTE, MAX_TRIGGER_NOTE
   )
   (
     hw = ceil((w - g_padding_size) * 0.5);
@@ -2108,11 +2264,17 @@ slider1: 1<0, 1, 1>-ON/OFF
       tonic / 11,
       strcat(get_pitch_name(tonic, 0), tonic_str)
     );
-    db_tonic.dragging ? (
+    db_tonic.l_dragging ? (
       set_base_note(floor(db_tonic.pos_x * 12) + base_note.octave * 12);
     );
     db_tonic.overflow_x ? (
-      set_base_note(max(0, min(127, base_note.semitone + (base_note.octave + db_tonic.overflow_x) * 12)));
+      set_base_note(
+        max(MIN_TRIGGER_NOTE,
+          min(MAX_TRIGGER_NOTE,
+            base_note.semitone + (base_note.octave + db_tonic.overflow_x) * 12
+          )
+        )
+      );
       db_tonic.overflowed = 1;
     )
   );
@@ -2160,26 +2322,26 @@ slider1: 1<0, 1, 1>-ON/OFF
       cx, cur_y, column_w, button_h,
       COLOR.COMMON.BUTTON, is_circle_of_fifth, CIRCLE_OF_FIFTH_STRING
     );
-    bt_circleFifth.l_activated ? (
+    bt_circleFifth.l_clicked ? (
       is_circle_of_fifth = !is_circle_of_fifth;
-      bt_circleFifth.l_activated = 0;
+      bt_circleFifth.l_clicked = 0;
     );
-    bt_circleFifth.r_activated ? (
+    bt_circleFifth.r_clicked ? (
       is_circle_of_fifth = 0;
-      bt_circleFifth.r_activated = 0;
+      bt_circleFifth.r_clicked = 0;
     );
 
     bt_noRepetition.ui_drawToggleButton(
       cx + cw - column_w, cur_y, column_w, button_h,
       COLOR.COMMON.BUTTON, is_no_repetition, NO_REPEATITION_STRING
     );
-    bt_noRepetition.l_activated ? (
+    bt_noRepetition.l_clicked ? (
       is_no_repetition = !is_no_repetition;
-      bt_noRepetition.l_activated = 0;
+      bt_noRepetition.l_clicked = 0;
     );
-    bt_noRepetition.r_activated ? (
+    bt_noRepetition.r_clicked ? (
       is_no_repetition = 0;
-      bt_noRepetition.r_activated = 0;
+      bt_noRepetition.r_clicked = 0;
     );
 
     cur_y += button_h + g_padding_size;
@@ -2189,26 +2351,26 @@ slider1: 1<0, 1, 1>-ON/OFF
       is_circle_of_fifth_outer_circle,
       is_circle_of_fifth_outer_circle ? "⮡  Active Point Theta" : "⮡  Inner Circle"
     );
-    bt_circleFifthBasis.l_activated ? (
+    bt_circleFifthBasis.l_clicked ? (
       is_circle_of_fifth_outer_circle = !is_circle_of_fifth_outer_circle;
-      bt_circleFifthBasis.l_activated = 0;
+      bt_circleFifthBasis.l_clicked = 0;
     );
-    bt_circleFifthBasis.r_activated ? (
+    bt_circleFifthBasis.r_clicked ? (
       is_circle_of_fifth_outer_circle = 0;
-      bt_circleFifthBasis.r_activated = 0;
+      bt_circleFifthBasis.r_clicked = 0;
     );
 
     bt_logarithmic.ui_drawToggleButton(
       cx + cw - column_w, cur_y, column_w, button_h,
       COLOR.COMMON.BUTTON, is_logarithmic, LOGARITHMIC_DISTANCE_STRING
     );
-    bt_logarithmic.l_activated ? (
+    bt_logarithmic.l_clicked ? (
       is_logarithmic = !is_logarithmic;
-      bt_logarithmic.l_activated = 0;
+      bt_logarithmic.l_clicked = 0;
     );
-    bt_logarithmic.r_activated ? (
+    bt_logarithmic.r_clicked ? (
       is_logarithmic = 0;
-      bt_logarithmic.r_activated = 0;
+      bt_logarithmic.r_clicked = 0;
     );
   );
 
@@ -2271,6 +2433,7 @@ slider1: 1<0, 1, 1>-ON/OFF
         status,
         is_scale_name_pitch_not_degree ? get_pitch_name(current_root, i) : get_degree_name(i)
       );
+      update_scale_sliders(i, a_scale_buttons[i]);
       i += 1;
     );
   );
@@ -2294,9 +2457,9 @@ slider1: 1<0, 1, 1>-ON/OFF
       1,
       ""
     );
-    sw_name.activated ? (
+    sw_name.l_clicked ? (
       is_scale_name_pitch_not_degree = !is_scale_name_pitch_not_degree;
-      sw_name.activated = 0;
+      sw_name.l_clicked = 0;
     );
     ui_drawSectionTitle(x, y, w, header_h, COLOR.SCALE.TEXT_HEADER, "SCALE SETTINGS");
 
@@ -2308,7 +2471,7 @@ slider1: 1<0, 1, 1>-ON/OFF
   local(
     half_w, half_h,
   )
-  instance(in_section, lclicked, l_activated, pos_x, pos_y)
+  instance(in_section, l_clicked, l_clicked, pos_x, pos_y)
   global(
     mouse_x, mouse_y, mouse_cap,
     g_scaling,
@@ -2332,12 +2495,12 @@ slider1: 1<0, 1, 1>-ON/OFF
     );
 
     uix_isMouseInRect(x, y, w, h) ? (
-      !mouse_cap ? (in_section = 1; lclicked = 0;);
-      mouse_cap&1 && in_section ? lclicked = 1;
+      !mouse_cap ? (in_section = 1; l_clicked = 0;);
+      mouse_cap&1 && in_section ? l_clicked = 1;
     ) : (
-      !mouse_cap ? in_section = lclicked = 0;
+      !mouse_cap ? in_section = l_clicked = 0;
     );
-    lclicked ? (
+    l_clicked ? (
       pos_x = max(0.0, min(1.0, (mouse_x - x) / w));
       pos_y = max(0.0, min(1.0, (h - mouse_y + y) / h));
     );
@@ -2369,9 +2532,9 @@ slider1: 1<0, 1, 1>-ON/OFF
       circle_count > 1,
       "-"
     );
-    bt_remove.activated ? (
+    bt_remove.l_clicked ? (
       remove_circle();
-      bt_remove.activated = 0;
+      bt_remove.l_clicked = 0;
     );
     bt_add.ui_drawTriggerButton(
       scaled_btrx, y, scaled_bt_w, half_h,
@@ -2379,9 +2542,9 @@ slider1: 1<0, 1, 1>-ON/OFF
       circle_count < MAX_CIRCLE_COUNT,
       "+"
     );
-    bt_add.activated ? (
+    bt_add.l_clicked ? (
       add_circle();
-      bt_add.activated = 0;
+      bt_add.l_clicked = 0;
     );
     bt_prev.ui_drawTriggerButton(
       x, y + half_h, scaled_bt_w, half_h,
@@ -2389,9 +2552,9 @@ slider1: 1<0, 1, 1>-ON/OFF
       currently_selected_circle > 0,
       "<"
     );
-    bt_prev.activated ? (
+    bt_prev.l_clicked ? (
       currently_selected_circle -= 1;
-      bt_prev.activated = 0;
+      bt_prev.l_clicked = 0;
     );
     bt_next.ui_drawTriggerButton(
       scaled_btrx, y + half_h, scaled_bt_w, half_h,
@@ -2399,9 +2562,9 @@ slider1: 1<0, 1, 1>-ON/OFF
       currently_selected_circle < circle_count - 1,
       ">"
     );
-    bt_next.activated ? (
+    bt_next.l_clicked ? (
       currently_selected_circle += 1;
-      bt_next.activated = 0;
+      bt_next.l_clicked = 0;
     );
 
     // Mid Section
@@ -2417,7 +2580,7 @@ slider1: 1<0, 1, 1>-ON/OFF
       w - scaled_bt_w - scaled_bt_w - g_padding_size - g_padding_size,
       h
     );
-    pad_xy.lclicked ? (
+    pad_xy.l_clicked ? (
       a_circle_data[pad_radius_offset] = pad_xy.pos_x * MAX_RADIUS;
       a_circle_data[pad_speed_offset] = pad_xy.pos_y;
     );
@@ -2482,9 +2645,9 @@ slider1: 1<0, 1, 1>-ON/OFF
         mode == SPEED_MODE_WN ? "4QN" :
         mode == SPEED_MODE_HZ ? "Hz"
     );
-    sw_mode.activated ? (
+    sw_mode.l_clicked ? (
       a_circle_data[offset + CIRC_MODE_OFFSET] = (mode + 1) % CIRC_MODES;
-      sw_mode.activated = 0;
+      sw_mode.l_clicked = 0;
     );
   );
 
@@ -2622,11 +2785,11 @@ slider1: 1<0, 1, 1>-ON/OFF
       COLOR.PANEL.BUTTON,
       is_on
     );
-    bt_on.activated ? (
+    bt_on.l_clicked ? (
       is_on = !is_on;
       slider1 = is_on;
       slider_automate(slider1);
-      bt_on.activated = 0;
+      bt_on.l_clicked = 0;
     );
     ui_drawRightSection(left_w, header_h, scaled_w - left_w, lower_h);
     !is_on ? (
