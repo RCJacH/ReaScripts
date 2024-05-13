@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="850e62553bc8ec85c6058c40380eda71c80293c2" name="RCJacH Scripts">
+<index version="1" commit="66f1292851fa2a5cbf7df8bab0f013957051bfeb" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -550,6 +550,15 @@ Potential Addition:
 + add toggling common buttons with midi note input
 * fix active point on screen too small when total radius is large]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/850e62553bc8ec85c6058c40380eda71c80293c2/JSFX/MIDI/RC%20MIDI%20Circular%20Note%20Generator.jsfx</source>
+      </version>
+      <version name="0.4" author="RCJacH" time="2024-05-13T12:03:31Z">
+        <changelog><![CDATA[+ add omit mode to repeat modes
++ add distance line on screen
++ add path history on screen
++ add buttons to toggle distance/history
+* separate plugin on/off toggling in gui from latched on/off with midi input
+* separate plugin base note in gui from latched base note of midi input]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/66f1292851fa2a5cbf7df8bab0f013957051bfeb/JSFX/MIDI/RC%20MIDI%20Circular%20Note%20Generator.jsfx</source>
       </version>
     </reapack>
     <reapack name="RC MIDI Harmonizer.jsfx" type="effect" desc="RC MIDI Harmonizer">
