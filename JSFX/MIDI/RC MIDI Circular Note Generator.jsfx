@@ -5,7 +5,7 @@ Link:
   Forum Thread: https://forum.cockos.com/showthread.php?p=2781013
   Github Repository: https://github.com/RCJacH/ReaScripts
 Release Date: May 2024
-Version: 0.3
+Version: 0.4
 Reference:
   https://www.youtube.com/watch?v=wn3td88w19E
 
@@ -16,7 +16,14 @@ About:
   based on circle rotations.
 
 Changelog:
-  * v0.3 (2024-05-)
+  * v0.4 (2024-05-13)
+    + add omit mode to repeat modes
+    + add distance line on screen
+    + add path history on screen
+    + add buttons to toggle distance/history
+    * separate plugin on/off toggling in gui from latched on/off with midi input
+    * separate plugin base note in gui from latched base note of midi input
+  * v0.3 (2024-05-12)
     + add sliders
     + add reset circle rotations with midi note input
     + add set scale notes with midi note input
@@ -37,7 +44,7 @@ Changelog:
 
 desc: RC MIDI Circular Note Generator
 
-slider1: 1<0, 1, 1>-ON/OFF
+slider1: plugin_toggled_active=0<0, 1, 1>-ON/OFF
 slider2: 0<0, 3, 1{Theta,Hz,Ms,Sync}>-Trigger Mode
 slider3: 0<0, 360, 1>-Trigger Theta
 slider4: 0<0, 1>-Trigger Hz
@@ -110,21 +117,26 @@ slider31: 1<0, 1, 1>-Scale degree 7
 
   function setupHSLColor(hue, saturation, lightness)
   instance(h, s, l)
-  global()
+  global(color_index)
   (
     h = hue; s = saturation; l = lightness;
     this.calcRGB();
+    this = color_index;
+    color_index += 1;
     this;
   );
 
 
   function HSLColorAdjusted(add_h, add_s, add_l)
   instance(h, s, l)
+  global(color_index)
   (
     h = (this..h + add_h + 360) % 360;
     s = max(0, min(100, this..s + add_s));
     l = max(0, min(100, this..l + add_l));
     this.calcRGB();
+    this = color_index;
+    color_index += 1;
     this;
   );
 
@@ -134,175 +146,135 @@ slider31: 1<0, 1, 1>-Scale degree 7
   (
     h = (this..h * (scale_h / 360 + 1.0) + 360) % 360;
     s = (
-          scale_s > 0 ? this..s + (100 - this..s) * (scale_s * 0.01) : 
+          scale_s > 0 ? this..s + (100 - this..s) * (scale_s * 0.01) :
           scale_s < 0 ? this..s * abs(scale_s * 0.01 + 1.0) :
           this..s
         );
     l = (
-          scale_l > 0 ? this..l + (100 - this..l) * (scale_l * 0.01) : 
+          scale_l > 0 ? this..l + (100 - this..l) * (scale_l * 0.01) :
           scale_l < 0 ? this..l * abs(scale_l * 0.01 + 1.0) :
           this..l
         );
     this.calcRGB();
+    this = color_index;
+    color_index += 1;
     this;
   );
 
 
-  function getButtonColors(color_index, add_h, add_s, add_l)
+  function getButtonColors(add_h, add_s, add_l)
+  global()
   (
-    this = color_index;
     this.HSLColorAdjusted(add_h, add_s, add_l);
-    this.BORDER = color_index + 1;
     this.BORDER.HSLColorScaled(0, -10, 20);
-    this.LABEL = color_index + 2;
     this.LABEL.HSLColorScaled(0, -10, 50);
-    this.NEXT_INDEX = color_index + 3;
   );
 
 
-  function getButtonControlsColors(color_index, add_h, add_s, add_l)
+  function getButtonControlsColors(add_h, add_s, add_l)
+  global()
   (
-    this.getButtonColors(color_index, add_h, add_s, add_l);
-    this.HOVER.getButtonColors(this.NEXT_INDEX, 0, -5, 5);
-    this.PRESS.getButtonColors(this.HOVER.NEXT_INDEX, 0, -10, 10);
-    this.NEXT_INDEX = this.PRESS.NEXT_INDEX;
+    this.getButtonColors(add_h, add_s, add_l);
+    this.HOVER.getButtonColors(0, -5, 5);
+    this.PRESS.getButtonColors(0, -10, 10);
   );
 
 
-  function getToggleButtonsColors(color_index)
+  function getToggleButtonsColors()
+  global()
   (
-    this.getButtonControlsColors(color_index, 0, 20, 15);
-    this.DISABLED.getButtonControlsColors(this.NEXT_INDEX, -90, -30, -20);
-    this.NEXT_INDEX = this.DISABLED.NEXT_INDEX;
+    this.getButtonControlsColors(0, 20, 15);
+    this.DISABLED.getButtonControlsColors(-90, -30, -20);
   );
 
 
-  function getTriggerButtonsColors(color_index)
+  function getTriggerButtonsColors()
   (
-    this.getButtonControlsColors(color_index, 0, 20, 15);
-    this.DISABLED.getButtonColors(this.NEXT_INDEX, -90, -30, -20);
-    this.NEXT_INDEX = this.DISABLED.NEXT_INDEX;
+    this.getButtonControlsColors(0, 20, 15);
+    this.DISABLED.getButtonColors(-90, -30, -20);
   );
 
 
-  function getSwitchButtonsColors(color_index, num_of_colors)
+  function getSwitchButtonsColors(num_of_colors)
   local(i, range, start, dh)
+  global(color_index)
   (
     dh = 240 / num_of_colors;
-    i = color_index;
-    this = i;
-    this.HSLColorAdjusted(0, 20, 15); i += 1;
+    this.HSLColorAdjusted(0, 20, 15);
 
     0 < num_of_colors ? (
-      this.I.getButtonControlsColors(i, dh, 0, 0);
-      i = this.I.NEXT_INDEX;
+      this.I.getButtonControlsColors(dh, 0, 0);
     );
     1 < num_of_colors ? (
-      this.II.getButtonControlsColors(i, 2*dh, 0, 0);
-      i = this.II.NEXT_INDEX;
+      this.II.getButtonControlsColors(2*dh, 0, 0);
     );
     2 < num_of_colors ? (
-      this.III.getButtonControlsColors(i, 3*dh, 0, 0);
-      i = this.III.NEXT_INDEX;
+      this.III.getButtonControlsColors(3*dh, 0, 0);
     );
     3 < num_of_colors ? (
-      this.IV.getButtonControlsColors(i, 4*dh, 0, 0);
-      i = this.IV.NEXT_INDEX;
+      this.IV.getButtonControlsColors(4*dh, 0, 0);
     );
     4 < num_of_colors ? (
-      this.V.getButtonControlsColors(i, 5*dh, 0, 0);
-      i = this.V.NEXT_INDEX;
+      this.V.getButtonControlsColors(5*dh, 0, 0);
     );
-    this.NEXT_INDEX = i;
   );
 
 
-  function setSectionColors(color_index, add_h)
+  function setSectionColors(add_h)
+  global(color_index)
   (
-    this = color_index;
     this.HSLColorAdjusted(add_h, 0, 0);
-    this.BG = color_index + 1;
     this.BG.HSLColorAdjusted(0, 0, 5);
-    this.TEXT_HEADER = color_index + 2;
     this.TEXT_HEADER.HSLColorScaled(0, 5, 50);
-    this.NEXT_INDEX = color_index + 3;
   );
 
 
-  function setXYGraphColors(color_index)
+  function setXYGraphColors()
   (
-    this = color_index;
     this.HSLColorAdjusted(0, 0, 0);
-    this.BG = color_index + 1;
     this.BG.HSLColorScaled(0, -75, -60);
-    this.LINE = color_index + 2;
     this.LINE.HSLColorScaled(0, -80, 10);
-    this.DOT = color_index + 3;
     this.DOT.HSLColorScaled(0, 15, 25);
-    this.BOTTOM = color_index + 4;
     this.BOTTOM.HSLColorAdjusted(0, 0, 0);
-    this.BOTTOM.BG = color_index + 5;
     this.BOTTOM.BG.HSLColorScaled(0, 0, -10);
-    this.BOTTOM.LABEL = color_index + 6;
     this.BOTTOM.LABEL.HSLColorScaled(0, -30, 50);
-    this.NEXT_INDEX = color_index + 7;
   );
 
 
-  function setCircleOfFifthColors(color_index)
+  function setCircleOfFifthColors()
   local(h)
   (
     h = 0;
 
-    this = color_index; color_index += 1;
     this.HSLColorAdjusted(-120, 10, 45);
 
-    this.CN = color_index; color_index += 1;
     this.CN.setupHSLColor(this.h, this.s, this.l); h += 30;
-    this.FN = color_index; color_index += 1;
     this.FN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.BES = color_index; color_index += 1;
     this.BES.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.EES = color_index; color_index += 1;
     this.EES.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.AES = color_index; color_index += 1;
     this.AES.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.DES = color_index; color_index += 1;
     this.DES.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.GS = color_index; color_index += 1;
     this.GS.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.CS = color_index; color_index += 1;
     this.CS.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.FS = color_index; color_index += 1;
     this.FS.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.BN = color_index; color_index += 1;
     this.BN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.EN = color_index; color_index += 1;
     this.EN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.AN = color_index; color_index += 1;
     this.AN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.DN = color_index; color_index += 1;
     this.DN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
-    this.GN = color_index; color_index += 1;
     this.GN.setupHSLColor(this.h + h, this.s, this.l); h += 30;
   );
 
 
-  function setScreenColors(color_index)
+  function setScreenColors()
   (
-    this = color_index;
     this.HSLColorScaled(0, -75, -50);
-    this.BG = color_index + 1;
     this.BG.HSLColorAdjusted(0, 0, 0);
-    this.BG.FLASH = color_index + 2;
     this.BG.FLASH.HSLColorScaled(0, 20, 50);
-    this.REGULAR_CIRCLE = color_index + 3;
     this.REGULAR_CIRCLE.HSLColorScaled(0, -90, 85);
-    this.SELECTED_CIRCLE = color_index + 4;
     this.SELECTED_CIRCLE.HSLColorScaled(0, 30, 60);
-    this.CURRENT_POSITION = color_index + 5;
-    this.CURRENT_POSITION.HSLColorAdjusted(-60, 75, 60);
-    this.CIRCLE_OF_FIFTH.setCircleOfFifthColors(color_index + 6);
+    this.CURRENT_POSITION.HSLColorAdjusted(-90, 75, 60);
+    this.BUTTON.getToggleButtonsColors();
+    this.CIRCLE_OF_FIFTH.setCircleOfFifthColors();
   );
 
   ext_midi_bus = 1.0;
@@ -370,6 +342,12 @@ slider31: 1<0, 1, 1>-Scale degree 7
   NOTELENGTH_MAX_ALL = 10;
   NOTELENGTH_MODES = 7;
 
+  PATH_HISTORY_ENTRIES = 256;
+  PATH_HISTORY_X = 0;
+  PATH_HISTORY_Y = 1;
+  PATH_HISTORY_NOTE = 2;
+  PATH_HISTORY_MEM_SIZE = PATH_HISTORY_ENTRIES * 3;
+
 
   // GUI Constants
 
@@ -381,7 +359,9 @@ slider31: 1<0, 1, 1>-Scale degree 7
   CIRCLE_SECTION_HEADER = "CIRCLE SETTINGS";
   LOGARITHMIC_DISTANCE_STRING = "Logarithmic";
   CIRCLE_OF_FIFTH_STRING = "Circle of Fifth";
-  NO_REPEATITION_STRING = "No Repeated Notes";
+  REPEAT_MODE_0_STRING = "Repeats: Allow";
+  REPEAT_MODE_1_STRING = "Repeats: Omit";
+  REPEAT_MODE_2_STRING = "Repeats: Alter";
   RADIUS_STRING = "Radius: ";
   SPEED_STRING = "Speed: ";
 
@@ -398,39 +378,36 @@ slider31: 1<0, 1, 1>-Scale degree 7
   BUTTON_STATUS_DISABLED_PRESS = 5;
 
   // Color
+  color_index = 0;
   COLOR.setupHSLColor(214, 32, 30);
-  COLOR.OUTSIDE = 0;
   COLOR.OUTSIDE.HSLColorScaled(0, -70, -60);
-  COLOR.PANEL = 1;
   COLOR.PANEL.HSLColorAdjusted(0, -8, 40);
-  COLOR.PANEL.TEXT_TITLE = 2;
   COLOR.PANEL.TEXT_TITLE.HSLColorScaled(0, -20, -65);
-  COLOR.PANEL.TEXT_AUTHOR = 3;
   COLOR.PANEL.TEXT_AUTHOR.HSLColorScaled(0, 50, -50);
-  COLOR.PANEL.BUTTON.getToggleButtonsColors(COLOR.PANEL.TEXT_AUTHOR + 1);
+  COLOR.PANEL.BUTTON.getToggleButtonsColors();
 
-  COLOR.COMMON.setSectionColors(COLOR.PANEL.BUTTON.NEXT_INDEX, 60);
-  COLOR.COMMON.LABEL = COLOR.COMMON.NEXT_INDEX;
+  COLOR.COMMON.setSectionColors(60);
   COLOR.COMMON.LABEL.HSLColorScaled(0, -30, 50);
-  COLOR.COMMON.BUTTON.getToggleButtonsColors(COLOR.COMMON.NEXT_INDEX + 1);
+  COLOR.COMMON.BUTTON.getToggleButtonsColors();
+  COLOR.COMMON.BISWITCH.getSwitchButtonsColors(2);
   COLOR.COMMON.TRIGGERMODE.HSLColorAdjusted(0, 0, 0);
-  COLOR.COMMON.TRIGGERMODE.SWITCH.getSwitchButtonsColors(COLOR.COMMON.BUTTON.NEXT_INDEX, 4);
+  COLOR.COMMON.TRIGGERMODE.SWITCH.getSwitchButtonsColors(4);
   COLOR.COMMON.NOTELENGTH.HSLColorAdjusted(0, 0, 0);
-  COLOR.COMMON.NOTELENGTH.SWITCH.getSwitchButtonsColors(COLOR.COMMON.TRIGGERMODE.SWITCH.NEXT_INDEX, 3);
+  COLOR.COMMON.NOTELENGTH.SWITCH.getSwitchButtonsColors(3);
   COLOR.COMMON.NOTELENGTH.MIN.HSLColorAdjusted(45, 0, 0);
-  COLOR.COMMON.NOTELENGTH.MIN.SWITCH.getSwitchButtonsColors(COLOR.COMMON.NOTELENGTH.SWITCH.NEXT_INDEX, 4);
+  COLOR.COMMON.NOTELENGTH.MIN.SWITCH.getSwitchButtonsColors(4);
   COLOR.COMMON.NOTELENGTH.MAX.HSLColorAdjusted(-45, 0, 0);
-  COLOR.COMMON.NOTELENGTH.MAX.SWITCH.getSwitchButtonsColors(COLOR.COMMON.NOTELENGTH.MIN.SWITCH.NEXT_INDEX, 4);
+  COLOR.COMMON.NOTELENGTH.MAX.SWITCH.getSwitchButtonsColors(4);
 
-  COLOR.SCALE.setSectionColors(COLOR.COMMON.NOTELENGTH.MAX.SWITCH.NEXT_INDEX, -90);
-  COLOR.SCALE.BUTTON.getToggleButtonsColors(COLOR.SCALE.NEXT_INDEX);
-  COLOR.SCALE.TRIGGER.getButtonControlsColors(COLOR.SCALE.BUTTON.NEXT_INDEX, 0, 0, 0);
-  COLOR.CIRCLE.setSectionColors(COLOR.SCALE.TRIGGER.NEXT_INDEX, 180);
-  COLOR.CIRCLE.BUTTON.getTriggerButtonsColors(COLOR.CIRCLE.NEXT_INDEX);
-  COLOR.CIRCLE.XY.setXYGraphColors(COLOR.CIRCLE.BUTTON.NEXT_INDEX);
-  COLOR.CIRCLE.SWITCH.getSwitchButtonsColors(COLOR.CIRCLE.XY.NEXT_INDEX, 3);
+  COLOR.SCALE.setSectionColors(-90);
+  COLOR.SCALE.BUTTON.getToggleButtonsColors();
+  COLOR.SCALE.TRIGGER.getButtonControlsColors(0, 0, 0);
+  COLOR.CIRCLE.setSectionColors(180);
+  COLOR.CIRCLE.BUTTON.getTriggerButtonsColors();
+  COLOR.CIRCLE.XY.setXYGraphColors();
+  COLOR.CIRCLE.SWITCH.getSwitchButtonsColors(3);
 
-  COLOR.SCREEN.setScreenColors(COLOR.CIRCLE.SWITCH.NEXT_INDEX);
+  COLOR.SCREEN.setScreenColors();
 
   // Fonts Indice
   FONT_TITLE = 1;
@@ -448,14 +425,11 @@ slider31: 1<0, 1, 1>-Scale degree 7
 
   // Non persistant variable initiation
 
-  g_scaling = 1.0;
-  fontscaling = 1.0;
   is_pending_note_on = -1;
   note_duration_in_samples = 0;
   samples_until_note_off = -1;
   samples_until_flash = -1;
   scale_note_count = 0;
-  root_note = 0;
   note_choice.current = -1;
   note_choice.last = -1;
   note_choice.octave = -1;
@@ -463,7 +437,6 @@ slider31: 1<0, 1, 1>-Scale degree 7
   note_choice.scale_degree = -1;
   note_choice.last_scale_degree = -1;
   note_choice.repeat_count = 0;
-  last_note = -1;
   user_input.is_holding = 0;
   user_input.base_note = 0;
   user_input.play_pos = 0;
@@ -478,6 +451,8 @@ slider31: 1<0, 1, 1>-Scale degree 7
   point = inc; inc += 2;
   final_point = inc; inc += 2;
   a_circle_data = inc; inc += CIRC_MEM_SIZE;
+  a_path_history_data = inc; inc += PATH_HISTORY_MEM_SIZE;
+  memset(a_path_history_data, 0.0, PATH_HISTORY_MEM_SIZE);
 
 
   function log_curve(x, v)
@@ -772,6 +747,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     CIRC_RADIUS_OFFSET, CIRC_ROTATION_OFFSET,
     point, final_point, is_pending_note_on,
     a_trigger_settings, TRIGGER_MODE_OFFSET, TRIGGER_THETA,
+    a_path_history_data, PATH_HISTORY_MEM_SIZE
   )
   (
     index = 0;
@@ -796,6 +772,9 @@ slider31: 1<0, 1, 1>-Scale degree 7
         is_pending_note_on = floor((thres - old_rotation) / rotation_delta * amount);
     );
     memcpy(final_point, point, 2);
+    mem_insert_shuffle(a_path_history_data, PATH_HISTORY_MEM_SIZE, 0);
+    mem_insert_shuffle(a_path_history_data, PATH_HISTORY_MEM_SIZE, final_point[1]);
+    mem_insert_shuffle(a_path_history_data, PATH_HISTORY_MEM_SIZE, final_point[0]);
   );
 
 
@@ -900,16 +879,19 @@ slider31: 1<0, 1, 1>-Scale degree 7
   function initialize()
   local(offset)
   global(
-    is_no_repetition, circle_count, a_circle_data,
+    repeat_mode, circle_count, a_circle_data,
     CIRC_MEM_SIZE, CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_MODE_OFFSET,
     CIRC_SPEED_HZ_OFFSET, CIRC_SPEED_MS_OFFSET, CIRC_SPEED_WN_OFFSET,
     a_scale_notes, a_scale_buttons, is_initiated,
     a_trigger_settings, TRIGGER_SETTINGS_MEM_SIZE,
-    a_notelength_settings, NOTELENGTH_SETTINGS_MEM_SIZE, NOTELENGTH_PCT_OFFSET
+    a_notelength_settings, NOTELENGTH_SETTINGS_MEM_SIZE, NOTELENGTH_PCT_OFFSET,
+    is_pending_note_on, plugin_base_note
   )
   (
-    set_base_note(48);
-    is_no_repetition = 1;
+    plugin_base_note = 48;
+    set_base_note(plugin_base_note);
+    repeat_mode = 2;
+    is_pending_note_on = 0;
     circle_count = 3;
     memset(a_trigger_settings, 0.0, TRIGGER_SETTINGS_MEM_SIZE);
     memset(a_notelength_settings, 0.5, NOTELENGTH_SETTINGS_MEM_SIZE);
@@ -955,7 +937,8 @@ slider31: 1<0, 1, 1>-Scale degree 7
   file_var(0, is_logarithmic);
   file_var(0, is_circle_of_fifth);
   file_var(0, is_circle_of_fifth_outer_circle);
-  file_var(0, is_no_repetition);
+  file_var(0, repeat_mode);
+  file_var(0, plugin_base_note);
   file_var(0, scale_note_count);
   file_var(0, circle_count);
   file_var(0, currently_selected_circle);
@@ -969,9 +952,6 @@ slider31: 1<0, 1, 1>-Scale degree 7
 
 
 @slider
-  sl1 != slider1 ? (
-    sl1 = is_on = slider1;
-  );
   sl2 != slider2 ? (
     sl2 = a_trigger_settings[TRIGGER_MODE_OFFSET] = slider2;
   );
@@ -1076,6 +1056,16 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
+  function omit_repeated_note(last)
+  instance(current)
+  global()
+  (
+    current == last ? (
+      current = 0;
+    );
+  );
+
+
   function fix_repeated_note()
   local(
     repeat, degree_shift, new_octave, new_scale_degree
@@ -1116,26 +1106,26 @@ slider31: 1<0, 1, 1>-Scale degree 7
 
   function get_current_note()
   local(
-    distance_from_center, note_distance, note, repeat, tmp
+    distance_from_center, note_distance, note, repeat, last
   )
   global(
-    final_point, note_choice.last, is_no_repetition, is_logarithmic,
+    final_point, note_choice.last, repeat_mode, is_logarithmic,
     base_note, note_choice.current,
-    note_choice.update_last_note, note_choice.snap_to_scale, note_choice.fix_repeated_note
+    note_choice.update_last_note, note_choice.snap_to_scale,
+    note_choice.fix_repeated_note, note_choice.omit_repeated_note
   )
   (
     update_current_root();
     distance_from_center = get_distance_from_point(final_point[0], final_point[1]);
-    tmp = distance_from_center;
     is_logarithmic ? (
       distance_from_center = (log(distance_from_center + 1.0) / log(1.8)) ^ (12 ^ 0.210355);
     );
     note_distance = floor(distance_from_center + 0.5);
     note_choice.snap_to_scale(base_note + note_distance);
-    is_no_repetition ? (
-      note_choice.fix_repeated_note();
-    );
+    repeat_mode == 2 ? note_choice.fix_repeated_note();
+    last = note_choice.last;
     note_choice.update_last_note();
+    repeat_mode == 1 ? note_choice.omit_repeated_note(last);
     note_choice.current;
   );
 
@@ -1272,16 +1262,20 @@ slider31: 1<0, 1, 1>-Scale degree 7
   global(
     is_pending_note_on, STATUS_NOTE_ON, STATUS_NOTE_OFF,
     samples_until_note_off,
-    pending_flash, pending_midi_output, note_choice.last
+    pending_flash, pending_midi_output, note_choice.last,
+    a_path_history_data, PATH_HISTORY_NOTE
   )
   (
     is_pending_note_on >= 0 ? (
-      pending_flash = 1;
       samples_until_note_off >= 0 ?
         midisend(pending_midi_output - 1, STATUS_NOTE_OFF, note_choice.last, 0);
       note = get_current_note();
-      midisend(pending_midi_output, STATUS_NOTE_ON, note, 127);
-      samples_until_note_off = get_note_length();
+      note ? (
+        midisend(pending_midi_output, STATUS_NOTE_ON, note, 127);
+        samples_until_note_off = get_note_length();
+        a_path_history_data[PATH_HISTORY_NOTE] = 1;
+        pending_flash = 1;
+      );
       is_pending_note_on = -1;
     );
   );
@@ -1303,10 +1297,10 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
-  function toggle_no_repetition(v)
-  global(is_no_repetition)
+  function toggle_no_repetition(vel)
+  global(repeat_mode)
   (
-    is_no_repetition = v;
+    repeat_mode = floor(vel * 0.02);
   );
 
 
@@ -1344,7 +1338,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     user_input.play_pos,
     STATUS_NOTE_ON, STATUS_NOTE_OFF,
     MIN_TRIGGER_NOTE, MAX_TRIGGER_NOTE,
-    play_position
+    play_position, plugin_base_note
   )
   (
     while (midirecv(offset, msg1, msg2, msg3)) (
@@ -1353,7 +1347,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
         !msg2 ? reset_all_circle_rotations() :
         msg2 == 5 ? toggle_circle_of_fifth(msg3 >= 64) :
         msg2 == 7 ? toggle_active_point(msg3 >= 64) :
-        msg2 == 9 ? toggle_no_repetition(msg3 >= 64) :
+        msg2 == 9 ? toggle_no_repetition(msg3) :
         msg2 == 11 ? toggle_logarithmic(msg3 >= 64) :
         (msg2 >= 12 && msg2 < 24) ? set_scale_from_note_on(msg2 % 12, msg3 >= 64) :
         (msg2 >= MIN_TRIGGER_NOTE && msg2 <= MAX_TRIGGER_NOTE) ? (
@@ -1365,7 +1359,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
       ) : in_type == STATUS_NOTE_OFF ? (
         msg2 == user_input.base_note ? (
           base_note == user_input.base_note ? (
-            set_base_note(48);
+            set_base_note(plugin_base_note);
           );
           user_input.is_holding =
           user_input.base_note =
@@ -1380,7 +1374,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
   samples_until_note_off -= samplesblock;
   maybe_parse_input();
 
-  is_on ? (
+  plugin_toggled_active || user_input.is_holding? (
     update_rotations(samplesblock);
     calculate_trigger_counters(samplesblock, play_state);
     maybe_send_note_on();
@@ -1462,6 +1456,24 @@ slider31: 1<0, 1, 1>-Scale degree 7
     i == COLOR.COMMON.BUTTON.DISABLED.PRESS ? COLOR.COMMON.BUTTON.DISABLED.PRESS.setColor() :
     i == COLOR.COMMON.BUTTON.DISABLED.PRESS.BORDER ? COLOR.COMMON.BUTTON.DISABLED.PRESS.BORDER.setColor() :
     i == COLOR.COMMON.BUTTON.DISABLED.PRESS.LABEL ? COLOR.COMMON.BUTTON.DISABLED.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.BISWITCH.I ? COLOR.COMMON.BISWITCH.I.setColor() :
+    i == COLOR.COMMON.BISWITCH.I.BORDER ? COLOR.COMMON.BISWITCH.I.BORDER.setColor() :
+    i == COLOR.COMMON.BISWITCH.I.LABEL ? COLOR.COMMON.BISWITCH.I.LABEL.setColor() :
+    i == COLOR.COMMON.BISWITCH.I.HOVER ? COLOR.COMMON.BISWITCH.I.HOVER.setColor() :
+    i == COLOR.COMMON.BISWITCH.I.HOVER.BORDER ? COLOR.COMMON.BISWITCH.I.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.BISWITCH.I.HOVER.LABEL ? COLOR.COMMON.BISWITCH.I.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.BISWITCH.I.PRESS ? COLOR.COMMON.BISWITCH.I.PRESS.setColor() :
+    i == COLOR.COMMON.BISWITCH.I.PRESS.BORDER ? COLOR.COMMON.BISWITCH.I.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.BISWITCH.I.PRESS.LABEL ? COLOR.COMMON.BISWITCH.I.PRESS.LABEL.setColor() :
+    i == COLOR.COMMON.BISWITCH.II ? COLOR.COMMON.BISWITCH.II.setColor() :
+    i == COLOR.COMMON.BISWITCH.II.BORDER ? COLOR.COMMON.BISWITCH.II.BORDER.setColor() :
+    i == COLOR.COMMON.BISWITCH.II.LABEL ? COLOR.COMMON.BISWITCH.II.LABEL.setColor() :
+    i == COLOR.COMMON.BISWITCH.II.HOVER ? COLOR.COMMON.BISWITCH.II.HOVER.setColor() :
+    i == COLOR.COMMON.BISWITCH.II.HOVER.BORDER ? COLOR.COMMON.BISWITCH.II.HOVER.BORDER.setColor() :
+    i == COLOR.COMMON.BISWITCH.II.HOVER.LABEL ? COLOR.COMMON.BISWITCH.II.HOVER.LABEL.setColor() :
+    i == COLOR.COMMON.BISWITCH.II.PRESS ? COLOR.COMMON.BISWITCH.II.PRESS.setColor() :
+    i == COLOR.COMMON.BISWITCH.II.PRESS.BORDER ? COLOR.COMMON.BISWITCH.II.PRESS.BORDER.setColor() :
+    i == COLOR.COMMON.BISWITCH.II.PRESS.LABEL ? COLOR.COMMON.BISWITCH.II.PRESS.LABEL.setColor() :
     i == COLOR.COMMON.TRIGGERMODE.SWITCH.I ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.setColor() :
     i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.BORDER ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.BORDER.setColor() :
     i == COLOR.COMMON.TRIGGERMODE.SWITCH.I.LABEL ? COLOR.COMMON.TRIGGERMODE.SWITCH.I.LABEL.setColor() :
@@ -1690,6 +1702,24 @@ slider31: 1<0, 1, 1>-Scale degree 7
     i == COLOR.SCREEN.CIRCLE_OF_FIFTH.AN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.AN.setColor() :
     i == COLOR.SCREEN.CIRCLE_OF_FIFTH.DN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.DN.setColor() :
     i == COLOR.SCREEN.CIRCLE_OF_FIFTH.GN ? COLOR.SCREEN.CIRCLE_OF_FIFTH.GN.setColor() :
+    i == COLOR.SCREEN.BUTTON ? COLOR.SCREEN.BUTTON.setColor() :
+    i == COLOR.SCREEN.BUTTON.BORDER ? COLOR.SCREEN.BUTTON.BORDER.setColor() :
+    i == COLOR.SCREEN.BUTTON.LABEL ? COLOR.SCREEN.BUTTON.LABEL.setColor() :
+    i == COLOR.SCREEN.BUTTON.HOVER ? COLOR.SCREEN.BUTTON.HOVER.setColor() :
+    i == COLOR.SCREEN.BUTTON.HOVER.BORDER ? COLOR.SCREEN.BUTTON.HOVER.BORDER.setColor() :
+    i == COLOR.SCREEN.BUTTON.HOVER.LABEL ? COLOR.SCREEN.BUTTON.HOVER.LABEL.setColor() :
+    i == COLOR.SCREEN.BUTTON.PRESS ? COLOR.SCREEN.BUTTON.PRESS.setColor() :
+    i == COLOR.SCREEN.BUTTON.PRESS.BORDER ? COLOR.SCREEN.BUTTON.PRESS.BORDER.setColor() :
+    i == COLOR.SCREEN.BUTTON.PRESS.LABEL ? COLOR.SCREEN.BUTTON.PRESS.LABEL.setColor() :
+    i == COLOR.SCREEN.BUTTON.DISABLED ? COLOR.SCREEN.BUTTON.DISABLED.setColor() :
+    i == COLOR.SCREEN.BUTTON.DISABLED.BORDER ? COLOR.SCREEN.BUTTON.DISABLED.BORDER.setColor() :
+    i == COLOR.SCREEN.BUTTON.DISABLED.LABEL ? COLOR.SCREEN.BUTTON.DISABLED.LABEL.setColor() :
+    i == COLOR.SCREEN.BUTTON.DISABLED.HOVER ? COLOR.SCREEN.BUTTON.DISABLED.HOVER.setColor() :
+    i == COLOR.SCREEN.BUTTON.DISABLED.HOVER.BORDER ? COLOR.SCREEN.BUTTON.DISABLED.HOVER.BORDER.setColor() :
+    i == COLOR.SCREEN.BUTTON.DISABLED.HOVER.LABEL ? COLOR.SCREEN.BUTTON.DISABLED.HOVER.LABEL.setColor() :
+    i == COLOR.SCREEN.BUTTON.DISABLED.PRESS ? COLOR.SCREEN.BUTTON.DISABLED.PRESS.setColor() :
+    i == COLOR.SCREEN.BUTTON.DISABLED.PRESS.BORDER ? COLOR.SCREEN.BUTTON.DISABLED.PRESS.BORDER.setColor() :
+    i == COLOR.SCREEN.BUTTON.DISABLED.PRESS.LABEL ? COLOR.SCREEN.BUTTON.DISABLED.PRESS.LABEL.setColor() :
     gfx_set(0, 0, 0);
   );
 
@@ -1941,6 +1971,74 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
+  function ui_drawScreenDistanceLine(x, y, tx, ty)
+  local(distance, d, dx, dy i, segs)
+  global(
+    a_circle_data, CIRC_PROPERTIES, cirrota, g_scaling
+  )
+  (
+    i = 0;
+    d = 8.0 * g_scaling;
+    distance = get_distance_from_point(tx - x, ty - y);
+    segs = max(9, ceil(distance / d));
+    dx = (tx - x) / segs;
+    dy = (ty - y) / segs;
+    uix_setPosition(x, y);
+    loop(segs,
+      (i % 2) ?
+        gfx_lineto(x + dx * i, y + dy * i) :
+        uix_setPosition(x + dx * i, y + dy * i);
+      i += 1;
+    );
+  );
+
+
+  function ui_drawScreenActivePath(cx, cy, scale)
+  local(i, offset, x, y, note, fade_diff, fade_len, non_fade_len)
+  instance(distance_active, history_active)
+  global(
+    a_path_history_data, g_scaling, PATH_HISTORY_ENTRIES,
+    PATH_HISTORY_X, PATH_HISTORY_Y, PATH_HISTORY_NOTE,
+    gfx_a
+  )
+  (
+    history_active ? (
+      i = PATH_HISTORY_ENTRIES;
+      fade_len = PATH_HISTORY_ENTRIES * 0.125;
+      non_fade_len = PATH_HISTORY_ENTRIES - fade_len;
+      uix_setPosition(cx, cy);
+      loop(PATH_HISTORY_ENTRIES,
+        offset = i * 3;
+        x = floor(cx + a_path_history_data[offset + PATH_HISTORY_X] * scale + 0.5);
+        y = floor(cy + a_path_history_data[offset + PATH_HISTORY_Y] * scale + 0.5);
+        fade_diff = PATH_HISTORY_ENTRIES - i;
+        fade_diff <= fade_len ? (
+          gfx_a = fade_diff / fade_len * 0.5;
+        ) : (
+          gfx_a = 0.5 + ((fade_diff - fade_len) / non_fade_len) * 0.3;
+        );
+        gfx_lineto(x, y);
+        note = a_path_history_data[offset + PATH_HISTORY_NOTE];
+        note ? (
+          gfx_circle(x, y, 2.0 * g_scaling, 1);
+        );
+        i -= 1;
+      );
+    ) : (
+      x = floor(cx + a_path_history_data[PATH_HISTORY_X] * scale + 0.5);
+      y = floor(cy + a_path_history_data[PATH_HISTORY_Y] * scale + 0.5);
+    );
+
+    // Draw Active circle
+    distance_active ? (
+      gfx_a = 0.9;
+      ui_drawScreenDistanceLine(cx, cy, x, y);
+    );
+    gfx_a = 1.0;
+    gfx_circle(x, y, 2.5 * g_scaling, 1);
+  );
+
+
   function ui_drawScreenNoteName(x, y, w, h)
   local(s, sw, sh)
   global(
@@ -1965,6 +2063,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     gfx_drawstr(s);
     gfx_a = 1.0;
   );
+
 
   function ui_drawScreenRadiusLabel(x, y, w, h, s)
   local(text_w, text_h, cur_x, cur_y, hw)
@@ -1992,10 +2091,51 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
+  function ui_drawScreenButtons(x, y, w, h)
+  local(bx, by, bs, grid)
+  instance(bt_distance, bt_history, distance_active, history_active)
+  global(
+    g_scaling, g_padding_size,
+    FONT_SCREEN_RADIUS, COLOR.SCREEN.BUTTON
+  )
+  (
+    bs = 24.0 * g_scaling;
+    bx = x + w - bs - g_padding_size;
+    by = y + h - bs - g_padding_size;
+    gfx_setfont(FONT_SCREEN_RADIUS);
+
+    bt_history.ui_drawToggleButton(
+      bx, by, bs, bs,
+      COLOR.SCREEN.BUTTON,
+      history_active,
+      "o"
+    );
+    bt_history.l_clicked ? (
+      history_active = !history_active;
+      bt_history.l_clicked = 0;
+    );
+
+    bt_distance.ui_drawToggleButton(
+      bx - bs - g_padding_size, by, bs, bs,
+      COLOR.SCREEN.BUTTON,
+      distance_active,
+      "-"
+    );
+    bt_distance.l_clicked ? (
+      distance_active = !distance_active;
+      bt_distance.l_clicked = 0;
+    );
+  );
+
+
   function ui_drawScreen(x, y, w, h)
   local(
     x_base, y_base, total_radius,
     index, offset, cx, cy, radius, circle_scale,
+    button_h
+  )
+  instance(
+    bt_distance, bt_history, distance_active, history_active
   )
   global(
     currently_selected_circle, circle_count, a_circle_data,
@@ -2003,7 +2143,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     CIRC_RADIUS_OFFSET, CIRC_ROTATION_OFFSET,
     COLOR.SCREEN.BG, COLOR.SCREEN.REGULAR_CIRCLE, COLOR.SCREEN.SELECTED_CIRCLE,
     COLOR.SCREEN.CURRENT_POSITION, COLOR.SCREEN.BG.FLASH, gfx_a,
-    final_point, g_scaling, pending_flash
+    g_scaling, pending_flash,
   )
   (
     ui_drawBGRect(x, y, w, h, COLOR.SCREEN.BG);
@@ -2016,7 +2156,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     x_base = uix_centered(x, w);
     y_base = uix_centered(y, h);
 
-    while(index < circle_count) (
+    loop(circle_count,
       offset = index * CIRC_PROPERTIES;
       radius = a_circle_data[offset + CIRC_RADIUS_OFFSET] * circle_scale;
       cx = x_base + a_circle_data[offset + CIRC_CX_OFFSET] * circle_scale;
@@ -2031,12 +2171,9 @@ slider31: 1<0, 1, 1>-Scale degree 7
     );
 
     uix_setColor(COLOR.SCREEN.CURRENT_POSITION);
-    gfx_circle(
-      x_base + final_point[0] * circle_scale,
-      y_base + final_point[1] * circle_scale,
-      2.5 * g_scaling,
-      1
-    );
+    this.ui_drawScreenActivePath(x_base, y_base, circle_scale);
+    this.ui_drawScreenButtons(x, y, w, h);
+
     pending_flash ? (
       uix_setColor(COLOR.SCREEN.BG.FLASH);
       gfx_a = 0.15;
@@ -2199,7 +2336,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     offset = NOTELENGTH_SETTINGS_OFFSET + length_mode;
     length_str = #;
     length_mode == NOTELENGTH_PCT ? (
-      sprintf(length_str, "%.1f%%", floor(a_notelength_settings[offset] * 100));
+      sprintf(length_str, "%i%%", floor(a_notelength_settings[offset] * 100));
     ) : length_mode == NOTELENGTH_MS ? (
       sprintf(length_str, "%.1f ms", get_ms_from_speed(a_notelength_settings[offset]) * 1000.0);
     ) : length_mode == NOTELENGTH_WN ? (
@@ -2248,7 +2385,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
   global(
     COLOR.COMMON.BG, COLOR.COMMON.LABEL, COLOR.COMMON.BUTTON,
     g_padding_size, base_note.semitone, base_note.octave, current_root,
-    MIN_TRIGGER_NOTE, MAX_TRIGGER_NOTE
+    MIN_TRIGGER_NOTE, MAX_TRIGGER_NOTE, plugin_base_note
   )
   (
     hw = ceil((w - g_padding_size) * 0.5);
@@ -2265,16 +2402,18 @@ slider31: 1<0, 1, 1>-Scale degree 7
       strcat(get_pitch_name(tonic, 0), tonic_str)
     );
     db_tonic.l_dragging ? (
-      set_base_note(floor(db_tonic.pos_x * 12) + base_note.octave * 12);
+      plugin_base_note = floor(db_tonic.pos_x * 12) + base_note.octave * 12;
+      set_base_note(plugin_base_note);
     );
     db_tonic.overflow_x ? (
-      set_base_note(
+      plugin_base_note = (
         max(MIN_TRIGGER_NOTE,
           min(MAX_TRIGGER_NOTE,
             base_note.semitone + (base_note.octave + db_tonic.overflow_x) * 12
           )
         )
       );
+      set_base_note(plugin_base_note);
       db_tonic.overflowed = 1;
     )
   );
@@ -2291,7 +2430,8 @@ slider31: 1<0, 1, 1>-Scale degree 7
     COLOR.COMMON.BG, COLOR.COMMON.TEXT_HEADER, COMMON_SECTION_HEADER,
     COLOR.COMMON.BUTTON,
     is_logarithmic, is_circle_of_fifth, is_circle_of_fifth_outer_circle,
-    is_no_repetition,
+    repeat_mode, COLOR.COMMON.BISWITCH,
+    REPEAT_MODE_0_STRING, REPEAT_MODE_1_STRING, REPEAT_MODE_2_STRING,
     LOGARITHMIC_DISTANCE_STRING, CIRCLE_OF_FIFTH_STRING, NO_REPEATITION_STRING
   )
   (
@@ -2331,16 +2471,24 @@ slider31: 1<0, 1, 1>-Scale degree 7
       bt_circleFifth.r_clicked = 0;
     );
 
-    bt_noRepetition.ui_drawToggleButton(
-      cx + cw - column_w, cur_y, column_w, button_h,
-      COLOR.COMMON.BUTTON, is_no_repetition, NO_REPEATITION_STRING
+    !repeat_mode ? (
+      bt_noRepetition.ui_drawToggleButton(
+        cx + cw - column_w, cur_y, column_w, button_h,
+        COLOR.COMMON.BUTTON, 0, REPEAT_MODE_0_STRING
+      );
+    ) : (
+      bt_noRepetition.ui_drawSwitchButton(
+        cx + cw - column_w, cur_y, column_w, button_h,
+        COLOR.COMMON.BISWITCH, repeat_mode - 1,
+        repeat_mode == 1 ? REPEAT_MODE_1_STRING : REPEAT_MODE_2_STRING
+      );
     );
     bt_noRepetition.l_clicked ? (
-      is_no_repetition = !is_no_repetition;
+      repeat_mode = (repeat_mode + 1) % 3;
       bt_noRepetition.l_clicked = 0;
     );
     bt_noRepetition.r_clicked ? (
-      is_no_repetition = 0;
+      repeat_mode = (repeat_mode + 2) % 3;
       bt_noRepetition.r_clicked = 0;
     );
 
@@ -2649,6 +2797,10 @@ slider31: 1<0, 1, 1>-Scale degree 7
       a_circle_data[offset + CIRC_MODE_OFFSET] = (mode + 1) % CIRC_MODES;
       sw_mode.l_clicked = 0;
     );
+    sw_mode.r_clicked ? (
+      a_circle_data[offset + CIRC_MODE_OFFSET] = (mode + 2) % CIRC_MODES;
+      sw_mode.r_clicked = 0;
+    );
   );
 
 
@@ -2741,7 +2893,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
   global(
     w_scaling, h_scaling, g_scaling, g_border_size, g_padding_size,
     current_root, gfx_w, gfx_h, gfx_a, COLOR.OUTSIDE, COLOR.PANEL,
-    is_on, slider1, COLOR.PANEL.BUTTON,
+    plugin_toggled_active, slider1, COLOR.PANEL.BUTTON, user_input.is_holding
   )
   (
     w_scaling > h_scaling ? (
@@ -2771,7 +2923,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     );
 
     ui_drawScreen(g_border_size, header_h + g_border_size, screen_size, screen_size);
-    !is_on ? (
+    !plugin_toggled_active && !user_input.is_holding ? (
       uix_setColor(COLOR.OUTSIDE);
       gfx_a = 0.35;
       gfx_rect(0.0, 0.0, scaled_w, scaled_h);
@@ -2783,16 +2935,15 @@ slider31: 1<0, 1, 1>-Scale degree 7
       header_h - g_border_size - bt_padding * 2.0,
       header_h - g_border_size - bt_padding * 2.0,
       COLOR.PANEL.BUTTON,
-      is_on
+      plugin_toggled_active || user_input.is_holding
     );
     bt_on.l_clicked ? (
-      is_on = !is_on;
-      slider1 = is_on;
+      slider1 = plugin_toggled_active = !plugin_toggled_active;
       slider_automate(slider1);
       bt_on.l_clicked = 0;
     );
     ui_drawRightSection(left_w, header_h, scaled_w - left_w, lower_h);
-    !is_on ? (
+    !plugin_toggled_active && !user_input.is_holding ? (
       uix_setColor(COLOR.OUTSIDE);
       gfx_a = 0.15;
       gfx_rect(0.0, 0.0, scaled_w, scaled_h);
