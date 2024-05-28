@@ -5,7 +5,7 @@ Link:
   Forum Thread: https://forum.cockos.com/showthread.php?p=2781013
   Github Repository: https://github.com/RCJacH/ReaScripts
 Release Date: May 2024
-Version: 0.4
+Version: 0.4.1
 Reference:
   https://www.youtube.com/watch?v=wn3td88w19E
 
@@ -16,6 +16,9 @@ About:
   based on circle rotations.
 
 Changelog:
+  * v0.4.1 (2024-05-28)
+    * fix current tonic not adjustable
+    * optimized code
   * v0.4 (2024-05-13)
     + add omit mode to repeat modes
     + add distance line on screen
@@ -524,6 +527,27 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
+  function update_current_tonic()
+  local(
+    x, y, rotation, index
+  )
+  global(
+    is_circle_of_fifth, is_circle_of_fifth_outer_circle, TWO_PI, current_tonic,
+    final_point, a_circle_data, CIRC_ROTATION_OFFSET, base_note.semitone
+  )
+  (
+    is_circle_of_fifth ? (
+      rotation = is_circle_of_fifth_outer_circle ?
+        (atan2(final_point[0], final_point[1]) + $pi) / TWO_PI :
+        a_circle_data[CIRC_ROTATION_OFFSET];
+      index = floor(rotation * 12 + 0.5);
+      current_tonic = ((index + 12) * 5) % 12;
+    ) : (
+      current_tonic = base_note.semitone;
+    );
+  );
+
+
   function update_scale()
   local(i, j)
   global(a_scale_buttons, a_scale_notes, scale_note_count)
@@ -796,6 +820,13 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
+  function set_total_radius()
+  global(total_radius)
+  (
+    total_radius = get_total_radius();
+  );
+
+
   function get_distance_from_point(x, y)
   (
     sqrt(sqr(x) + sqr(y));
@@ -821,6 +852,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
       a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.5;
     a_circle_data[offset + CIRC_ROTATION_OFFSET] = 0.0;
     circle_count += 1;
+    set_total_radius();
   );
 
 
@@ -829,27 +861,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
   (
     circle_count -= 1;
     currently_selected_circle = min(currently_selected_circle, circle_count - 1);
-  );
-
-
-  function setup_circles(new_count)
-  local(i, j, offset, speed)
-  global(
-    circle_count, a_circle_data,
-    CIRC_PROPERTIES, CIRC_ROTATION_SPEED_OFFSET, CIRC_ROTATION_OFFSET,
-  )
-  (
-    (new_count < circle_count) ? (
-      circle_count = new_count;
-    ) : (new_count > circle_count) ? (
-      i = circle_count;
-      while(i < circle_count) (
-        offset = i * CIRC_PROPERTIES;
-        speed = a_circle_data[offset + CIRC_ROTATION_SPEED_OFFSET];
-        a_circle_data[offset + CIRC_ROTATION_OFFSET] = 0.0;
-        i += 1;
-      );
-    )
+    set_total_radius();
   );
 
 
@@ -929,6 +941,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
   !is_initiated ? initialize();
   update_scale();
   update_rotations(0);
+  set_total_radius();
 
 
 @serialize
@@ -1007,32 +1020,13 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
-  function update_current_root()
-  local(
-    x, y, rotation, index
-  )
-  global(
-    is_circle_of_fifth, is_circle_of_fifth_outer_circle, TWO_PI, current_root,
-    final_point, a_circle_data, CIRC_ROTATION_OFFSET
-  )
-  (
-    is_circle_of_fifth ? (
-      rotation = is_circle_of_fifth_outer_circle ?
-        (atan2(final_point[0], final_point[1]) + $pi) / TWO_PI :
-        a_circle_data[CIRC_ROTATION_OFFSET];
-      index = floor(rotation * 12 + 0.5);
-      current_root = ((index + 12) * 5) % 12;
-    );
-  );
-
-
   function snap_to_scale(note_distance)
   local(
     i, note_in_octave, cur_scale_note, diff, inv_diff, min_diff
   )
   instance(current, scale_degree, octave)
   global(
-    a_scale_notes, scale_note_count, current_root
+    a_scale_notes, scale_note_count, current_tonic
   )
   (
     octave = floor(note_distance / 12);
@@ -1040,7 +1034,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     i = 0;
     min_diff = 12 * scale_note_count;
     loop(scale_note_count,
-      cur_scale_note = current_root + a_scale_notes[i];
+      cur_scale_note = current_tonic + a_scale_notes[i];
       diff = (cur_scale_note - note_in_octave + 12) % 12;
       inv_diff = diff - 12;
       abs(diff) > abs(inv_diff) ? diff = inv_diff;
@@ -1115,7 +1109,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     note_choice.fix_repeated_note, note_choice.omit_repeated_note
   )
   (
-    update_current_root();
+    update_current_tonic();
     distance_from_center = get_distance_from_point(final_point[0], final_point[1]);
     is_logarithmic ? (
       distance_from_center = (log(distance_from_center + 1.0) / log(1.8)) ^ (12 ^ 0.210355);
@@ -2043,7 +2037,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
   local(s, sw, sh)
   global(
     gfx_a, COLOR.SCREEN.REGULAR_CIRCLE,
-    FONT_SCREEN_NOTENAME, base_note, current_root,
+    FONT_SCREEN_NOTENAME, current_tonic,
     note_choice.current, note_choice.octave, scale_note_count
   )
   (
@@ -2053,7 +2047,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     s = #;
     sprintf(
       s, "%s",
-      get_pitch_name(current_root, (note_choice.current + 12 - current_root) % 12)
+      get_pitch_name(current_tonic, (note_choice.current + 12 - current_tonic) % 12)
     );
     sprintf(s, "%s%i", s, note_choice.octave);
     gfx_measurestr(s, sw, sh);
@@ -2130,7 +2124,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
 
   function ui_drawScreen(x, y, w, h)
   local(
-    x_base, y_base, total_radius,
+    x_base, y_base,
     index, offset, cx, cy, radius, circle_scale,
     button_h
   )
@@ -2143,12 +2137,11 @@ slider31: 1<0, 1, 1>-Scale degree 7
     CIRC_RADIUS_OFFSET, CIRC_ROTATION_OFFSET,
     COLOR.SCREEN.BG, COLOR.SCREEN.REGULAR_CIRCLE, COLOR.SCREEN.SELECTED_CIRCLE,
     COLOR.SCREEN.CURRENT_POSITION, COLOR.SCREEN.BG.FLASH, gfx_a,
-    g_scaling, pending_flash,
+    g_scaling, pending_flash, total_radius,
   )
   (
     ui_drawBGRect(x, y, w, h, COLOR.SCREEN.BG);
     ui_drawScreenNoteName(x, y ,w, h);
-    total_radius = get_total_radius();
     ui_drawScreenRadiusLabel(x, y, w, h, total_radius);
 
     index = 0;
@@ -2384,8 +2377,8 @@ slider31: 1<0, 1, 1>-Scale degree 7
   instance(db_tonic)
   global(
     COLOR.COMMON.BG, COLOR.COMMON.LABEL, COLOR.COMMON.BUTTON,
-    g_padding_size, base_note.semitone, base_note.octave, current_root,
-    MIN_TRIGGER_NOTE, MAX_TRIGGER_NOTE, plugin_base_note
+    g_padding_size, base_note.semitone, base_note.octave, current_tonic,
+    MIN_TRIGGER_NOTE, MAX_TRIGGER_NOTE, plugin_base_note,
   )
   (
     hw = ceil((w - g_padding_size) * 0.5);
@@ -2393,7 +2386,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
 
     tonic = base_note.semitone;
     tonic_str = #;
-    sprintf(tonic_str, "%i (%s)", base_note.octave, get_pitch_name(current_root, 0));
+    sprintf(tonic_str, "%i (%s)", base_note.octave, get_pitch_name(current_tonic, 0));
     db_tonic.ui_drawDragbox(
       x + w - hw, y, hw, h,
       COLOR.COMMON.BG,
@@ -2404,6 +2397,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     db_tonic.l_dragging ? (
       plugin_base_note = floor(db_tonic.pos_x * 12) + base_note.octave * 12;
       set_base_note(plugin_base_note);
+      update_current_tonic();
     );
     db_tonic.overflow_x ? (
       plugin_base_note = (
@@ -2414,6 +2408,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
         )
       );
       set_base_note(plugin_base_note);
+      update_current_tonic();
       db_tonic.overflowed = 1;
     )
   );
@@ -2432,7 +2427,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     is_logarithmic, is_circle_of_fifth, is_circle_of_fifth_outer_circle,
     repeat_mode, COLOR.COMMON.BISWITCH,
     REPEAT_MODE_0_STRING, REPEAT_MODE_1_STRING, REPEAT_MODE_2_STRING,
-    LOGARITHMIC_DISTANCE_STRING, CIRCLE_OF_FIFTH_STRING, NO_REPEATITION_STRING
+    LOGARITHMIC_DISTANCE_STRING, CIRCLE_OF_FIFTH_STRING, NO_REPEATITION_STRING,
   )
   (
     header_h = ceil(24.0 * g_scaling);
@@ -2464,10 +2459,12 @@ slider31: 1<0, 1, 1>-Scale degree 7
     );
     bt_circleFifth.l_clicked ? (
       is_circle_of_fifth = !is_circle_of_fifth;
+      update_current_tonic();
       bt_circleFifth.l_clicked = 0;
     );
     bt_circleFifth.r_clicked ? (
       is_circle_of_fifth = 0;
+      update_current_tonic();
       bt_circleFifth.r_clicked = 0;
     );
 
@@ -2533,7 +2530,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     a_scale_buttons, COLOR.SCALE.BUTTON,
     BUTTON_STATUS_INACTIVE, BUTTON_STATUS_DISABLED,
     BUTTON_STATUS_HOVER, BUTTON_STATUS_PRESS,
-    g_scaling, current_root, is_scale_name_pitch_not_degree,
+    g_scaling, current_tonic, is_scale_name_pitch_not_degree,
     mouse_x, mouse_y, mouse_cap,
     FONT_SCALE_BUTTON
   )
@@ -2579,7 +2576,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
         bx, by, button_w, button_h,
         COLOR.SCALE.BUTTON,
         status,
-        is_scale_name_pitch_not_degree ? get_pitch_name(current_root, i) : get_degree_name(i)
+        is_scale_name_pitch_not_degree ? get_pitch_name(current_tonic, i) : get_degree_name(i)
       );
       update_scale_sliders(i, a_scale_buttons[i]);
       i += 1;
@@ -2731,6 +2728,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     pad_xy.l_clicked ? (
       a_circle_data[pad_radius_offset] = pad_xy.pos_x * MAX_RADIUS;
       a_circle_data[pad_speed_offset] = pad_xy.pos_y;
+      set_total_radius();
     );
   );
 
@@ -2865,18 +2863,18 @@ slider31: 1<0, 1, 1>-Scale degree 7
   (
     is_circle_of_fifth ? (
       color_index =
-      !current_root ? COLOR.SCREEN.CIRCLE_OF_FIFTH.CN :
-      current_root == 1 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.CS :
-      current_root == 2 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.DN :
-      current_root == 3 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.EES :
-      current_root == 4 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.EN :
-      current_root == 5 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.FN :
-      current_root == 6 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.FS :
-      current_root == 7 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.GN :
-      current_root == 8 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.AES :
-      current_root == 9 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.AN :
-      current_root == 10 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.BES :
-      current_root == 11 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.BN;
+      !current_tonic ? COLOR.SCREEN.CIRCLE_OF_FIFTH.CN :
+      current_tonic == 1 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.CS :
+      current_tonic == 2 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.DN :
+      current_tonic == 3 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.EES :
+      current_tonic == 4 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.EN :
+      current_tonic == 5 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.FN :
+      current_tonic == 6 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.FS :
+      current_tonic == 7 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.GN :
+      current_tonic == 8 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.AES :
+      current_tonic == 9 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.AN :
+      current_tonic == 10 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.BES :
+      current_tonic == 11 ? COLOR.SCREEN.CIRCLE_OF_FIFTH.BN;
     ) : (
       color_index = COLOR.PANEL;
     );
@@ -2892,7 +2890,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
   instance(bt_on)
   global(
     w_scaling, h_scaling, g_scaling, g_border_size, g_padding_size,
-    current_root, gfx_w, gfx_h, gfx_a, COLOR.OUTSIDE, COLOR.PANEL,
+    current_tonic, gfx_w, gfx_h, gfx_a, COLOR.OUTSIDE, COLOR.PANEL,
     plugin_toggled_active, slider1, COLOR.PANEL.BUTTON, user_input.is_holding
   )
   (
