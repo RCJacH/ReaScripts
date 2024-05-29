@@ -5,7 +5,7 @@ Link:
   Forum Thread: https://forum.cockos.com/showthread.php?p=2781013
   Github Repository: https://github.com/RCJacH/ReaScripts
 Release Date: May 2024
-Version: 0.4.1
+Version: 0.5
 Reference:
   https://www.youtube.com/watch?v=wn3td88w19E
 
@@ -16,6 +16,13 @@ About:
   based on circle rotations.
 
 Changelog:
+  * v0.5 (2024-05-29)
+    + add latched keyswitch
+    + add sliders for circle controls
+    + add pass through unused midi messages
+    * fix legato
+    * fix note on accuracy & frequency
+    * fix circles not updating when playback stopped
   * v0.4.1 (2024-05-28)
     * fix current tonic not adjustable
     * optimized code
@@ -50,8 +57,8 @@ desc: RC MIDI Circular Note Generator
 slider1: plugin_toggled_active=0<0, 1, 1>-ON/OFF
 slider2: 0<0, 3, 1{Theta,Hz,Ms,Sync}>-Trigger Mode
 slider3: 0<0, 360, 1>-Trigger Theta
-slider4: 0<0, 1>-Trigger Hz
-slider5: 0<0, 1>-Trigger Millisecond
+slider4: 0<0.0, 4.0>-Trigger Hz
+slider5: 0<16000, 300>-Trigger Millisecond
 slider6: 0<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Trigger Sync
 slider7: 0<0, 6, 1{Percent,Millisecond,Whole Note,min(Percent | Millisecond),min(Percent | Whole Note),min(Millisecond | Whole Note), min(Percent | Millisecond | Whole Note)}>-Note Length Mode
 slider8: 0<0, 1>-Note Length Percent
@@ -70,6 +77,49 @@ slider28: 0<0, 1, 1>-Scale degree #5
 slider29: 1<0, 1, 1>-Scale degree 6
 slider30: 0<0, 1, 1>-Scale degree b7
 slider31: 1<0, 1, 1>-Scale degree 7
+
+slider35: 1<1, 256, 1>-Number of Circles
+slider36: 1<1, 256, 1>-Currently Selected Circle
+slider40: 7.0<0.0, 24.0>-Circle 1 Radius
+slider41: 0<0, 2, 1{Hz,Ms,4QN}>-Circle 1 Speed Mode
+slider42: 0.8<0.0, 4.0>-Circle 1 Speed Hz
+slider43: 3440<16000, 300>-Circle 1 Speed Ms
+slider44: 10<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 1 Speed 4QN
+slider46: 5.0<0.0, 24.0>-Circle 2 Radius
+slider47: 1<0, 2, 1{Hz,Ms,4QN}>-Circle 2 Speed Mode
+slider48: 1.6<0.0, 4.0>-Circle 2 Speed Hz
+slider49: 6580<16000, 300>-Circle 2 Speed Ms
+slider50: 23<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 2 Speed 4QN
+slider52: 2.0<0.0, 24.0>-Circle 3 Radius
+slider53: 2<0, 2, 1{Hz,Ms,4QN}>-Circle 3 Speed Mode
+slider54: 2.8<0.0, 4.0>-Circle 3 Speed Hz
+slider55: 11290<16000, 300>-Circle 3 Speed Ms
+slider56: 23<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 3 Speed 4QN
+slider58: 1.0<0.0, 24.0>-Circle 4 Radius
+slider59: 0<0, 2, 1{Hz,Ms,4QN}>-Circle 4 Speed Mode
+slider60: 8.0<0.0, 4.0>-Circle 4 Speed Hz
+slider61: 8150<16000, 300>-Circle 4 Speed Ms
+slider62: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 4 Speed 4QN
+slider64: 1.0<0.0, 24.0>-Circle 5 Radius
+slider65: 0<0, 2, 1{Hz,Ms,4QN}>-Circle 5 Speed Mode
+slider66: 2.0<0.0, 4.0>-Circle 5 Speed Hz
+slider67: 8150<16000, 300>-Circle 5 Speed Ms
+slider68: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 5 Speed 4QN
+slider70: 1.0<0.0, 24.0>-Circle 6 Radius
+slider71: 0<0, 2, 1{Hz,Ms,4QN}>-Circle 6 Speed Mode
+slider72: 2.0<0.0, 4.0>-Circle 6 Speed Hz
+slider73: 8150<16000, 300>-Circle 6 Speed Ms
+slider74: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 6 Speed 4QN
+slider76: 1.0<0.0, 24.0>-Circle 7 Radius
+slider77: 0<0, 2, 1{Hz,Ms,4QN}>-Circle 7 Speed Mode
+slider78: 2.0<0.0, 4.0>-Circle 7 Speed Hz
+slider79: 8150<16000, 300>-Circle 7 Speed Ms
+slider80: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 7 Speed 4QN
+slider82: 1.0<0.0, 24.0>-Circle 8 Radius
+slider83: 0<0, 2, 1{Hz,Ms,4QN}>-Circle 8 Speed Mode
+slider84: 2.0<0.0, 4.0>-Circle 8 Speed Hz
+slider85: 8150<16000, 300>-Circle 8 Speed Ms
+slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 8 Speed 4QN
 
 
 @init
@@ -428,7 +478,11 @@ slider31: 1<0, 1, 1>-Scale degree 7
 
   // Non persistant variable initiation
 
+  is_pending_reset = 1;
   is_pending_note_on = -1;
+  is_pending_update_rotation = 1;
+  is_pending_update_scale = 0;
+  is_pending_update_total_radius = 1;
   note_duration_in_samples = 0;
   samples_until_note_off = -1;
   samples_until_flash = -1;
@@ -461,6 +515,12 @@ slider31: 1<0, 1, 1>-Scale degree 7
   function log_curve(x, v)
   (
     (log(x + 1) / log(2)) ^ v;
+  );
+
+
+  function reverse_log_curve(x, v)
+  (
+    2 ^ (x ^ (1 / v));
   );
 
 
@@ -733,6 +793,13 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
+  function get_wn_from_speed(speed)
+  global()
+  (
+    speed * 50;
+  );
+
+
   function get_rotation_delta(mode, speed, delta_samples)
   global(
     srate, SPEED_MODE_HZ, SPEED_MODE_MS, SPEED_MODE_WN,
@@ -796,9 +863,11 @@ slider31: 1<0, 1, 1>-Scale degree 7
         is_pending_note_on = floor((thres - old_rotation) / rotation_delta * amount);
     );
     memcpy(final_point, point, 2);
-    mem_insert_shuffle(a_path_history_data, PATH_HISTORY_MEM_SIZE, 0);
-    mem_insert_shuffle(a_path_history_data, PATH_HISTORY_MEM_SIZE, final_point[1]);
-    mem_insert_shuffle(a_path_history_data, PATH_HISTORY_MEM_SIZE, final_point[0]);
+    amount > 0 ? (
+      mem_insert_shuffle(a_path_history_data, PATH_HISTORY_MEM_SIZE, 0);
+      mem_insert_shuffle(a_path_history_data, PATH_HISTORY_MEM_SIZE, final_point[1]);
+      mem_insert_shuffle(a_path_history_data, PATH_HISTORY_MEM_SIZE, final_point[0]);
+    );
   );
 
 
@@ -838,7 +907,8 @@ slider31: 1<0, 1, 1>-Scale degree 7
   global(
     circle_count, a_circle_data, currently_selected_circle,
     CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_ROTATION_OFFSET,
-    CIRC_SPEED_HZ_OFFSET, CIRC_SPEED_MS_OFFSET, CIRC_SPEED_WN_OFFSET
+    CIRC_SPEED_HZ_OFFSET, CIRC_SPEED_MS_OFFSET, CIRC_SPEED_WN_OFFSET,
+    is_pending_update_total_radius
   )
   (
     currently_selected_circle = circle_count;
@@ -852,16 +922,16 @@ slider31: 1<0, 1, 1>-Scale degree 7
       a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.5;
     a_circle_data[offset + CIRC_ROTATION_OFFSET] = 0.0;
     circle_count += 1;
-    set_total_radius();
+    is_pending_update_total_radius = 1;
   );
 
 
   function remove_circle()
-  global(currently_selected_circle, circle_count)
+  global(currently_selected_circle, circle_count, is_pending_update_total_radius)
   (
     circle_count -= 1;
     currently_selected_circle = min(currently_selected_circle, circle_count - 1);
-    set_total_radius();
+    is_pending_update_total_radius = 1;
   );
 
 
@@ -870,10 +940,10 @@ slider31: 1<0, 1, 1>-Scale degree 7
     v == -1 ? (
       slider_automate(2 ^ (mode + 2), 1);
     ) : (
-      mode == TRIGGER_THETA ? sl3 = slider3 = v :
-      mode == TRIGGER_HZ ? sl4 = slider4 = v :
-      mode == TRIGGER_MS ? sl5 = slider5 = v :
-      mode == TRIGGER_WN ? sl6 = slider6 = v * 50.0;
+      mode == TRIGGER_THETA ? sl3 = slider3 = v * 360.0 :
+      mode == TRIGGER_HZ ? sl4 = slider4 = get_hz_from_speed(v) :
+      mode == TRIGGER_MS ? sl5 = slider5 = get_ms_from_speed(v) :
+      mode == TRIGGER_WN ? sl6 = slider6 = get_wn_from_speed(v);
       slider_automate(2 ^ (mode + 2));
     );
   );
@@ -882,9 +952,132 @@ slider31: 1<0, 1, 1>-Scale degree 7
   function automate_notelength_slider(mode, v)
   (
     mode == NOTELENGTH_PCT ? sl8 = slider8 = v :
-    mode == NOTELENGTH_MS ? sl9 = slider9 = v :
-    mode == NOTELENGTH_WN ? sl10 = slider10 = v * 50.0;
+    mode == NOTELENGTH_MS ? sl9 = slider9 = get_ms_from_speed(v) :
+    mode == NOTELENGTH_WN ? sl10 = slider10 = get_wn_from_speed(v);
     slider_automate(2 ^ (mode + 7));
+  );
+
+
+
+  function automate_number_of_circles()
+  (
+    sl35 = slider35 = circle_count;
+    slider_automate(slider35);
+  );
+
+
+  function automate_currently_selected_circle()
+  (
+    sl36 = slider36 = currently_selected_circle + 1;
+    slider_automate(slider36);
+  );
+
+
+  function automate_circle_radius(index, value)
+  local(slider_number)
+  (
+    slider_number = (40 + index * 6);
+    slider_number == 40 ? sl40 = slider40 = value :
+    slider_number == 46 ? sl46 = slider46 = value :
+    slider_number == 52 ? sl52 = slider52 = value :
+    slider_number == 58 ? sl58 = slider58 = value :
+    slider_number == 64 ? sl64 = slider64 = value :
+    slider_number == 70 ? sl70 = slider70 = value :
+    slider_number == 76 ? sl76 = slider76 = value :
+    slider_number == 82 ? sl82 = slider82 = value;
+    slider_automate(2 ^ (slider_number - 1));
+  );
+
+
+  function end_automate_circle_radius(index)
+  local(slider_number)
+  (
+    slider_number = (40 + index * 6);
+    slider_automate(2 ^ (slider_number - 1), 1);
+  );
+
+
+  function automate_circle_mode(index, value)
+  local(slider_number)
+  (
+    slider_number = (41 + index * 6);
+    slider_number == 41 ? sl41 = slider41 = value :
+    slider_number == 47 ? sl47 = slider47 = value :
+    slider_number == 53 ? sl53 = slider53 = value :
+    slider_number == 59 ? sl59 = slider59 = value :
+    slider_number == 65 ? sl65 = slider65 = value :
+    slider_number == 71 ? sl71 = slider71 = value :
+    slider_number == 77 ? sl77 = slider77 = value :
+    slider_number == 83 ? sl83 = slider83 = value;
+    slider_automate(2 ^ (slider_number - 1));
+  );
+
+
+  function automate_circle_speed_hz(index, speed)
+  local(slider_number, v)
+  (
+    slider_number = (42 + index * 6);
+    v = get_hz_from_speed(speed);
+    slider_number == 42 ? sl42 = slider42 = v :
+    slider_number == 48 ? sl48 = slider48 = v :
+    slider_number == 54 ? sl54 = slider54 = v :
+    slider_number == 60 ? sl60 = slider60 = v :
+    slider_number == 66 ? sl66 = slider66 = v :
+    slider_number == 72 ? sl72 = slider72 = v :
+    slider_number == 78 ? sl78 = slider78 = v :
+    slider_number == 84 ? sl84 = slider84 = v;
+    slider_automate(2 ^ (slider_number - 1));
+  );
+
+
+  function automate_circle_speed_ms(index, speed)
+  local(slider_number, v)
+  (
+    slider_number = (43 + index * 6);
+    v = get_ms_from_speed(speed) * 1000;
+    slider_number == 43 ? sl43 = slider43 = v :
+    slider_number == 49 ? sl49 = slider49 = v :
+    slider_number == 55 ? sl55 = slider55 = v :
+    slider_number == 61 ? sl61 = slider61 = v :
+    slider_number == 67 ? sl67 = slider67 = v :
+    slider_number == 73 ? sl73 = slider73 = v :
+    slider_number == 79 ? sl79 = slider79 = v :
+    slider_number == 85 ? sl85 = slider85 = v;
+    slider_automate(2 ^ (slider_number - 1));
+  );
+
+
+  function automate_circle_speed_wn(index, speed)
+  local(slider_number, v)
+  (
+    slider_number = (44 + index * 6);
+    v = get_wn_from_speed(speed);
+    slider_number == 44 ? sl44 = slider44 = v :
+    slider_number == 50 ? sl50 = slider50 = v :
+    slider_number == 56 ? sl56 = slider56 = v :
+    slider_number == 62 ? sl62 = slider62 = v :
+    slider_number == 68 ? sl68 = slider68 = v :
+    slider_number == 74 ? sl74 = slider74 = v :
+    slider_number == 80 ? sl80 = slider80 = v :
+    slider_number == 86 ? sl86 = slider86 = v;
+    slider_automate(2 ^ (slider_number - 1));
+  );
+
+
+  function automate_circle_speed(index, mode, speed)
+  global(SPEED_MODE_HZ, SPEED_MODE_MS, SPEED_MODE_WN)
+  (
+    mode == SPEED_MODE_HZ ? automate_circle_speed_hz(index, speed) :
+    mode == SPEED_MODE_MS ? automate_circle_speed_ms(index, speed) :
+    mode == SPEED_MODE_WN ? automate_circle_speed_wn(index, speed);
+  );
+
+
+  function end_automate_circle_speed(index, mode)
+  local(slider_number)
+  (
+    slider_number = 42 + index * 6 + mode;
+    slider_automate(2 ^ (slider_number - 1), 1);
   );
 
 
@@ -910,21 +1103,33 @@ slider31: 1<0, 1, 1>-Scale degree 7
     a_notelength_settings[0] = 0.0;
     memset(a_circle_data, 0.0, CIRC_MEM_SIZE);
     a_circle_data[CIRC_RADIUS_OFFSET] = 7.0;
+    automate_circle_radius(0, 7.0);
     a_circle_data[CIRC_SPEED_HZ_OFFSET] = 0.2;
+    automate_circle_speed_hz(0, 0.2);
     a_circle_data[CIRC_SPEED_MS_OFFSET] = 0.2;
+    automate_circle_speed_ms(0, 0.2);
     a_circle_data[CIRC_SPEED_WN_OFFSET] = 0.2;
+    automate_circle_speed_wn(0, 0.2);
     offset = CIRC_PROPERTIES;
     a_circle_data[offset + CIRC_MODE_OFFSET] = 1;
     a_circle_data[offset + CIRC_RADIUS_OFFSET] = 5.0;
+    automate_circle_radius(1, 5.0);
     a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.4;
+    automate_circle_speed_hz(1, 0.4);
     a_circle_data[offset + CIRC_SPEED_MS_OFFSET] = 0.4;
+    automate_circle_speed_ms(1, 0.4);
     a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.4;
+    automate_circle_speed_wn(0, 0.4);
     offset += CIRC_PROPERTIES;
     a_circle_data[offset + CIRC_MODE_OFFSET] = 2;
     a_circle_data[offset + CIRC_RADIUS_OFFSET] = 2.0;
+    automate_circle_radius(2, 2.0);
     a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.7;
+    automate_circle_speed_hz(0, 0.7);
     a_circle_data[offset + CIRC_SPEED_MS_OFFSET] = 0.7;
+    automate_circle_speed_ms(0, 0.7);
     a_circle_data[offset + CIRC_SPEED_WN_OFFSET] = 0.46;
+    automate_circle_speed_wn(0, 0.46);
     memset(a_scale_notes, 0.0, 12);
     memset(a_scale_buttons, 0.0, 12);
     a_scale_buttons[0] = 1;
@@ -937,11 +1142,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     is_initiated = 1;
   );
 
-
-  !is_initiated ? initialize();
   update_scale();
-  update_rotations(0);
-  set_total_radius();
 
 
 @serialize
@@ -958,6 +1159,10 @@ slider31: 1<0, 1, 1>-Scale degree 7
   file_var(0, samples_until_note_off);
   file_var(0, note_choice.last);
   file_var(0, is_scale_name_pitch_not_degree);
+  file_var(0, user_input.latching_circle_of_fifth);
+  file_var(0, user_input.latching_active_point);
+  file_var(0, user_input.latching_repetition);
+  file_var(0, user_input.latching_curvature);
   file_mem(0, a_trigger_settings, TRIGGER_SETTINGS_MEM_SIZE);
   file_mem(0, a_notelength_settings, NOTELENGTH_SETTINGS_MEM_SIZE);
   file_mem(0, a_scale_buttons, 12);
@@ -965,20 +1170,78 @@ slider31: 1<0, 1, 1>-Scale degree 7
 
 
 @slider
+  function update_number_of_circles(n)
+  local(diff)
+  global(circle_count)
+  (
+    diff = n - circle_count;
+    diff > 0 ? (
+      loop(diff,
+        add_circle();
+      );
+    ) : diff < 0 ? (
+      loop(
+        diff,
+        remove_circle();
+      );
+    );
+  );
+
+
+  function get_speed_from_hz(hz)
+  global(MAX_SPEED_HZ)
+  (
+    reverse_log_curve(hz / MAX_SPEED_HZ, 3.6) - 1;
+  );
+
+
+  function get_speed_from_ms(ms)
+  global(MAX_SPEED_S, MIN_SPEED_S)
+  (
+    2 - reverse_log_curve((ms * 0.001 - MIN_SPEED_S) / (MAX_SPEED_S - MIN_SPEED_S), 2.4);
+  );
+
+
+  function get_speed_from_wn(wn)
+  (
+    wn * 0.02;
+  );
+
+
+  function set_circle_data(index, offset, value)
+  local(v)
+  global(
+    a_circle_data, CIRC_PROPERTIES,
+    is_pending_update_rotation, is_pending_update_total_radius,
+    CIRC_SPEED_HZ_OFFSET, CIRC_SPEED_MS_OFFSET, CIRC_SPEED_WN_OFFSET,
+  )
+  (
+    v = offset == CIRC_SPEED_HZ_OFFSET ? get_speed_from_hz(value) :
+      offset == CIRC_SPEED_MS_OFFSET ? get_speed_from_ms(value) :
+      offset == CIRC_SPEED_WN_OFFSET ? get_speed_from_wn(value) :
+      value;
+    a_circle_data[index * CIRC_PROPERTIES + offset] = v;
+    is_pending_update_total_radius = is_pending_update_rotation = 1;
+  );
+
   sl2 != slider2 ? (
     sl2 = a_trigger_settings[TRIGGER_MODE_OFFSET] = slider2;
   );
   sl3 != slider3 ? (
-    sl3 = a_trigger_settings[TRIGGER_THETA_OFFSET] = slider3 / 360.0;
+    a_trigger_settings[TRIGGER_THETA_OFFSET] = slider3 / 360.0;
+    sl3 = slider3;
   );
   sl4 != slider4 ? (
-    sl4 = a_trigger_settings[TRIGGER_HZ_OFFSET] = slider4;
+    a_trigger_settings[TRIGGER_HZ_OFFSET] = get_speed_from_hz(slider4);
+    sl4 = slider4;
   );
   sl5 != slider5 ? (
-    sl5 = a_trigger_settings[TRIGGER_MS_OFFSET] = slider5;
+    a_trigger_settings[TRIGGER_MS_OFFSET] = get_speed_from_ms(slider5);
+    sl5 = slider5;
   );
   sl6 != slider6 ? (
-    sl6 = a_trigger_settings[TRIGGER_WN_OFFSET] = slider6 * 0.02;
+    a_trigger_settings[TRIGGER_WN_OFFSET] = slider6 * 0.02;
+    sl6 = slider6;
   );
   sl7 != slider7 ? (
     sl7 = a_notelength_settings[NOTELENGTH_MODE_OFFSET] = slider7;
@@ -987,24 +1250,82 @@ slider31: 1<0, 1, 1>-Scale degree 7
     sl8 = a_notelength_settings[NOTELENGTH_PCT_OFFSET] = slider8;
   );
   sl9 != slider9 ? (
-    sl9 = a_notelength_settings[NOTELENGTH_MS_OFFSET] = slider9;
+    a_notelength_settings[NOTELENGTH_MS_OFFSET] = get_speed_from_ms(slider9);
+    sl9 = slider9;
   );
   sl10 != slider10 ? (
-    sl10 = a_notelength_settings[NOTELENGTH_WN_OFFSET] = slider10 * 0.02;
+    a_notelength_settings[NOTELENGTH_WN_OFFSET] = slider10 * 0.02;
+    sl10 = slider10;
   );
 
-  sl20 != slider21 ? (a_scale_buttons[0] = sl20 = slider20; update_scale(););
-  sl21 != slider22 ? (a_scale_buttons[1] = sl21 = slider21; update_scale(););
-  sl22 != slider23 ? (a_scale_buttons[2] = sl22 = slider22; update_scale(););
-  sl23 != slider24 ? (a_scale_buttons[3] = sl23 = slider23; update_scale(););
-  sl24 != slider25 ? (a_scale_buttons[4] = sl24 = slider24; update_scale(););
-  sl25 != slider26 ? (a_scale_buttons[5] = sl25 = slider25; update_scale(););
-  sl26 != slider27 ? (a_scale_buttons[6] = sl26 = slider26; update_scale(););
-  sl27 != slider28 ? (a_scale_buttons[7] = sl27 = slider27; update_scale(););
-  sl28 != slider29 ? (a_scale_buttons[8] = sl28 = slider28; update_scale(););
-  sl29 != slider30 ? (a_scale_buttons[9] = sl29 = slider29; update_scale(););
-  sl30 != slider31 ? (a_scale_buttons[10] = sl30 = slider30; update_scale(););
-  sl31 != slider32 ? (a_scale_buttons[11] = sl31 = slider31; update_scale(););
+  sl20 != slider21 ? (a_scale_buttons[0] = sl20 = slider20; is_pending_update_scale = 1;);
+  sl21 != slider22 ? (a_scale_buttons[1] = sl21 = slider21; is_pending_update_scale = 1;);
+  sl22 != slider23 ? (a_scale_buttons[2] = sl22 = slider22; is_pending_update_scale = 1;);
+  sl23 != slider24 ? (a_scale_buttons[3] = sl23 = slider23; is_pending_update_scale = 1;);
+  sl24 != slider25 ? (a_scale_buttons[4] = sl24 = slider24; is_pending_update_scale = 1;);
+  sl25 != slider26 ? (a_scale_buttons[5] = sl25 = slider25; is_pending_update_scale = 1;);
+  sl26 != slider27 ? (a_scale_buttons[6] = sl26 = slider26; is_pending_update_scale = 1;);
+  sl27 != slider28 ? (a_scale_buttons[7] = sl27 = slider27; is_pending_update_scale = 1;);
+  sl28 != slider29 ? (a_scale_buttons[8] = sl28 = slider28; is_pending_update_scale = 1;);
+  sl29 != slider30 ? (a_scale_buttons[9] = sl29 = slider29; is_pending_update_scale = 1;);
+  sl30 != slider31 ? (a_scale_buttons[10] = sl30 = slider30; is_pending_update_scale = 1;);
+  sl31 != slider32 ? (a_scale_buttons[11] = sl31 = slider31; is_pending_update_scale = 1;);
+
+  sl35 != slider35 ? (sl35 = slider35; update_number_of_circles(sl35););
+  sl36 != slider36 ? (
+    currently_selected_circle = min(slider36, circle_count) - 1;
+    sl36 = slider36;
+  );
+
+  sl40 != slider40 ? (set_circle_data(0, CIRC_RADIUS_OFFSET, slider40); sl40 = slider40;);
+  sl41 != slider41 ? (set_circle_data(0, CIRC_MODE_OFFSET, slider41); sl41 = slider41;);
+  sl42 != slider42 ? (set_circle_data(0, CIRC_SPEED_HZ_OFFSET, slider42); sl42 = slider42;);
+  sl43 != slider43 ? (set_circle_data(0, CIRC_SPEED_MS_OFFSET, slider43); sl43 = slider43;);
+  sl44 != slider44 ? (set_circle_data(0, CIRC_SPEED_WN_OFFSET, slider44); sl44 = slider44;);
+
+  sl46 != slider46 ? (set_circle_data(1, CIRC_RADIUS_OFFSET, slider46); sl46 = slider46;);
+  sl47 != slider47 ? (set_circle_data(1, CIRC_MODE_OFFSET, slider47); sl47 = slider47;);
+  sl48 != slider48 ? (set_circle_data(1, CIRC_SPEED_HZ_OFFSET, slider48); sl48 = slider48;);
+  sl49 != slider49 ? (set_circle_data(1, CIRC_SPEED_MS_OFFSET, slider49); sl49 = slider49;);
+  sl50 != slider50 ? (set_circle_data(1, CIRC_SPEED_WN_OFFSET, slider50); sl50 = slider50;);
+
+  sl52 != slider52 ? (set_circle_data(2, CIRC_RADIUS_OFFSET, slider52); sl52 = slider52;);
+  sl53 != slider53 ? (set_circle_data(2, CIRC_MODE_OFFSET, slider53); sl53 = slider53;);
+  sl54 != slider54 ? (set_circle_data(2, CIRC_SPEED_HZ_OFFSET, slider54); sl54 = slider54;);
+  sl55 != slider55 ? (set_circle_data(2, CIRC_SPEED_MS_OFFSET, slider55); sl55 = slider55;);
+  sl56 != slider56 ? (set_circle_data(2, CIRC_SPEED_WN_OFFSET, slider56); sl56 = slider56;);
+
+  sl58 != slider58 ? (set_circle_data(3, CIRC_RADIUS_OFFSET, slider58); sl58 = slider58;);
+  sl59 != slider59 ? (set_circle_data(3, CIRC_MODE_OFFSET, slider59); sl59 = slider59;);
+  sl60 != slider60 ? (set_circle_data(3, CIRC_SPEED_HZ_OFFSET, slider60); sl60 = slider60;);
+  sl61 != slider61 ? (set_circle_data(3, CIRC_SPEED_MS_OFFSET, slider61); sl61 = slider61;);
+  sl62 != slider62 ? (set_circle_data(3, CIRC_SPEED_WN_OFFSET, slider62); sl62 = slider62;);
+
+  sl64 != slider64 ? (set_circle_data(4, CIRC_RADIUS_OFFSET, slider64); sl64 = slider64;);
+  sl65 != slider65 ? (set_circle_data(4, CIRC_MODE_OFFSET, slider65); sl65 = slider65;);
+  sl66 != slider66 ? (set_circle_data(4, CIRC_SPEED_HZ_OFFSET, slider66); sl66 = slider66;);
+  sl67 != slider67 ? (set_circle_data(4, CIRC_SPEED_MS_OFFSET, slider67); sl67 = slider67;);
+  sl68 != slider68 ? (set_circle_data(4, CIRC_SPEED_WN_OFFSET, slider68); sl68 = slider68;);
+
+  sl70 != slider70 ? (set_circle_data(5, CIRC_RADIUS_OFFSET, slider70); sl70 = slider70;);
+  sl71 != slider71 ? (set_circle_data(5, CIRC_MODE_OFFSET, slider71); sl71 = slider71;);
+  sl72 != slider72 ? (set_circle_data(5, CIRC_SPEED_HZ_OFFSET, slider72); sl72 = slider72;);
+  sl73 != slider73 ? (set_circle_data(5, CIRC_SPEED_MS_OFFSET, slider73); sl73 = slider73;);
+  sl74 != slider74 ? (set_circle_data(5, CIRC_SPEED_WN_OFFSET, slider74); sl74 = slider74;);
+
+  sl76 != slider76 ? (set_circle_data(6, CIRC_RADIUS_OFFSET, slider76); sl76 = slider76;);
+  sl77 != slider77 ? (set_circle_data(6, CIRC_MODE_OFFSET, slider77); sl77 = slider77;);
+  sl78 != slider78 ? (set_circle_data(6, CIRC_SPEED_HZ_OFFSET, slider78); sl78 = slider78;);
+  sl79 != slider79 ? (set_circle_data(6, CIRC_SPEED_MS_OFFSET, slider79); sl79 = slider79;);
+  sl80 != slider80 ? (set_circle_data(6, CIRC_SPEED_WN_OFFSET, slider80); sl80 = slider80;);
+
+  sl82 != slider82 ? (set_circle_data(7, CIRC_RADIUS_OFFSET, slider82); sl82 = slider82;);
+  sl83 != slider83 ? (set_circle_data(7, CIRC_MODE_OFFSET, slider83); sl83 = slider83;);
+  sl84 != slider84 ? (set_circle_data(7, CIRC_SPEED_HZ_OFFSET, slider84); sl84 = slider84;);
+  sl85 != slider85 ? (set_circle_data(7, CIRC_SPEED_MS_OFFSET, slider85); sl85 = slider85;);
+  sl86 != slider86 ? (set_circle_data(7, CIRC_SPEED_WN_OFFSET, slider86); sl86 = slider86;);
+  !is_initiated ? initialize();
+
 
 @block
 
@@ -1252,25 +1573,27 @@ slider31: 1<0, 1, 1>-Scale degree 7
 
 
   function maybe_send_note_on()
-  local(note)
+  local(offset, note)
   global(
     is_pending_note_on, STATUS_NOTE_ON, STATUS_NOTE_OFF,
-    samples_until_note_off,
-    pending_flash, pending_midi_output, note_choice.last,
+    samples_until_note_off, samplesblock,
+    pending_flash, note_choice.last,
     a_path_history_data, PATH_HISTORY_NOTE
   )
   (
-    is_pending_note_on >= 0 ? (
+    while(is_pending_note_on >= 0) (
+      offset = is_pending_note_on % samplesblock;
       samples_until_note_off >= 0 ?
-        midisend(pending_midi_output - 1, STATUS_NOTE_OFF, note_choice.last, 0);
+        midisend(offset + 1, STATUS_NOTE_OFF, note_choice.last, 0);
       note = get_current_note();
       note ? (
-        midisend(pending_midi_output, STATUS_NOTE_ON, note, 127);
+        midisend(offset, STATUS_NOTE_ON, note, 127);
         samples_until_note_off = get_note_length();
         a_path_history_data[PATH_HISTORY_NOTE] = 1;
         pending_flash = 1;
       );
-      is_pending_note_on = -1;
+      is_pending_note_on -= samplesblock;
+
     );
   );
 
@@ -1284,32 +1607,37 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
-  function toggle_logarithmic(v)
-  global(is_logarithmic)
+  function set_curvature_with_midi_note(v)
+  global(is_logarithmic, user_input.latching_curvature)
   (
-    is_logarithmic = v;
+    is_logarithmic = v >= 64;
+    user_input.latching_curvature = is_logarithmic && (1.0 - floor(v * 0.01));
   );
 
 
-  function toggle_no_repetition(vel)
-  global(repeat_mode)
+  function set_repetition_with_midi_note(v)
+  global(repeat_mode, user_input.latching_repetition)
   (
-    repeat_mode = floor(vel * 0.02);
+    repeat_mode = floor(v * 0.02);
+    user_input.latching_repetition = repeat_mode && (1.0 - floor(v * 0.04) % 2);
   );
 
 
-  function toggle_active_point(v)
-  global(is_circle_of_fifth_outer_circle)
+  function set_active_point_with_midi_note(v)
+  global(is_circle_of_fifth_outer_circle, user_input.latching_active_point)
   (
-    is_circle_of_fifth_outer_circle = v;
+    is_circle_of_fifth_outer_circle = v >= 64;
+    user_input.latching_active_point = is_circle_of_fifth_outer_circle && (1.0 - floor(v * 0.01));
   );
 
 
-  function toggle_circle_of_fifth(v)
-  global(is_circle_of_fifth)
+  function set_circle_of_fifth_with_midi_note(v)
+  global(is_circle_of_fifth, user_input.latching_circle_of_fifth)
   (
-    is_circle_of_fifth = v;
+    is_circle_of_fifth = v >= 64;
+    user_input.latching_circle_of_fifth = is_circle_of_fifth && (1.0 - floor(v * 0.01));
   );
+
 
   function reset_all_circle_rotations()
   local(i)
@@ -1325,11 +1653,13 @@ slider31: 1<0, 1, 1>-Scale degree 7
   );
 
 
-  function maybe_parse_input()
+  function parse_input()
   local(offset, msg1, msg2, msg3, in_type)
   global(
     user_input.is_holding, user_input.base_note, base_note,
-    user_input.play_pos,
+    user_input.play_pos, user_input.latching_curvature,
+    user_input.latching_repetition, user_input.latching_active_point,
+    user_input.latching_circle_of_fifth,
     STATUS_NOTE_ON, STATUS_NOTE_OFF,
     MIN_TRIGGER_NOTE, MAX_TRIGGER_NOTE,
     play_position, plugin_base_note
@@ -1339,10 +1669,10 @@ slider31: 1<0, 1, 1>-Scale degree 7
       in_type = msg1&$xF0;
       (in_type == STATUS_NOTE_ON && msg3) ? (
         !msg2 ? reset_all_circle_rotations() :
-        msg2 == 5 ? toggle_circle_of_fifth(msg3 >= 64) :
-        msg2 == 7 ? toggle_active_point(msg3 >= 64) :
-        msg2 == 9 ? toggle_no_repetition(msg3) :
-        msg2 == 11 ? toggle_logarithmic(msg3 >= 64) :
+        msg2 == 5 ? set_circle_of_fifth_with_midi_note(msg3) :
+        msg2 == 7 ? set_active_point_with_midi_note(msg3) :
+        msg2 == 9 ? set_repetition_with_midi_note(msg3) :
+        msg2 == 11 ? set_curvature_with_midi_note(msg3) :
         (msg2 >= 12 && msg2 < 24) ? set_scale_from_note_on(msg2 % 12, msg3 >= 64) :
         (msg2 >= MIN_TRIGGER_NOTE && msg2 <= MAX_TRIGGER_NOTE) ? (
           user_input.is_holding = 1;
@@ -1359,14 +1689,31 @@ slider31: 1<0, 1, 1>-Scale degree 7
           user_input.base_note =
           user_input.play_pos = 0;
         );
+        user_input.latching_circle_of_fifth && msg2 == 5 ? set_circle_of_fifth_with_midi_note(0);
+        user_input.latching_active_point && msg2 == 7 ? set_active_point_with_midi_note(0);
+        user_input.latching_repetition && msg2 == 9 ? set_repetition_with_midi_note(0);
+        user_input.latching_curvature && msg2 == 11 ? set_curvature_with_midi_note(0);
+      ) : (
+        midisend(offset, msg1, msg2, msg3);
       );
     );
   );
 
+  is_pending_reset ? (
+    user_input.latching_circle_of_fifth ? set_circle_of_fifth_with_midi_note(0);
+    user_input.latching_active_point ? set_active_point_with_midi_note(0);
+    user_input.latching_repetition ? set_repetition_with_midi_note(0);
+    user_input.latching_curvature ? set_curvature_with_midi_note(0);
+    is_pending_reset = 0;
+  );
+
+  is_pending_update_total_radius ? (set_total_radius(); is_pending_update_total_radius = 0;);
+  is_pending_update_rotation ? (update_rotations(0); is_pending_update_rotation = 0;);
+  is_pending_update_scale ? (update_scale(); is_pending_update_scale = 0;);
 
   maybe_send_note_off();
   samples_until_note_off -= samplesblock;
-  maybe_parse_input();
+  parse_input();
 
   plugin_toggled_active || user_input.is_holding? (
     update_rotations(samplesblock);
@@ -2616,7 +2963,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
   local(
     half_w, half_h,
   )
-  instance(in_section, l_clicked, l_clicked, pos_x, pos_y)
+  instance(in_section, l_clicking, l_clicked, pos_x, pos_y)
   global(
     mouse_x, mouse_y, mouse_cap,
     g_scaling,
@@ -2640,12 +2987,13 @@ slider31: 1<0, 1, 1>-Scale degree 7
     );
 
     uix_isMouseInRect(x, y, w, h) ? (
-      !mouse_cap ? (in_section = 1; l_clicked = 0;);
-      mouse_cap&1 && in_section ? l_clicked = 1;
+      !mouse_cap ? (in_section = 1; l_clicking = 0;);
+      mouse_cap&1 && in_section ? l_clicking = 1;
     ) : (
-      !mouse_cap ? in_section = l_clicked = 0;
+      !mouse_cap ? in_section = l_clicking = 0;
     );
-    l_clicked ? (
+    !mouse_cap && l_clicking ? (in_section = l_clicking = 0; l_clicked = 1;);
+    l_clicking ? (
       pos_x = max(0.0, min(1.0, (mouse_x - x) / w));
       pos_y = max(0.0, min(1.0, (h - mouse_y + y) / h));
     );
@@ -2663,6 +3011,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     currently_selected_circle, circle_count, a_circle_data,
     CIRC_PROPERTIES, CIRC_RADIUS_OFFSET, CIRC_ROTATION_SPEED_OFFSET, CIRC_MODE_OFFSET,
     MAX_CIRCLE_COUNT, COLOR.CIRCLE.BUTTON, MAX_RADIUS,
+    is_pending_update_total_radius,
     g_scaling, g_padding_size, gfx_x, gfx_y,
   )
   (
@@ -2679,6 +3028,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     );
     bt_remove.l_clicked ? (
       remove_circle();
+      automate_number_of_circles();
       bt_remove.l_clicked = 0;
     );
     bt_add.ui_drawTriggerButton(
@@ -2689,6 +3039,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     );
     bt_add.l_clicked ? (
       add_circle();
+      automate_number_of_circles();
       bt_add.l_clicked = 0;
     );
     bt_prev.ui_drawTriggerButton(
@@ -2699,6 +3050,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     );
     bt_prev.l_clicked ? (
       currently_selected_circle -= 1;
+      automate_currently_selected_circle();
       bt_prev.l_clicked = 0;
     );
     bt_next.ui_drawTriggerButton(
@@ -2709,6 +3061,7 @@ slider31: 1<0, 1, 1>-Scale degree 7
     );
     bt_next.l_clicked ? (
       currently_selected_circle += 1;
+      automate_currently_selected_circle();
       bt_next.l_clicked = 0;
     );
 
@@ -2725,10 +3078,17 @@ slider31: 1<0, 1, 1>-Scale degree 7
       w - scaled_bt_w - scaled_bt_w - g_padding_size - g_padding_size,
       h
     );
-    pad_xy.l_clicked ? (
+    pad_xy.l_clicking ? (
       a_circle_data[pad_radius_offset] = pad_xy.pos_x * MAX_RADIUS;
       a_circle_data[pad_speed_offset] = pad_xy.pos_y;
-      set_total_radius();
+      automate_circle_radius(currently_selected_circle, a_circle_data[pad_radius_offset]);
+      automate_circle_speed(currently_selected_circle, mode, a_circle_data[pad_speed_offset]);
+      is_pending_update_total_radius = 1;
+    );
+    pad_xy.l_clicked ? (
+      end_automate_circle_radius(currently_selected_circle);
+      end_automate_circle_speed(currently_selected_circle, mode);
+      pad_xy.l_clicked = 0;
     );
   );
 
@@ -2793,10 +3153,12 @@ slider31: 1<0, 1, 1>-Scale degree 7
     );
     sw_mode.l_clicked ? (
       a_circle_data[offset + CIRC_MODE_OFFSET] = (mode + 1) % CIRC_MODES;
+      automate_circle_mode(currently_selected_circle, a_circle_data[offset + CIRC_MODE_OFFSET]);
       sw_mode.l_clicked = 0;
     );
     sw_mode.r_clicked ? (
       a_circle_data[offset + CIRC_MODE_OFFSET] = (mode + 2) % CIRC_MODES;
+      automate_circle_mode(currently_selected_circle, a_circle_data[offset + CIRC_MODE_OFFSET]);
       sw_mode.r_clicked = 0;
     );
   );
