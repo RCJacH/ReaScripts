@@ -5,7 +5,7 @@ Link:
   Forum Thread: https://forum.cockos.com/showthread.php?p=2781013
   Github Repository: https://github.com/RCJacH/ReaScripts
 Release Date: May 2024
-Version: 0.5.1
+Version: 0.5.2
 Reference:
   https://www.youtube.com/watch?v=wn3td88w19E
 
@@ -16,6 +16,10 @@ About:
   based on circle rotations.
 
 Changelog:
+  * v0.5.2 (2024-05-30)
+    + add scale display slider
+    * fix default value for circle 4 hz slider
+    * fix slider not removing circle
   * v0.5.1 (2024-05-30)
     + add plugin base note slider
     * fix stuck note when manually changing position
@@ -69,6 +73,7 @@ slider9: 0<0, 1>-Note Length Millisecond
 slider10: 0<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Note Length Whole Note
 slider12: 24<24, 80, 1>-Plugin Base Note
 
+slider19: 0<0, 1, 1{Scale Degrees,Note Name}>-Scale Display
 slider20: 1<0, 1, 1>-Scale degree 1
 slider21: 0<0, 1, 1>-Scale degree #1
 slider22: 1<0, 1, 1>-Scale degree 2
@@ -101,7 +106,7 @@ slider55: 11290<16000, 300>-Circle 3 Speed Ms
 slider56: 23<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 3 Speed 4QN
 slider58: 1.0<0.0, 24.0>-Circle 4 Radius
 slider59: 0<0, 2, 1{Hz,Ms,4QN}>-Circle 4 Speed Mode
-slider60: 8.0<0.0, 4.0>-Circle 4 Speed Hz
+slider60: 2.0<0.0, 4.0>-Circle 4 Speed Hz
 slider61: 8150<16000, 300>-Circle 4 Speed Ms
 slider62: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Circle 4 Speed 4QN
 slider64: 1.0<0.0, 24.0>-Circle 5 Radius
@@ -937,6 +942,22 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
   );
 
 
+  function automate_plugin_power(v)
+  global(slider1)
+  (
+    slider1 = v;
+    slider_automate(slider1, 1);
+  );
+
+
+  function automate_trigger_mode(v)
+  global(sl2, slider2)
+  (
+    sl2 = slider2 = v;
+    slider_automate(slider2, 1);
+  );
+
+
   function automate_trigger_slider(mode, v)
   (
     v == -1 ? (
@@ -951,6 +972,13 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
   );
 
 
+  function automate_notelength_mode(v)
+  (
+    sl7 = slider7 = v;
+    slider_automate(slider7, 1);
+  );
+
+
   function automate_notelength_slider(mode, v)
   (
     mode == NOTELENGTH_PCT ? sl8 = slider8 = v :
@@ -959,6 +987,12 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     slider_automate(2 ^ (mode + 7));
   );
 
+
+  function automate_scale_display(mode)
+  (
+    sl19 = slider19 = mode;
+    slider_automate(slider19, 1);
+  );
 
 
   function automate_number_of_circles()
@@ -1200,7 +1234,7 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
       );
     ) : diff < 0 ? (
       loop(
-        diff,
+        abs(diff),
         remove_circle();
       );
     );
@@ -1283,6 +1317,8 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     sl12 = slider12;
   );
 
+  sl19 != slider19 ? (sl19 = is_scale_name_pitch_not_degree = slider19;);
+
   sl20 != slider21 ? (a_scale_buttons[0] = sl20 = slider20; is_pending_update_scale = 1;);
   sl21 != slider22 ? (a_scale_buttons[1] = sl21 = slider21; is_pending_update_scale = 1;);
   sl22 != slider23 ? (a_scale_buttons[2] = sl22 = slider22; is_pending_update_scale = 1;);
@@ -1296,7 +1332,7 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
   sl30 != slider31 ? (a_scale_buttons[10] = sl30 = slider30; is_pending_update_scale = 1;);
   sl31 != slider32 ? (a_scale_buttons[11] = sl31 = slider31; is_pending_update_scale = 1;);
 
-  sl35 != slider35 ? (sl35 = slider35; update_number_of_circles(sl35););
+  sl35 != slider35 ? (update_number_of_circles(slider35); sl35 = slider35;);
   sl36 != slider36 ? (
     currently_selected_circle = min(slider36, circle_count) - 1;
     sl36 = slider36;
@@ -2633,7 +2669,6 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     COLOR.COMMON.TRIGGERMODE.SWITCH,
     a_trigger_settings, TRIGGER_MODE_OFFSET,
     TRIGGER_THETA, TRIGGER_HZ, TRIGGER_MS, TRIGGER_WN,
-    slider2, sl2
   )
   (
     hw = ceil((w - g_padding_size) * 0.5);
@@ -2659,8 +2694,8 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
       trigger_str
     );
     bt_triggerMode.l_clicked ? (
-      sl2 = slider2 = a_trigger_settings[TRIGGER_MODE_OFFSET] = (trigger_mode + 1) % 4;
-      slider_automate(slider2);
+      a_trigger_settings[TRIGGER_MODE_OFFSET] = (trigger_mode + 1) % 4;
+      automate_trigger_mode(a_trigger_settings[TRIGGER_MODE_OFFSET]);
       bt_triggerMode.l_clicked = 0;
     );
     bt_triggerMode.l_dragging ? (
@@ -2691,7 +2726,6 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     NOTELENGTH_PCT, NOTELENGTH_MS, NOTELENGTH_WN,
     NOTELENGTH_MIN_PCT_MS, NOTELENGTH_MIN_PCT_WN,
     NOTELENGTH_MIN_MS_WN, NOTELENGTH_MIN_ALL,
-    slider7
   )
   (
     hw = ceil((w - g_padding_size) * 0.5);
@@ -2737,8 +2771,7 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     );
     bt_lengthMode.l_clicked ? (
       a_notelength_settings[NOTELENGTH_MODE_OFFSET] = (length_mode + 1) % NOTELENGTH_MODES;
-      slider7 = a_notelength_settings[NOTELENGTH_MODE_OFFSET];
-      slider_automate(slider7);
+      automate_notelength_mode(a_notelength_settings[NOTELENGTH_MODE_OFFSET]);
       bt_lengthMode.l_clicked = 0;
     );
   );
@@ -2982,6 +3015,7 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     );
     sw_name.l_clicked ? (
       is_scale_name_pitch_not_degree = !is_scale_name_pitch_not_degree;
+      automate_scale_display(is_scale_name_pitch_not_degree);
       sw_name.l_clicked = 0;
     );
     ui_drawSectionTitle(x, y, w, header_h, COLOR.SCALE.TEXT_HEADER, "SCALE SETTINGS");
@@ -3284,7 +3318,7 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
   global(
     w_scaling, h_scaling, g_scaling, g_border_size, g_padding_size,
     current_tonic, gfx_w, gfx_h, gfx_a, COLOR.OUTSIDE, COLOR.PANEL,
-    plugin_toggled_active, slider1, COLOR.PANEL.BUTTON, user_input.is_holding
+    plugin_toggled_active, COLOR.PANEL.BUTTON, user_input.is_holding
   )
   (
     w_scaling > h_scaling ? (
@@ -3329,8 +3363,8 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
       plugin_toggled_active || user_input.is_holding
     );
     bt_on.l_clicked ? (
-      slider1 = plugin_toggled_active = !plugin_toggled_active;
-      slider_automate(slider1);
+      plugin_toggled_active = !plugin_toggled_active;
+      automate_plugin_power(plugin_toggled_active);
       bt_on.l_clicked = 0;
     );
     ui_drawRightSection(left_w, header_h, scaled_w - left_w, lower_h);
