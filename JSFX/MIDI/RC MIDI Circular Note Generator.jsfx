@@ -5,7 +5,7 @@ Link:
   Forum Thread: https://forum.cockos.com/showthread.php?p=2781013
   Github Repository: https://github.com/RCJacH/ReaScripts
 Release Date: May 2024
-Version: 0.5
+Version: 0.5.1
 Reference:
   https://www.youtube.com/watch?v=wn3td88w19E
 
@@ -16,6 +16,9 @@ About:
   based on circle rotations.
 
 Changelog:
+  * v0.5.1 (2024-05-30)
+    + add plugin base note slider
+    * fix stuck note when manually changing position
   * v0.5 (2024-05-29)
     + add latched keyswitch
     + add sliders for circle controls
@@ -64,6 +67,7 @@ slider7: 0<0, 6, 1{Percent,Millisecond,Whole Note,min(Percent | Millisecond),min
 slider8: 0<0, 1>-Note Length Percent
 slider9: 0<0, 1>-Note Length Millisecond
 slider10: 0<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>-Note Length Whole Note
+slider12: 24<24, 80, 1>-Plugin Base Note
 
 slider20: 1<0, 1, 1>-Scale degree 1
 slider21: 0<0, 1, 1>-Scale degree #1
@@ -484,11 +488,9 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
   is_pending_update_scale = 0;
   is_pending_update_total_radius = 1;
   note_duration_in_samples = 0;
-  samples_until_note_off = -1;
   samples_until_flash = -1;
   scale_note_count = 0;
   note_choice.current = -1;
-  note_choice.last = -1;
   note_choice.octave = -1;
   note_choice.last_octave = -1;
   note_choice.scale_degree = -1;
@@ -1081,6 +1083,21 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
   );
 
 
+  function automate_plugin_base_note(plugin_base_note)
+  global(sl12, slider12)
+  (
+    sl12 = slider12 = plugin_base_note;
+    slider_automate(slider12);
+  );
+
+
+  function end_automate_plugin_base_note()
+  global(slider12)
+  (
+    slider_automate(slider12, 1);
+  );
+
+
   function initialize()
   local(offset)
   global(
@@ -1090,7 +1107,7 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     a_scale_notes, a_scale_buttons, is_initiated,
     a_trigger_settings, TRIGGER_SETTINGS_MEM_SIZE,
     a_notelength_settings, NOTELENGTH_SETTINGS_MEM_SIZE, NOTELENGTH_PCT_OFFSET,
-    is_pending_note_on, plugin_base_note
+    is_pending_note_on, plugin_base_note, samples_until_note_off, user_input.last,
   )
   (
     plugin_base_note = 48;
@@ -1139,6 +1156,8 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     a_scale_buttons[7] = 1;
     a_scale_buttons[9] = 1;
     a_scale_buttons[11] = 1;
+    samples_until_note_off = -1;
+    user_input.last = -1;
     is_initiated = 1;
   );
 
@@ -1256,6 +1275,12 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
   sl10 != slider10 ? (
     a_notelength_settings[NOTELENGTH_WN_OFFSET] = slider10 * 0.02;
     sl10 = slider10;
+  );
+
+  sl12 != slider12 ? (
+    plugin_base_note = slider12;
+    set_base_note(plugin_base_note);
+    sl12 = slider12;
   );
 
   sl20 != slider21 ? (a_scale_buttons[0] = sl20 = slider20; is_pending_update_scale = 1;);
@@ -2744,6 +2769,7 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     db_tonic.l_dragging ? (
       plugin_base_note = floor(db_tonic.pos_x * 12) + base_note.octave * 12;
       set_base_note(plugin_base_note);
+      automate_plugin_base_note(plugin_base_note);
       update_current_tonic();
     );
     db_tonic.overflow_x ? (
@@ -2755,9 +2781,14 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
         )
       );
       set_base_note(plugin_base_note);
+      automate_plugin_base_note(plugin_base_note);
       update_current_tonic();
       db_tonic.overflowed = 1;
-    )
+    );
+    db_tonic.l_dragged ? (
+      end_automate_plugin_base_note();
+      db_tonic.l_dragged = 0;
+    );
   );
 
 
