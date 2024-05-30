@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="9a9677f0ae383cca9a5b94480cbac2ca91f08a99" name="RCJacH Scripts">
+<index version="1" commit="ef2d1684cc644fb2f0804cb11d057fa5efbc6be6" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -584,6 +584,12 @@ Potential Addition:
 * fix default value for circle 4 hz slider
 * fix slider not removing circle]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/9a9677f0ae383cca9a5b94480cbac2ca91f08a99/JSFX/MIDI/RC%20MIDI%20Circular%20Note%20Generator.jsfx</source>
+      </version>
+      <version name="0.5.3" author="RCJacH" time="2024-05-30T18:18:43Z">
+        <changelog><![CDATA[* fix adding back removed circle does not retain radius setting
+* fix scale not updating when set through keyswitch
+* fix circles not updating displayed rotation upon reset]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/ef2d1684cc644fb2f0804cb11d057fa5efbc6be6/JSFX/MIDI/RC%20MIDI%20Circular%20Note%20Generator.jsfx</source>
       </version>
     </reapack>
     <reapack name="RC MIDI Harmonizer.jsfx" type="effect" desc="RC MIDI Harmonizer">
