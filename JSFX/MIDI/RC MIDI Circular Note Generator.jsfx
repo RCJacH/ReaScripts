@@ -5,7 +5,7 @@ Link:
   Forum Thread: https://forum.cockos.com/showthread.php?p=2781013
   Github Repository: https://github.com/RCJacH/ReaScripts
 Release Date: May 2024
-Version: 0.5.2
+Version: 0.5.3
 Reference:
   https://www.youtube.com/watch?v=wn3td88w19E
 
@@ -16,6 +16,10 @@ About:
   based on circle rotations.
 
 Changelog:
+  * v0.5.3 (2024-05-31)
+    * fix adding back removed circle does not retain radius setting
+    * fix scale not updating when set through keyswitch
+    * fix circles not updating displayed rotation upon reset
   * v0.5.2 (2024-05-30)
     + add scale display slider
     * fix default value for circle 4 hz slider
@@ -920,7 +924,8 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
   (
     currently_selected_circle = circle_count;
     offset = circle_count * CIRC_PROPERTIES;
-    a_circle_data[offset + CIRC_RADIUS_OFFSET] = 1.0;
+    !a_circle_data[offset + CIRC_RADIUS_OFFSET] ?
+      a_circle_data[offset + CIRC_RADIUS_OFFSET] = 1.0;
     !a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] ?
       a_circle_data[offset + CIRC_SPEED_HZ_OFFSET] = 0.5;
     !a_circle_data[offset + CIRC_SPEED_MS_OFFSET] ?
@@ -1660,11 +1665,10 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
 
 
   function set_scale_from_note_on(i, is_on)
-  global(a_scale_buttons, a_scale_notes)
+  global(a_scale_buttons, a_scale_notes, is_pending_update_scale)
   (
-    a_scale_notes[i] = is_on;
     a_scale_buttons[i] = is_on;
-    update_scale_sliders(i, is_on);
+    is_pending_update_scale = 1;
   );
 
 
@@ -1703,7 +1707,8 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
   function reset_all_circle_rotations()
   local(i)
   global(
-    a_circle_data, circle_count, CIRC_PROPERTIES, CIRC_ROTATION_OFFSET
+    a_circle_data, circle_count, CIRC_PROPERTIES, CIRC_ROTATION_OFFSET,
+    is_pending_update_rotation,
   )
   (
     i = 0;
@@ -1711,6 +1716,7 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
       a_circle_data[i * CIRC_PROPERTIES + CIRC_ROTATION_OFFSET] = 0.0;
       i += 1;
     );
+    is_pending_update_rotation = 1;
   );
 
 
@@ -1760,6 +1766,8 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
     );
   );
 
+  parse_input();
+
   is_pending_reset ? (
     user_input.latching_circle_of_fifth ? set_circle_of_fifth_with_midi_note(0);
     user_input.latching_active_point ? set_active_point_with_midi_note(0);
@@ -1774,7 +1782,6 @@ slider86: 25<0, 50, 1{2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/
 
   maybe_send_note_off();
   samples_until_note_off -= samplesblock;
-  parse_input();
 
   plugin_toggled_active || user_input.is_holding? (
     update_rotations(samplesblock);
