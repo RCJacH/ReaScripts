@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="ef2d1684cc644fb2f0804cb11d057fa5efbc6be6" name="RCJacH Scripts">
+<index version="1" commit="46b9ffb71124c72a35bcf76c79ed36e98043e435" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -419,6 +419,31 @@ Potential Addition:
       </version>
     </reapack>
   </category>
+  <category name="JSFX/Audio/RCModEQ">
+    <reapack name="RCModEQ.jsfx" type="effect" desc="RCModEQ">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 RCModEQ is a compact JSFX equaliser with modulation capacity for REAPER. It lets you stack up to eight filters and drive their parameters with up to eight shape-selectable and deformable LFOs.\par}
+}
+]]></description>
+        <link rel="website">https://github.com/RCJacH/ReaScripts</link>
+      </metadata>
+      <version name="1.0.0" author="RCJacH" time="2025-08-01T22:06:09Z">
+        <changelog><![CDATA[* v1.0.0 (2025-08-01)
+  + Initial Release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/RCModEQ.jsfx</source>
+        <source file="dependencies/eq_node.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/dependencies/eq_node.jsfx-inc</source>
+        <source file="dependencies/hsl_colors.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/dependencies/hsl_colors.jsfx-inc</source>
+        <source file="dependencies/lfo.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/dependencies/lfo.jsfx-inc</source>
+        <source file="dependencies/router.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/dependencies/router.jsfx-inc</source>
+        <source file="dependencies/sidechain.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/dependencies/sidechain.jsfx-inc</source>
+        <source file="dependencies/svf_filter.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/dependencies/svf_filter.jsfx-inc</source>
+      </version>
+    </reapack>
+  </category>
   <category name="JSFX/Game">
     <reapack name="RCMShip Perfect Pitch.jsfx" type="effect" desc="RCMShip Perfect Pitch">
       <metadata>
@@ -767,11 +792,11 @@ LRC
     </reapack>
   </category>
   <metadata>
-    <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+    <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 ReaScripts\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaScripts\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 This is a collection of JSFX and Lua Scripts that I have written for REAPER DAW.\par}
 }
 ]]></description>
