@@ -1,0 +1,707 @@
+desc: RC LFO
+/*
+  Ideas taken from Surge and Vital
+*/
+
+@init
+
+lfo_offset_inc = 0;
+LFO_STATE_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_TRIGGER_MODE_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_RATE_MODE_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_SHAPE_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_SPREAD_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_HZ_RATE_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_SYNC_RATE_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_START_PHASE_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_DEFORM_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_AMP_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+
+LFO_MOD_OFFSET = lfo_offset_inc;
+LFO_RATE_MOD_OFFSET = lfo_offset_inc;
+LFO_RATE_MOD_L_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_RATE_MOD_R_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_START_PHASE_MOD_OFFSET = lfo_offset_inc;
+LFO_START_PHASE_MOD_L_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_START_PHASE_MOD_R_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_DEFORM_MOD_OFFSET = lfo_offset_inc;
+LFO_DEFORM_MOD_L_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_DEFORM_MOD_R_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_AMP_MOD_OFFSET = lfo_offset_inc;
+LFO_AMP_MOD_L_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_AMP_MOD_R_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_MOD_MEM_SIZE = lfo_offset_inc - LFO_MOD_OFFSET;
+
+LFO_TOTAL_PARAM_MEM = lfo_offset_inc;
+
+LFO_PHASE_OFFSET = lfo_offset_inc;
+LFO_PHASE_L_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_PHASE_R_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_V_OFFSET = lfo_offset_inc;
+LFO_V_L_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_V_R_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_PREV_RND_OFFSET = lfo_offset_inc;
+LFO_PREV_RND_L_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_PREV_RND_R_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_CUR_RND_OFFSET = lfo_offset_inc;
+LFO_CUR_RND_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_CUR_RND_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_MIDI_TRIG_OFFSET = lfo_offset_inc; lfo_offset_inc += 1; // set to offset in @block on Note-On
+
+LFO_TOTAL_MEM = lfo_offset_inc;
+LFO_TOTAL_RUNNING_VAR_MEM = LFO_TOTAL_MEM - LFO_TOTAL_PARAM_MEM;
+
+LFO_MEM_POS = 0;
+
+// Constants
+SAMPLE_RATE = srate;
+ONE_OVER_SAMPLE_RATE = 1.0 / srate;
+
+LFO_MIN_HZ = 1. / 128.;
+LFO_MAX_HZ = 512.;
+LFO_HZ_OCTAVES = 16.;
+
+LFO_TRIGGER_MODE_FREERUN = 0;
+LFO_TRIGGER_MODE_SYNC = 1;
+LFO_TRIGGER_MODE_BAR_RESET = 2;
+LFO_TRIGGER_MODE_MIDI_RESET = 3;
+LFO_RATE_MODE_HZ = 0;
+LFO_RATE_MODE_QN = 1;
+LFO_RATE_MODE_BAR = 2;
+
+LFO_SYNC_TIME_LOOKUP_TABLE = 0;
+LFO_SYNC_TIME_LOOKUP_TABLE_COUNT = 0;
+
+prev_ts_change_play_position = 0;
+prev_play_state = play_state & 1;
+prev_ts_num     = ts_num;
+prev_ts_denom   = ts_denom;
+
+// ───────────── HELPERS ─────────────
+function round(x) global() ( floor(x + .5); );
+function clamp(v, mini, maxi) global() ( max(mini, min(maxi, v)) );
+function mod_phase(phase) global() ( phase - floor(phase) );
+function bend2(t, d) global() ( t + 4.5 * d * sin(2. * $pi * t) / (2. * $pi); );
+function hz_from_rate(rate)
+  global(LFO_MIN_HZ, LFO_MAX_HZ, LFO_HZ_OCTAVES)
+  (
+    LFO_MIN_HZ * exp(log(LFO_MAX_HZ / LFO_MIN_HZ) * rate);
+  );
+function rate_from_hz(hz)
+  global(LFO_MIN_HZ, LFO_MAX_HZ, LFO_HZ_OCTAVES)
+  (
+      hz = max(LFO_MIN_HZ, min(LFO_MAX_HZ, hz));
+      log(hz / LFO_MIN_HZ) / log(LFO_MAX_HZ / LFO_MIN_HZ);
+  );
+function ms_from_hz(hz) global() ( 1000. / hz; );
+
+function get_sync_string(v)
+  local(i)
+  global(LFO_SYNC_TIME_LOOKUP_TABLE_COUNT)
+  (
+    i = floor(v * LFO_SYNC_TIME_LOOKUP_TABLE_COUNT);
+    !i ? "8" : // 8 measures in 4/4
+    i == 1 ? "7" : // 7 measures in 4/4
+    i == 2 ? "6" : // 6 measures in 4/4
+    i == 3 ? "5" : // 5 measures in 4/4
+    i == 4 ? "4" : // 4 measures in 4/4
+    i == 5 ? "3" : // 3 measures in 4/4
+    i == 6 ? "2" : // 2 measures in 4/4
+    i == 7 ? "7/4" : // double dotted whole note
+    i == 8 ? "3/2" : // dotted whole note
+    i == 9 ? "5/4" : // 5 quarter notes
+    i == 10 ? "1" : // 1 measure
+    i == 11 ? "7/8" : // 7 8th notes
+    i == 12 ? "6/7" : // 6 quarter note septuplet
+    i == 13 ? "4/5" : // 4 quarter note quintuplet
+    i == 14 ? "3/4" : // dotted half note
+    i == 15 ? "5/7" : // 5 quarter note septuplet
+    i == 16 ? "2/3" : // 2 half note triplet
+    i == 17 ? "5/8" : // 5 8th notes
+    i == 18 ? "3/5" : // 3 quarter note quintuplet
+    i == 19 ? "4/7" : // 4 quarter note septuplet
+    i == 20 ? "1/2" : // half note
+    i == 21 ? "3/7" : // 3 quarter note septuplet
+    i == 22 ? "2/5" : // 2 quarter note quintuplet
+    i == 23 ? "3/8" : // dotted 8th notes
+    i == 24 ? "5/14" : // 5 8th notes septuplet
+    i == 25 ? "1/3" : // half note triplet
+    i == 26 ? "3/10" : // 3 8th notes quintuplet
+    i == 27 ? "2/7" : // 2 quarter note septuplet
+    i == 28 ? "5/18" : // 5 8th note nonuplet
+    i == 29 ? "1/4" : // quarter note
+    i == 30 ? "2/9" : // 2 quarter note nonuplet
+    i == 31 ? "3/14" : // 3 8th note septuplet
+    i == 32 ? "1/5" : // quarter note quintuplet
+    i == 33 ? "7/36" : // 7 16th note nonuplet
+    i == 34 ? "3/16" : // dotted 16th note
+    i == 35 ? "5/28" : // 5 16th note septuplet
+    i == 36 ? "1/6" : // quarter note triplet
+    i == 37 ? "3/20" : // 3 16th note quintuplet
+    i == 38 ? "1/7" : // quarter note septuplet
+    i == 39 ? "5/36" : // 5 16th note nonuplet
+    i == 40 ? "1/8" : // 8th note
+    i == 41 ? "1/9" : // quarter note nonuplet
+    i == 42 ? "3/28" : // 3 16th note septuplet
+    i == 43 ? "1/10" : // 8th note quintuplet
+    i == 44 ? "3/32" : // dotted 16th note
+    i == 45 ? "1/12" : // 8th note triplet
+    i == 46 ? "1/14" : // 8th note septuplet
+    i == 47 ? "1/16" : // 16th note
+    i == 48 ? "3/64" : // dotted 32th note
+    i == 49 ? "1/18" : // 8th note nonuplet
+    i == 50 ? "1/20" : // 16th note quintuplet
+    i == 51 ? "1/24" : // 16th note triplet
+    i == 52 ? "1/28" : // 16th note septuplet
+    i == 53 ? "1/32" : // 32th note
+    i == 54 ? "1/36" : // 16th note nonuplet
+    i == 55 ? "1/64" : // 64th note
+    "1/128"; // 128th note
+  );
+
+function create_lfo_sync_time_lookup_table(inc*)
+  local(mem, i)
+  global(LFO_SYNC_TIME_LOOKUP_TABLE, LFO_SYNC_TIME_LOOKUP_TABLE_COUNT)
+  (
+    LFO_SYNC_TIME_LOOKUP_TABLE = inc;
+    mem = LFO_SYNC_TIME_LOOKUP_TABLE;
+    i = 0;
+    mem[i] = 32; i += 1; // 8 measures in 4/4
+    mem[i] = 28; i += 1; // 7 measures in 4/4
+    mem[i] = 24; i += 1; // 6 measures in 4/4
+    mem[i] = 20; i += 1; // 5 measures in 4/4
+    mem[i] = 16; i += 1; // 4 measures in 4/4
+    mem[i] = 12; i += 1; // 3 measures in 4/4
+    mem[i] = 8; i += 1; // 2 measures in 4/4
+    mem[i] = 7 ; i += 1; // double dotted whole note
+    mem[i] = 6; i += 1; // dotted whole note
+    mem[i] = 5; i += 1; // 5 quarter notes
+    mem[i] = 4; i += 1; // 1 measure
+    mem[i] = 7 / 2; i += 1; // 7 8th notes
+    mem[i] = 24 / 7; i += 1; // 6 quarter note septuplet
+    mem[i] = 16 / 5; i += 1; // 4 quarter note quintuplet
+    mem[i] = 3; i += 1; // dotted half note
+    mem[i] = 20 / 7; i += 1; // 5 quarter note septuplet
+    mem[i] = 8 / 3; i += 1; // 2 half note triplet
+    mem[i] = 5 / 2; i += 1; // 5 8th notes
+    mem[i] = 12 / 5; i += 1; // 3 quarter note quintuplet
+    mem[i] = 16 / 7; i += 1; // 4 quarter note septuplet
+    mem[i] = 2; i += 1; // half note
+    mem[i] = 12 / 7; i += 1; // 3 quarter note septuplet
+    mem[i] = 8 / 5; i += 1; // 2 quarter note quintuplet
+    mem[i] = 3 / 2; i += 1; // dotted 8th notes
+    mem[i] = 10 / 7; i += 1; // 5 8th notes septuplet
+    mem[i] = 4 / 3; i += 1; // half note triplet
+    mem[i] = 6 / 5; i += 1; // 3 8th notes quintuplet
+    mem[i] = 8 / 7; i += 1; // 2 quarter note septuplet
+    mem[i] = 10 / 9; i += 1; // 5 8th note nonuplet
+    mem[i] = 1.; i += 1; // quarter note
+    mem[i] = 8 / 9; i += 1; // 2 quarter note nonuplet
+    mem[i] = 6 / 7; i += 1; // 3 8th note septuplet
+    mem[i] = 4 / 5; i += 1; // quarter note quintuplet
+    mem[i] = 7 / 9; i += 1; // 7 16th note nonuplet
+    mem[i] = 3 / 4; i += 1; // dotted 16th note
+    mem[i] = 5 / 7; i += 1; // 5 16th note septuplet
+    mem[i] = 2 / 3; i += 1; // quarter note triplet
+    mem[i] = 3 / 5; i += 1; // 3 16th note quintuplet
+    mem[i] = 4 / 7; i += 1; // quarter note septuplet
+    mem[i] = 5 / 9; i += 1; // 5 16th note nonuplet
+    mem[i] = 1. / 2; i += 1; // 8th note
+    mem[i] = 4 / 9; i += 1; // quarter note nonuplet
+    mem[i] = 3 / 7; i += 1; // 3 16th note septuplet
+    mem[i] = 2 / 5; i += 1; // 8th note quintuplet
+    mem[i] = 3 / 8; i += 1; // dotted 16th note
+    mem[i] = 1. / 3; i += 1; // 8th note triplet
+    mem[i] = 2 / 7; i += 1; // 8th note septuplet
+    mem[i] = 1. / 4; i += 1; // 16th note
+    mem[i] = 3 / 16; i += 1; // dotted 32th note
+    mem[i] = 2 / 9; i += 1; // 8th note nonuplet
+    mem[i] = 1. / 5; i += 1; // 16th note quintuplet
+    mem[i] = 1. / 6; i += 1; // 16th note triplet
+    mem[i] = 1. / 7; i += 1; // 16th note septuplet
+    mem[i] = 1. / 8; i += 1; // 32th note
+    mem[i] = 1. / 9; i += 1; // 16th note nonuplet
+    mem[i] = 1. / 16; i += 1; // 64th note
+    mem[i] = 1. / 32; i += 1; // 128th note
+    LFO_SYNC_TIME_LOOKUP_TABLE_COUNT = i;
+    inc += i;
+  );
+
+
+function get_sync_qn_ratio(pct)
+  global(LFO_SYNC_TIME_LOOKUP_TABLE, LFO_SYNC_TIME_LOOKUP_TABLE_COUNT)
+  (
+    LFO_SYNC_TIME_LOOKUP_TABLE[floor(pct * LFO_SYNC_TIME_LOOKUP_TABLE_COUNT * .99999999)];
+  );
+
+function qn_time_to_full_measure()
+  global(ts_num, ts_denom)
+  (
+    4.* ts_num / ts_denom;
+  );
+
+function ms_from_sync(rate, tempo, is_bar)
+  local(ratio)
+  global()
+  (
+    ratio = get_sync_qn_ratio(rate);
+    is_bar ? ratio *= qn_time_to_full_measure();
+    ms_from_hz(tempo  / 60. / ratio);
+  );
+
+// ───────────── MAIN ─────────────
+function init_LFOs(lfo_count, mem_inc*)
+  local(i, inc)
+  global(LFO_MEM_POS, LFO_TOTAL_MEM)
+  (
+    create_lfo_sync_time_lookup_table(mem_inc);
+    LFO_MEM_POS = mem_inc;
+    mem_inc += lfo_count;
+    i = inc = 0;
+    loop(lfo_count,
+      LFO_MEM_POS[i] = mem_inc + inc;
+      inc += LFO_TOTAL_MEM;
+      i += 1;
+    );
+    memset(mem_inc, 0, inc);
+    mem_inc += inc;
+  );
+
+function get_LFO_mem_pos(idx)
+  global(LFO_MEM_POS)
+  (
+    LFO_MEM_POS[idx];
+  );
+
+function toggle_LFO_initialized(idx, is_on)
+  local(mem)
+  global(LFO_STATE_OFFSET)
+  (
+    mem = get_LFO_mem_pos(idx);
+    is_on ? (
+      mem[LFO_STATE_OFFSET] |= 1;
+    ) : (
+      mem[LFO_STATE_OFFSET] = 0;
+    );
+  );
+
+function is_LFO_initialized(idx)
+  global(LFO_STATE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_STATE_OFFSET]&1;
+  );
+
+function toggle_LFO_active(idx, is_active)
+  local(mem)
+  global(LFO_STATE_OFFSET)
+  (
+    mem = get_LFO_mem_pos(idx);
+    is_active ? (
+      mem[LFO_STATE_OFFSET] = 3;
+    ) : (
+      mem[LFO_STATE_OFFSET] &= $~1;
+    );
+  );
+
+function is_LFO_active(idx)
+  instance(start_mem_pos)
+  global(LFO_STATE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_STATE_OFFSET]&2;
+  );
+
+function set_LFO_trigger_mode(idx, v)
+  global(LFO_TRIGGER_MODE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_TRIGGER_MODE_OFFSET] = v;
+  );
+
+function get_LFO_trigger_mode(idx)
+  global(LFO_TRIGGER_MODE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_TRIGGER_MODE_OFFSET];
+  );
+
+function set_LFO_rate_mode(idx, v)
+  global(LFO_RATE_MODE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_RATE_MODE_OFFSET] = v;
+  );
+
+function get_LFO_rate_mode(idx)
+  global(LFO_RATE_MODE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_RATE_MODE_OFFSET];
+  );
+
+function set_LFO_shape(idx, v)
+  global(LFO_SHAPE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_SHAPE_OFFSET] = v;
+  );
+
+function get_LFO_shape(idx)
+  global(LFO_SHAPE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_SHAPE_OFFSET];
+  );
+
+function set_LFO_spread(idx, v)
+  local(mem, delta, prev)
+  global(LFO_SPREAD_OFFSET, LFO_PHASE_L_OFFSET, LFO_PHASE_R_OFFSET)
+  (
+    mem = get_LFO_mem_pos(idx);
+    delta = 0.5 * (v - mem[LFO_SPREAD_OFFSET]);
+    delta ? (
+      /* L phase gets −delta, R phase +delta */
+      mem[LFO_PHASE_L_OFFSET] = mod_phase(mem[LFO_PHASE_L_OFFSET] - delta);
+      mem[LFO_PHASE_R_OFFSET + 1] = mod_phase(mem[LFO_PHASE_R_OFFSET + 1] + delta);
+      mem[LFO_SPREAD_OFFSET] = v;
+    );
+  );
+
+function get_LFO_spread(idx)
+  global(LFO_SPREAD_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_SPREAD_OFFSET];
+  );
+
+function adjust_LFO_spread(idx, v)
+  local(mem)
+  global(LFO_SPREAD_OFFSET)
+  (
+    mem = get_LFO_mem_pos(idx);
+    set_LFO_spread(idx, clamp(mem[LFO_SPREAD_OFFSET] + v, -1., 1.));
+    mem[LFO_SPREAD_OFFSET];
+  );
+
+function set_LFO_hz_rate(idx, v)
+  global(LFO_HZ_RATE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_HZ_RATE_OFFSET] = v;
+  );
+
+function get_LFO_hz_rate(idx)
+  global(LFO_HZ_RATE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_HZ_RATE_OFFSET];
+  );
+
+function set_LFO_sync_rate(idx, v)
+  global(LFO_SYNC_RATE_OFFSET, LFO_SYNC_TIME_LOOKUP_TABLE_COUNT)
+  (
+    get_LFO_mem_pos(idx)[LFO_SYNC_RATE_OFFSET] = v / LFO_SYNC_TIME_LOOKUP_TABLE_COUNT;
+  );
+
+function get_LFO_sync_rate(idx)
+  global(LFO_SYNC_RATE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_SYNC_RATE_OFFSET];
+  );
+
+function set_LFO_start_phase(idx, v)
+  global(LFO_START_PHASE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_START_PHASE_OFFSET] = v;
+  );
+
+function get_LFO_start_phase(idx)
+  global(LFO_START_PHASE_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_START_PHASE_OFFSET];
+  );
+
+function set_LFO_deform(idx, v)
+  global(LFO_DEFORM_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_DEFORM_OFFSET] = v;
+  );
+
+function get_LFO_deform(idx)
+  global(LFO_DEFORM_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_DEFORM_OFFSET];
+  );
+
+function set_LFO_amp(idx, v)
+  global(LFO_AMP_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_AMP_OFFSET] = v;
+  );
+
+function get_LFO_amp(idx)
+  global(LFO_AMP_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_AMP_OFFSET];
+  );
+
+function get_LFO_value(idx, channel)
+  global(LFO_V_L_OFFSET)
+  (
+    get_LFO_mem_pos(idx)[LFO_V_L_OFFSET + channel];
+  );
+
+function set_LFO_param(
+    idx, trigger_mode, rate_mode, shape, spread, hz_rate, sync_rate, start_phase, deform, amp
+  )
+  global()
+  (
+    set_LFO_trigger_mode(idx, trigger_mode);
+    set_LFO_rate_mode(idx, rate_mode);
+    set_LFO_shape(idx, shape);
+    set_LFO_spread(idx, spread);
+    set_LFO_hz_rate(idx, hz_rate);
+    set_LFO_sync_rate(idx, sync_rate);
+    set_LFO_start_phase(idx, start_phase);
+    set_LFO_deform(idx, deform);
+    set_LFO_amp(idx, amp);
+  );
+
+function on_LFO_slider_change(
+    idx, active, trigger_mode, rate_mode,
+    shape, spread, hz_rate, sync_rate, start_phase, deform, amp
+  )
+  global()
+  (
+    toggle_LFO_active(idx, active);
+    set_LFO_param(
+      idx, trigger_mode, rate_mode, shape, spread, hz_rate, sync_rate, start_phase, deform, amp
+    );
+  );
+
+function reset_LFO_modulation(idx)
+  local(mem)
+  global(LFO_MOD_OFFSET, LFO_MOD_MEM_SIZE)
+  (
+    memset(get_LFO_mem_pos(idx) + LFO_MOD_OFFSET, 0, LFO_MOD_MEM_SIZE);
+  );
+
+function reset_all_LFO_modulations(lfo_count)
+  local(i)
+  (
+    i = 0;
+    loop(lfo_count,
+      reset_LFO_modulation(i);
+      i += 1;
+    );
+  );
+
+function reset_LFO_phase(idx)
+  local(mem, i, start_phase, phase, spread)
+  global(
+    LFO_PHASE_OFFSET, LFO_SPREAD_OFFSET, LFO_MIDI_TRIG_OFFSET,
+    LFO_START_PHASE_OFFSET, LFO_START_PHASE_MOD_OFFSET,
+  )
+  (
+    i = 0;
+    mem = get_LFO_mem_pos(idx);
+    spread = mem[LFO_SPREAD_OFFSET];
+    loop(2,
+      start_phase = mem[LFO_START_PHASE_OFFSET]
+                  + mem[LFO_START_PHASE_MOD_OFFSET+i];
+      start_phase = mod_phase(start_phase);
+
+      /* L = −½·spread   ···   R = +½·spread */
+      phase = start_phase + (i ? +0.5*spread : -0.5*spread);
+      phase = mod_phase(phase);
+      mem[LFO_PHASE_OFFSET+i] = phase;
+      i += 1;
+    );
+
+    mem[LFO_MIDI_TRIG_OFFSET] = 0;         // clear one-shot flag
+  );
+
+function _get_amp_from_shape_and_phase(shape, deform, phase, prev_rnd, cur_rnd)
+  local(raw, curve)
+  global()
+  (
+    shape == 0 ? ( // Sin
+      raw = .5 + .5 *sin((phase - .25) * 2. * $pi);
+      sign(raw - .5) * pow(abs(raw * 2. - 1.), pow(4, deform));
+    ) :
+    shape == 1 ? ( // Tri
+      raw = abs(mod_phase(phase + .5) * 2. - 1.) * 2. - 1.;
+      deform >= - 1. / 4.5 ? bend2(raw, deform) : bend2(raw , deform) / (1. - (deform + 1. / 4.5) / 1.6);
+    ) :
+    shape == 2 ? ( // Ramp Up
+      pow(phase, pow(4, deform)) * 2. - 1.;
+    ) :
+    shape == 3 ? ( // Ramp Down
+      (1. - pow(phase, pow(4, deform))) * 2. - 1.;
+    ) :
+    shape == 4 ? (
+      sign(sin((phase - .5 - deform * .5)));
+    ) : // Square
+    shape == 5 ?  prev_rnd * 2. - 1.: // Sample & Hold
+    shape == 6 ?  ( // Smooth Random
+      curve = .5 - .5 * cos(phase * $pi);   // half-sine easing (ease-in/out)
+      (prev_rnd + (cur_rnd - prev_rnd) * curve) * 2. - 1.;
+    );
+  );
+
+function _get_lfo_inc(rate, rate_mode)
+  local(ratio, hz)
+  (
+    (rate_mode == LFO_RATE_MODE_HZ) ? (
+      // ─ Hz mode (exp curve keeps low end usable)
+      hz_from_rate(rate) * ONE_OVER_SAMPLE_RATE;
+    ) : (
+      // ─ QN / BAR share the same discrete table
+      ratio = get_sync_qn_ratio(rate);
+
+      (rate_mode == LFO_RATE_MODE_BAR) ?
+          ratio *= qn_time_to_full_measure(ratio);
+
+      tempo  / 60. * ONE_OVER_SAMPLE_RATE / ratio;
+    );
+  );
+
+function maybe_parse_LFO_midi_reset(idx, offset)
+  local(mem)
+  global(LFO_TRIGGER_MODE_OFFSET, LFO_TRIGGER_MODE_MIDI_RESET)
+  (
+    mem = get_LFO_mem_pos(idx);
+    mem[LFO_TRIGGER_MODE_OFFSET] = (
+      mem[LFO_TRIGGER_MODE_OFFSET] == LFO_TRIGGER_MODE_MIDI_RESET ?
+        offset : 0;
+    );
+  );
+
+function maybe_parse_all_LFO_midi_reset(lfo_count, offset)
+  local(i)
+  (
+    i = 0;
+    loop(lfo_count,
+      maybe_parse_LFO_midi_reset(i, offset);
+      i += 1;
+    );
+  );
+
+/*────────────────────────────────────────────────────────────────────────
+    Phase-reset helper
+    ──────────────────
+    Call once per LFO at the top of the audio-block loop.
+    It will:
+      • detect the chosen trigger edge,
+      • call  reset_LFO_phase(idx)  only when that edge fires, and
+      • keep its own book-keeping data.
+------------------------------------------------------------------------*/
+function maybe_reset_LFO_phase(idx)
+  local(mem, trig, reset, beats, beatsPerBarQN, bar_idx)
+  global(
+        tempo, play_state, play_position, ts_num, ts_denom,
+        prev_ts_change_play_position,
+
+        prev_play_state, prev_ts_num, prev_ts_denom,
+
+        LFO_TRIGGER_MODE_OFFSET, LFO_PREV_BAR_OFFSET,
+        LFO_MIDI_TRIG_OFFSET,
+
+        LFO_TRIGGER_MODE_FREERUN,
+        LFO_TRIGGER_MODE_SYNC,
+        LFO_TRIGGER_MODE_BAR_RESET,
+        LFO_TRIGGER_MODE_MIDI_RESET
+  )
+  (
+      mem   = get_LFO_mem_pos(idx);
+      trig  = mem[LFO_TRIGGER_MODE_OFFSET];
+      reset = 0;                           // default: no reset
+
+      /*──────────────── 1. SYNC (transport start) ───────────────*/
+      (trig == LFO_TRIGGER_MODE_SYNC) ?
+      (
+        reset = play_state&1 && !prev_play_state;
+      );
+
+      /*──────────────── 2. BAR_RESET (new bar or meter change) ──*/
+      (trig == LFO_TRIGGER_MODE_BAR_RESET) ?
+      (
+        (ts_num != prev_ts_num) || (ts_denom != prev_ts_denom) ||
+          (play_position < prev_ts_change_play_position) ?
+            prev_ts_change_play_position = floor(play_position);
+        beats = play_position - prev_ts_change_play_position;
+        reset = (beats % ts_num) == 0;
+      );
+
+      /*──────────────── 3. MIDI_RESET (count down) ───────────*/
+      (trig == LFO_TRIGGER_MODE_MIDI_RESET) ?
+      (
+        mem[LFO_MIDI_TRIG_OFFSET] ? (
+          mem[LFO_MIDI_TRIG_OFFSET] -= 1;
+          reset = !mem[LFO_MIDI_TRIG_OFFSET];
+        );
+      );
+
+      /*──────────────── 4. Apply the reset ──────────────────────*/
+      reset ? reset_LFO_phase(idx);
+  );
+
+function process_LFO(idx)
+  local(
+    mem, spread, trigger_mode, rate_mode, shape, chan,
+    rate, start_phase, deform, amp, prev_rnd, cur_rnd,
+    inc, phase, spread_phase, v, v_l, v_r, out
+  )
+  global(
+    ONE_OVER_SAMPLE_RATE, LFO_SPREAD_OFFSET, LFO_TRIGGER_MODE_OFFSET,
+    LFO_RATE_MODE_OFFSET, LFO_HZ_RATE_OFFSET, LFO_SYNC_RATE_OFFSET,
+    LFO_RATE_MOD_OFFSET, LFO_SHAPE_OFFSET,
+    LFO_START_PHASE_OFFSET, LFO_START_PHASE_MOD_OFFSET,
+    LFO_DEFORM_OFFSET, LFO_DEFORM_MOD_OFFSET, LFO_AMP_OFFSET, LFO_AMP_MOD_OFFSET,
+    LFO_V_OFFSET, LFO_PHASE_OFFSET, LFO_PREV_RND_OFFSET, LFO_CUR_RND_OFFSET
+  )
+  (
+    mem = get_LFO_mem_pos(idx);
+    spread = mem[LFO_SPREAD_OFFSET];
+    trigger_mode = mem[LFO_TRIGGER_MODE_OFFSET];
+    rate_mode = mem[LFO_RATE_MODE_OFFSET];
+    shape = mem[LFO_SHAPE_OFFSET];
+    chan = 0;
+    loop(2,
+      rate = mem[rate_mode ? LFO_SYNC_RATE_OFFSET : LFO_HZ_RATE_OFFSET] + mem[LFO_RATE_MOD_OFFSET + chan];
+      rate = clamp(rate, 0., 1.);
+      start_phase = mem[LFO_START_PHASE_OFFSET] + mem[LFO_START_PHASE_MOD_OFFSET + chan];
+      start_phase = clamp(start_phase, 0., 1.);
+      deform = mem[LFO_DEFORM_OFFSET] + mem[LFO_DEFORM_MOD_OFFSET + chan];
+      deform = clamp(deform, -1., 1.);
+      inc = _get_lfo_inc(rate, rate_mode);
+      phase = mem[LFO_PHASE_OFFSET + chan];
+      phase += inc;
+      phase -= floor(phase);
+
+      spread_phase = mod_phase(phase + spread * (chan - .5) + 2.);
+
+      prev_rnd = mem[LFO_PREV_RND_OFFSET + chan];
+      cur_rnd = mem[LFO_CUR_RND_OFFSET + chan];
+      (phase < inc) ? (
+        prev_rnd = cur_rnd;
+        cur_rnd = rand() * 2. - 1.;
+      );
+
+      out = _get_amp_from_shape_and_phase(shape, deform, spread_phase, prev_rnd, cur_rnd);
+      amp = mem[LFO_AMP_OFFSET] + mem[LFO_AMP_MOD_OFFSET + chan];
+      amp = clamp(amp, 0., 1.);
+      mem[LFO_V_OFFSET + chan] = out * amp;
+      mem[LFO_PHASE_OFFSET + chan] = phase;
+      mem[LFO_PREV_RND_OFFSET + chan] = prev_rnd;
+      mem[LFO_CUR_RND_OFFSET + chan] = cur_rnd;
+      chan += 1;
+    );
+  );
+
+function process_all_LFOs(lfo_count)
+  local(i)
+  global(play_state, ts_num, ts_denom, prev_play_state, prev_ts_num, prev_ts_denom)
+  (
+    i = 0;
+    loop(lfo_count,
+      is_LFO_active(i) ? (
+        maybe_reset_LFO_phase(i);
+        process_LFO(i);
+      );
+      i += 1;
+    );
+    prev_play_state = play_state & 1;
+    prev_ts_num     = ts_num;
+    prev_ts_denom   = ts_denom;
+  );

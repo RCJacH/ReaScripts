@@ -1,0 +1,745 @@
+desc: RC State Variable Filter
+/*
+  SVF - State Variable Filter
+
+  Code translated from
+
+  https://github.com/michaeldonovan/VAStateVariableFilter
+
+  Supports 8 different types of filter outputs.
+*/
+
+@init
+
+SVF_MIN_FREQ = 20.;
+SVF_MAX_FREQ = 20000.;
+SVF_FREQ_OCTAVES = log(SVF_MAX_FREQ/SVF_MIN_FREQ) / log(2.);
+SVF_MAX_FREQ_SPREAD = 0.5 / SVF_FREQ_OCTAVES;
+SVF_MIN_BW  = 0.01;
+SVF_MAX_BW = 4.;
+
+SVF_GAIN_RANGE = 30.;
+
+svf_offset_inc = 0;
+SVF_SHAPE_LP = svf_offset_inc; svf_offset_inc += 1;
+SVF_SHAPE_BP = svf_offset_inc; svf_offset_inc += 1;
+SVF_SHAPE_HP = svf_offset_inc; svf_offset_inc += 1;
+SVF_SHAPE_NOTCH = svf_offset_inc; svf_offset_inc += 1;
+SVF_SHAPE_UBP = svf_offset_inc; svf_offset_inc += 1;
+SVF_SHAPE_HS = svf_offset_inc; svf_offset_inc += 1;
+SVF_SHAPE_LS = svf_offset_inc; svf_offset_inc += 1;
+SVF_SHAPE_PEAK = svf_offset_inc; svf_offset_inc += 1;
+SVF_SHAPE_AP = svf_offset_inc; svf_offset_inc += 1;
+
+svf_offset_inc = 0;
+SVF_STATE_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_IS_DIRTY_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_TYPE_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_CHANNEL_MODE_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_SPREAD_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_FREQUENCY_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_BANDWIDTH_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_GAIN_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+
+SVF_MOD_OFFSET = svf_offset_inc;
+SVF_FREQUENCY_MOD_OFFSET = svf_offset_inc;
+SVF_FREQUENCY_MOD_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_FREQUENCY_MOD_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_BANDWIDTH_MOD_OFFSET = svf_offset_inc;
+SVF_BANDWIDTH_MOD_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_BANDWIDTH_MOD_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_GAIN_MOD_OFFSET = svf_offset_inc;
+SVF_GAIN_MOD_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_GAIN_MOD_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_MOD_MEM_SIZE = svf_offset_inc - SVF_MOD_OFFSET;
+
+SVF_TOTAL_PARAM_MEM = svf_offset_inc;
+
+SVF_F0_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_F0_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_Q_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_Q_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_DECIBEL_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_DECIBEL_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_G_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_G_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_R_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_R_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_KS_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_KS_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_KP_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_KP_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_Z1_A_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_Z1_A_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_Z2_A_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_Z2_A_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+
+SVF_TOTAL_MEM = svf_offset_inc;
+SVF_TOTAL_RUNNING_VAR_MEM = SVF_TOTAL_MEM - SVF_TOTAL_PARAM_MEM;
+
+SVF_INDICES_MEM_POS = 0;
+SVF_COEF_MEM_POS = 0;
+SVF_FILTERS_MEM_POS = 0;
+
+SAMPLE_RATE = srate;
+ONE_OVER_SAMPLE_RATE = 1.0 / srate;
+AMP_dB_i = 0.11512925464970229;
+
+// ───────────── HELPERS ─────────────
+function clamp(v, mini, maxi) ( max(mini, min(maxi, v)) );
+function mod_phase(phase) global() ( phase - floor(phase) );
+function dB_to_A(dB) global(AMP_dB_i)( exp(dB * AMP_dB_i); );
+function K_peak(dB, Q) ( (dB_to_A(dB) - 1) / Q; );
+function K_bshelf(dB) ( dB_to_A(dB) - 1; );
+function pct_to_Hz(pct)
+  global(SVF_MIN_FREQ, SVF_MAX_FREQ)
+  (
+    exp(log(SVF_MIN_FREQ) + pct * (log(SVF_MAX_FREQ) - log(SVF_MIN_FREQ)));
+  );
+function Hz_to_pct(freq_hz)
+  global(SVF_MIN_FREQ, SVF_MAX_FREQ)
+  (
+    freq_hz = clamp(freq_hz, SVF_MIN_FREQ, SVF_MAX_FREQ);
+
+    (log(freq_hz) - log(SVF_MIN_FREQ))
+    /
+    (log(SVF_MAX_FREQ) - log(SVF_MIN_FREQ));
+  );
+function BW_to_Q(bw_oct)
+  local(alpha, sinh_alpha)
+  global()
+  (
+    // alpha  =  (ln 2 / 2) · BW
+    alpha      = 0.5 * log(2) * BW_oct;
+    // sinh(alpha) = ½ (e^α – e^–α) – rolled out to avoid a sinh()
+    sinh_alpha = 0.5 * ( exp(alpha) - exp(-alpha) );
+    // Guard against BW_oct = 0 → sinh_alpha = 0
+    sinh_alpha ? ( 1. / (2. * sinh_alpha) ) : .0001; // huge Q for zero width
+  );
+
+function _svf_get_Q(static_oct, mod_pct)
+  local(norm_static, norm_combined)
+  global(SVF_MIN_BW, SVF_MIN_BW, SVF_MAX_BW)
+  (
+    norm_combined  = static_oct + mod_pct * 4.;
+    norm_combined  = clamp(norm_combined, SVF_MIN_BW, SVF_MAX_BW);
+    BW_to_Q(norm_combined);
+  );
+
+
+function store_SVF_biquad_to_mem(type, dB, R, g, Ks, Kp, coef_mem)
+  local(spread, g2, A, a0, a1, a2, b0, b1, b2)
+  global(
+    SVF_SHAPE_LP, SVF_SHAPE_BP, SVF_SHAPE_HP, SVF_SHAPE_UBP, SVF_SHAPE_NOTCH,
+    SVF_SHAPE_LS, SVF_SHAPE_HS, SVF_SHAPE_AP, SVF_SHAPE_PEAK
+  )
+  (
+    //-----------------------------------------------
+    // Denominator (common to every SVF-based shape)
+    //-----------------------------------------------
+    g2 = g*g;
+    a0 = 1 + 2*R*g + g2;
+    a1 = 2 * (g2 - 1);
+    a2 = 1 - 2*R*g + g2;
+    A = 10^(dB / 40);
+
+    //-----------------------------------------------
+    // Numerator – choose by filter type
+    //-----------------------------------------------
+    type == SVF_SHAPE_LP ? ( // Low-pass
+      b0 = g2;
+      b1 = 2*g2;
+      b2 = g2;
+    ) :
+    type == SVF_SHAPE_BP ? ( // Band-pass (constant-skirt-gain)
+      b0 = g;
+      b1 = 0;
+      b2 = -g;
+    ) :
+    type == SVF_SHAPE_HP ? ( // High-pass
+      b0 = 1;
+      b1 = -2;
+      b2 = 1;
+    ) :
+    type == SVF_SHAPE_UBP ? ( // Band-pass (unity-peak-gain)
+      b0 = 2*R*g;
+      b1 = 0;
+      b2 = -2*R*g;
+    ) :
+    type == SVF_SHAPE_LS ? ( // Low-shelf
+      b0 = a0 + Ks * g2;
+      b1 = a1 + 2*g2*Ks;
+      b2 = a2 + Ks * g2;
+    ) :
+    type == SVF_SHAPE_HS ? ( // High-shelf
+      b0 = a0 + Ks;
+      b1 = a1-2*Ks;
+      b2 = a2 + ks;
+    ) :
+    type == SVF_SHAPE_NOTCH ? ( // Notch
+      b0 = 1 + g2;
+      b1 = 2*(g2 - 1);
+      b2 = 1 + g2;
+    ) :
+    type == SVF_SHAPE_AP ? ( // All-pass
+      b0 = 1 - 2*R*g + g2;
+      b1 = 2*(g2 - 1);
+      b2 = 1 + 2*R*g + g2;
+    ) :
+    type == SVF_SHAPE_PEAK ? ( // Peak / bell
+      b0 = a0 + Kp*g;
+      b1 = a1;
+      b2 = a2 - Kp*g;
+    ) :
+    ( // Fallback for unknown type
+      b0 = b1 = b2 = 0;
+    );
+
+    //-----------------------------------------------
+    // Normalise so that a0 == 1
+    //-----------------------------------------------
+    b0 /= a0;   b1 /= a0;   b2 /= a0;
+    a1 /= a0;   a2 /= a0;   a0  = 1;
+    coef_mem[0] = a1; coef_mem[1] = a2;
+    coef_mem[2] = b0; coef_mem[3] = b1; coef_mem[4] = b2;
+  );
+
+// magnitude of ONE biquad at radian frequency w (0…π)
+// returns linear gain, convert to dB outside
+function biquad_mag(a1,a2,b0,b1,b2,w)
+  local(cosw,sinw,cos2w, num, den)
+  global()
+(
+  cosw  = cos(w);
+  sinw  = sin(w);
+  cos2w = cosw*cosw - sinw*sinw;   // cos(2w) without extra trig call
+
+  num =    b0*b0 + b1*b1 + b2*b2
+        + 2*(b0*b1 + b1*b2)*cosw + 2*b0*b2*cos2w;
+  den =    1    + a1*a1 + a2*a2
+        + 2*(a1 + a1*a2)*cosw      + 2*a2*cos2w;
+
+  sqrt(num/den);
+);
+
+function encodeMS(l, r, mid*, side*)
+  global()
+  (
+    mid = (l+r) * 0.5;
+    side = (l-r) * 0.5;
+  );
+
+function decodeMS(mid, side, l*, r*)
+  global()
+  (
+    l = mid + side;
+    r = mid - side;
+  );
+
+// ───────────── MAIN ─────────────
+function init_SVFs(count, mem_inc*)
+  local(i, inc)
+  global(
+    SVF_TOTAL_MEM,
+    SVF_INDICES_MEM_POS, SVF_COEF_MEM_POS, SVF_FILTERS_MEM_POS
+  )
+  (
+    SVF_INDICES_MEM_POS = mem_inc; mem_inc += count;
+    SVF_COEF_MEM_POS = mem_inc; mem_inc += count;
+    SVF_FILTERS_MEM_POS = mem_inc;
+    i = inc = 0;
+    loop(count,
+      SVF_INDICES_MEM_POS[i] = mem_inc + inc;
+      inc += SVF_TOTAL_MEM;
+      i += 1;
+    );
+    i = 0;
+    loop(count,
+      SVF_COEF_MEM_POS[i] = mem_inc + inc;
+      inc += 10;
+      i += 1;
+    );
+    memset(mem_inc, 0, inc);
+    mem_inc += inc;
+  );
+
+function get_SVF_mem_pos(idx)
+  global(SVF_INDICES_MEM_POS)
+  (
+    SVF_INDICES_MEM_POS[idx];
+  );
+
+function get_SVF_coef_mem_pos(idx)
+  global(SVF_COEF_MEM_POS)
+  (
+    SVF_COEF_MEM_POS[idx];
+  );
+
+function get_SVF_is_dirty_mem_pos(idx)
+  (
+    SVF_INDICES_MEM_POS[idx] + SVF_IS_DIRTY_OFFSET;
+  );
+
+function set_SVF_initialized(idx, is_on)
+  local(mem)
+  global(SVF_STATE_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    is_on ? (
+      mem[SVF_STATE_OFFSET] |= 1;
+    ) : (
+      mem[SVF_STATE_OFFSET] = 0;
+    );
+  );
+
+function is_SVF_initialized(idx)
+  global(SVF_STATE_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_STATE_OFFSET]&1;
+  );
+
+function set_SVF_dirty(idx, is_dirty)
+  global(SVF_IS_DIRTY_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_IS_DIRTY_OFFSET] = is_dirty;
+  );
+
+function is_SVF_dirty(idx)
+  global(SVF_IS_DIRTY_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_IS_DIRTY_OFFSET];
+  );
+
+function set_SVF_active(idx, is_active)
+  local(mem)
+  global(SVF_STATE_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    is_active ? (
+      mem[SVF_STATE_OFFSET] = 3;
+    ) : (
+      mem[SVF_STATE_OFFSET] &= $~1;
+    );
+    set_SVF_dirty(idx, 1);
+  );
+
+function is_SVF_active(idx)
+  global(SVF_STATE_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_STATE_OFFSET]&2;
+  );
+
+function update_SVF(idx, mem)
+  local(
+    chan, freq, bw, gain, spread, freq_spread,
+    f0, Q, dB, T, wd, wa, g, R, Kp, Ks,
+  )
+  global(
+    SVF_SPREAD_OFFSET, SVF_MAX_FREQ_SPREAD, SVF_SPREAD_OFFSET,
+    SVF_FREQUENCY_OFFSET, SVF_BANDWIDTH_OFFSET, SVF_GAIN_OFFSET,
+    SVF_FREQUENCY_MOD_OFFSET, SVF_BANDWIDTH_MOD_OFFSET, SVF_GAIN_MOD_OFFSET,
+    SVF_F0_L_OFFSET, SVF_Q_L_OFFSET, SVF_G_L_OFFSET, SVF_R_L_OFFSET,
+    SVF_KP_L_OFFSET, SVF_KS_L_OFFSET,
+    SVF_GAIN_RANGE, SVF_DECIBEL_L_OFFSET,
+    SAMPLE_RATE, ONE_OVER_SAMPLE_RATE,
+  )
+  (
+    spread = mem[SVF_SPREAD_OFFSET];
+    freq = mem[SVF_FREQUENCY_OFFSET];
+    freq_spread = SVF_MAX_FREQ_SPREAD * spread;
+    chan = 0;
+    loop(2,
+      f0 = clamp(freq - freq_spread + mem[SVF_FREQUENCY_MOD_OFFSET + chan], 0., 1.);
+      f0 = pct_to_Hz(f0);
+      bw = mem[SVF_BANDWIDTH_OFFSET];
+      Q = _svf_get_Q(bw, mem[SVF_BANDWIDTH_MOD_OFFSET + chan]);
+      gain = mem[SVF_GAIN_OFFSET];
+      dB = clamp(gain + mem[SVF_GAIN_MOD_OFFSET + chan] * SVF_GAIN_RANGE, -SVF_GAIN_RANGE, SVF_GAIN_RANGE);
+      T = ONE_OVER_SAMPLE_RATE;
+      wd = f0 * 2. * $pi;
+      wa = (2. * SAMPLE_RATE) * tan(wd * T / 2.);
+      g = wa * T / 2.;
+      R = 1. / (2. * Q);
+      Kp = K_peak(dB, Q);
+      Ks = K_bshelf(dB);
+      mem[SVF_DECIBEL_L_OFFSET + chan] = dB;
+      mem[SVF_G_L_OFFSET + chan] = g;
+      mem[SVF_R_L_OFFSET + chan] = R;
+      mem[SVF_KP_L_OFFSET + chan] = Kp;
+      mem[SVF_KS_L_OFFSET + chan] = Ks;
+      chan += 1;
+    );
+
+    set_SVF_dirty(idx, 0);
+  );
+
+function update_all_SVFs(filter_count)
+  local(i)
+  global()
+  (
+    i = 0;
+    loop(filter_count,
+      is_SVF_active(i) && is_SVF_dirty(i) ? update_SVF(i, get_SVF_mem_pos(i));
+      i += 1;
+    );
+  );
+
+function set_SVF_channel_mode(idx, v)
+  local(mem)
+  global(SVF_CHANNEL_MODE_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    v != mem[SVF_CHANNEL_MODE_OFFSET] ? (
+      mem[SVF_CHANNEL_MODE_OFFSET] = v;
+      set_SVF_dirty(idx, 1);
+    );
+  );
+
+function get_SVF_channel_mode(idx)
+  global(SVF_CHANNEL_MODE_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_CHANNEL_MODE_OFFSET];
+  );
+
+function set_SVF_type(idx, v)
+  local(mem)
+  global(SVF_TYPE_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    v != mem[SVF_TYPE_OFFSET] ? (
+      mem[SVF_TYPE_OFFSET] = v;
+      set_SVF_dirty(idx, 1);
+    );
+  );
+
+function get_SVF_type(idx)
+  global(SVF_TYPE_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_TYPE_OFFSET];
+  );
+
+function set_SVF_spread(idx, v)
+  local(mem)
+  global(SVF_SPREAD_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    v != mem[SVF_SPREAD_OFFSET] ? (
+      mem[SVF_SPREAD_OFFSET] = v;
+      set_SVF_dirty(idx, 1);
+    );
+  );
+
+function get_SVF_spread(idx)
+  global(SVF_SPREAD_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_SPREAD_OFFSET];
+  );
+
+function adjust_SVF_spread(idx, v)
+  local(mem)
+  global(SVF_SPREAD_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    mem[SVF_SPREAD_OFFSET] += v;
+    mem[SVF_SPREAD_OFFSET] = clamp(mem[SVF_SPREAD_OFFSET], -1., 1.);
+    set_SVF_dirty(idx, 1);
+    mem[SVF_SPREAD_OFFSET];
+  );
+
+function set_SVF_freq(idx, v)
+  local(mem)
+  global(SVF_FREQUENCY_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    v != mem[SVF_FREQUENCY_OFFSET] ? (
+      mem[SVF_FREQUENCY_OFFSET] = v;
+      set_SVF_dirty(idx, 1);
+    );
+  );
+
+function get_SVF_freq(idx)
+  global(SVF_FREQUENCY_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_FREQUENCY_OFFSET];
+  );
+
+function adjust_SVF_frequency(idx, v)
+  local(mem)
+  global(SVF_FREQUENCY_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    mem[SVF_FREQUENCY_OFFSET] += v;
+    mem[SVF_FREQUENCY_OFFSET] = clamp(mem[SVF_FREQUENCY_OFFSET], 0., 1.);
+    set_SVF_dirty(idx, 1);
+    mem[SVF_FREQUENCY_OFFSET];
+  );
+
+function set_SVF_bandwidth(idx, v)
+  local(mem)
+  global(SVF_BANDWIDTH_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    v != mem[SVF_BANDWIDTH_OFFSET] ? (
+      mem[SVF_BANDWIDTH_OFFSET] = v;
+      set_SVF_dirty(idx, 1);
+    );
+  );
+
+function get_SVF_bandwidth(idx)
+  global(SVF_BANDWIDTH_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_BANDWIDTH_OFFSET];
+  );
+
+function adjust_SVF_bandwidth(idx, v)
+  local(mem)
+  global(SVF_BANDWIDTH_OFFSET, SVF_MIN_BW, SVF_MAX_BW)
+  (
+    mem = get_SVF_mem_pos(idx);
+    mem[SVF_BANDWIDTH_OFFSET] += v;
+    mem[SVF_BANDWIDTH_OFFSET] = clamp(mem[SVF_BANDWIDTH_OFFSET], SVF_MIN_BW, SVF_MAX_BW);
+    set_SVF_dirty(idx, 1);
+    mem[SVF_BANDWIDTH_OFFSET];
+  );
+
+function set_SVF_gain(idx, v)
+  local(mem)
+  global(SVF_GAIN_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    v != mem[SVF_GAIN_OFFSET] ? (
+      mem[SVF_GAIN_OFFSET] = v;
+      set_SVF_dirty(idx, 1);
+    );
+  );
+
+function get_SVF_gain(idx)
+  global(SVF_GAIN_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_GAIN_OFFSET];
+  );
+
+function adjust_SVF_gain(idx, v)
+  local(mem)
+  global(SVF_GAIN_OFFSET, SVF_GAIN_RANGE)
+  (
+    mem = get_SVF_mem_pos(idx);
+    mem[SVF_GAIN_OFFSET] += v;
+    mem[SVF_GAIN_OFFSET] = clamp(mem[SVF_GAIN_OFFSET], -SVF_GAIN_RANGE, SVF_GAIN_RANGE);
+    set_SVF_dirty(idx, 1);
+    mem[SVF_GAIN_OFFSET];
+  );
+
+function set_SVF_param(idx, channel_mode, type, spread, freq, bandwidth, gain)
+  global()
+  (
+    set_SVF_channel_mode(idx, channel_mode);
+    set_SVF_type(idx, type);
+    set_SVF_spread(idx, spread);
+    set_SVF_freq(idx, freq);
+    set_SVF_bandwidth(idx, bandwidth);
+    set_SVF_gain(idx, gain);
+  );
+
+function on_SVF_slider_change(idx, active, channel_mode, type, spread, freq, bandwidth, gain)
+  global()
+  (
+    set_SVF_active(idx, active);
+    active ? (
+      set_SVF_param(idx, channel_mode, type, spread, freq, bandwidth, gain);
+    );
+  );
+
+function get_free_slot(filter_count)
+  local(i, is_success)
+  global()
+  (
+    is_success = 0;
+    i = -1;
+    while(
+      i += 1;
+      !this.is_SVF_initialized(i) ? is_success = 1;
+      !(is_success || (i >= filter_count));
+    );
+    is_success ? i : -1;
+  );
+
+function remove_SVF_filter(idx)
+  global()
+  (
+    set_SVF_initialized(idx, 0);
+  );
+
+function set_all_SVFs_dirty(filter_count)
+  local(i)
+  (
+    i = 0;
+    loop(filter_count,
+      is_SVF_active(i) ? set_SVF_dirty(i, 1);
+      i += 1;
+    );
+  );
+
+function reset_SVF_modulation(idx)
+  global(SVF_MOD_OFFSET, SVF_MOD_MEM_SIZE)
+  (
+    memset(get_SVF_mem_pos(idx) + SVF_MOD_OFFSET, 0, SVF_MOD_MEM_SIZE);
+  );
+
+function reset_all_SVF_modulations(filter_count)
+  local(i)
+  global()
+  (
+    i = 0;
+    loop(filter_count,
+      reset_SVF_modulation(i);
+      i += 1;
+    );
+  );
+
+function process_SVF(idx, s0*, s1*)
+  local(
+    is_mid_side, is_two_channels, channel, channel_count, i,
+    s, type,
+    mem, z1_A, z2_A, R, g, Ks, Kp,
+    HP, BP, LP, UBP, LoShelf, HiShelf, Notch, AP, Peak
+  )
+  instance(a, b)
+  global(
+    SVF_CHANNEL_MODE_OFFSET, SVF_TYPE_OFFSET, SVF_SPREAD_OFFSET,
+    SVF_Z1_A_L_OFFSET, SVF_Z2_A_L_OFFSET, SVF_R_L_OFFSET, SVF_G_L_OFFSET,
+    SVF_KS_L_OFFSET, SVF_KP_L_OFFSET,
+    SVF_SHAPE_LP, SVF_SHAPE_BP, SVF_SHAPE_HP, SVF_SHAPE_UBP, SVF_SHAPE_AP,
+    SVF_SHAPE_LS, SVF_SHAPE_HS, SVF_SHAPE_NOTCH, SVF_SHAPE_PEAK
+  )
+  (
+    mem = this.get_SVF_mem_pos(idx);
+    is_mid_side = mem[SVF_CHANNEL_MODE_OFFSET] >= 3;
+    channel = mem[SVF_CHANNEL_MODE_OFFSET] % 3;
+    channel_count = channel ? 1 : 2;
+    channel = max(0, channel - 1);
+    is_mid_side ? encodeMS(s0, s1, a, b) : (a = s0; b = s1;);
+    type = mem[SVF_TYPE_OFFSET];
+    i = channel;
+    loop(channel_count,
+      s = i ? b : a;
+      z1_A = mem[SVF_Z1_A_L_OFFSET + i];
+      z2_A = mem[SVF_Z2_A_L_OFFSET + i];
+      R = mem[SVF_R_L_OFFSET + i];
+      g = mem[SVF_G_L_OFFSET + i];
+      Ks = mem[SVF_KS_L_OFFSET + i];
+      Kp = mem[SVF_KP_L_OFFSET + i];
+      HP = (s - (2. * R + g) * z1_A - z2_A) / (1. + (2. * R * g) + g * g);
+      BP = HP * g + z1_A;
+      LP = BP * g + z2_A;
+      UBP = 2. * R * BP;
+      LoShelf = s + Ks * LP;
+      HiShelf = s + Ks * HP;
+      Notch = s - UBP;
+      AP = s - (4. * R * BP);
+      Peak = s + BP * Kp;
+      s = type == SVF_SHAPE_LP ? ( LP; ) :
+        type == SVF_SHAPE_BP ? ( BP; ) :
+          type == SVF_SHAPE_HP ? ( HP; ) :
+            type == SVF_SHAPE_UBP ? ( UBP; ) :
+              type == SVF_SHAPE_LS ? ( LoShelf; ) :
+                type == SVF_SHAPE_HS ? ( HiShelf; ) :
+                  type == SVF_SHAPE_NOTCH ? ( Notch; ) :
+                    type == SVF_SHAPE_AP ? ( AP; ) :
+                      type == SVF_SHAPE_PEAK ? ( Peak; ) :
+                        0.;
+
+      mem[SVF_Z1_A_L_OFFSET + i] = g * HP + BP;
+      mem[SVF_Z2_A_L_OFFSET + i] = g * BP + LP;
+      !i ? (
+        a = s;
+      ) : (
+        b = s;
+      );
+      i += 1;
+    );
+    is_mid_side ? decodeMS(a, b, s0, s1) : (s0 = a; s1 = b;);
+  );
+
+function process_all_SVFs(filter_count, s0*, s1*)
+  local(i)
+  global()
+  (
+    i = 0;
+    loop(filter_count,
+      is_SVF_active(i) ? (
+        is_SVF_dirty(i) ? update_SVF(i, get_SVF_mem_pos(i));
+        process_SVF(i, s0, s1);
+      );
+      i += 1;
+    );
+  );
+
+function calculate_all_SVF_biquads(filter_count)
+  local(i, mem, coef_mem, chan, spread, type, dB, R, g, Ks, Kp)
+  global(
+    SVF_IS_ACTIVE_OFFSET,
+    SVF_TYPE_OFFSET, SVF_SPREAD_OFFSET, SVF_DECIBEL_L_OFFSET,
+    SVF_R_L_OFFSET, SVF_G_L_OFFSET, SVF_KS_L_OFFSET, SVF_KP_L_OFFSET,
+  )
+  (
+    i = 0;
+    loop(filter_count,
+      mem = get_SVF_mem_pos(i);
+      is_SVF_active(i) ? (
+        coef_mem = get_SVF_coef_mem_pos(i);
+        type = mem[SVF_TYPE_OFFSET];
+        spread = mem[SVF_SPREAD_OFFSET];
+        chan = 0;
+        loop(2,
+          dB = mem[SVF_DECIBEL_L_OFFSET + chan];
+          R = mem[SVF_R_L_OFFSET + chan];
+          g = mem[SVF_G_L_OFFSET + chan];
+          Ks = mem[SVF_KS_L_OFFSET + chan];
+          Kp = mem[SVF_KP_L_OFFSET + chan];
+          store_SVF_biquad_to_mem(type, dB, R, g, Ks, Kp, coef_mem + chan * 5);
+          chan += 1;
+        );
+      );
+      i += 1;
+    );
+  );
+
+function get_combined_channel_mag_at_theta(filter_count, chan, theta)
+  local(i, mem, g)
+  global()
+  (
+    i = 0;
+    g = 1.;
+    loop(filter_count,
+      is_SVF_active(i) ? (
+        mem = get_SVF_coef_mem_pos(i) + chan * 5;
+        g *= biquad_mag(mem[0], mem[1], mem[2], mem[3], mem[4], theta);
+      );
+      i += 1;
+    );
+    g;
+  );
+
+function get_SVF_filter_shape(shape, t)
+  global(
+    SVF_SHAPE_LP, SVF_SHAPE_BP, SVF_SHAPE_HP, SVF_SHAPE_UBP,
+    SVF_SHAPE_LS, SVF_SHAPE_HS, SVF_SHAPE_NOTCH, SVF_SHAPE_PEAK
+  )
+  (
+    shape == SVF_SHAPE_LP ? min(1., 2. - 2. * t) :
+    shape == SVF_SHAPE_BP ? clamp(3. * abs(mod_phase(t + .5) * 2 - 1.) - 2., 0., 1.):
+    shape == SVF_SHAPE_HP ? min(1., 2. * t) :
+    shape == SVF_SHAPE_UBP ? clamp(1.5 * abs(mod_phase(t + .5) * 2 - 1.) - .9, 0., 1.) :
+    shape == SVF_SHAPE_LS ? clamp(2. - 3. * t, 0., 1.) :
+    shape == SVF_SHAPE_HS ? clamp(3. * t - 1., 0., 1.) :
+    shape == SVF_SHAPE_NOTCH ? max(0, 1. - 1.2 * pow(sin($pi * t), 4.)) :
+    shape == SVF_SHAPE_PEAK ? sin(t * $pi) :
+    0.5;
+  );
+
+function is_SVF_type_gain_based(shape)
+  global(SVF_SHAPE_PEAK, SVF_SHAPE_HS, SVF_SHAPE_LS)
+  (
+    shape == SVF_SHAPE_PEAK || shape == SVF_SHAPE_HS || shape == SVF_SHAPE_LS;
+  );

@@ -1,0 +1,293 @@
+desc: RC SVF EQ NODE
+
+
+@init
+
+eq_offset_inc = 0;
+EQ_STATE_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_IS_DIRTY_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_TYPE_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_CHANNEL_MODE_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_SPREAD_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_FREQUENCY_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_BANDWIDTH_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_GAIN_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+
+EQ_TOTAL_PARAM_MEM = eq_offset_inc;
+
+EQ_X_POS_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_Y_POS_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_F0_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_F0_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_Q_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_Q_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_DECIBEL_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_DECIBEL_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_G_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_G_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_R_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_R_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_KS_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_KS_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_KP_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_KP_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+
+EQ_TOTAL_MEM = eq_offset_inc;
+EQ_TOTAL_RUNNING_VAR_MEM = EQ_TOTAL_MEM - EQ_TOTAL_PARAM_MEM;
+
+EQ_INDICES_MEM_POS = 0;
+EQ_COEF_MEM_POS = 0;
+EQ_FILTERS_MEM_POS = 0;
+
+function init_EQ_nodes(count, mem_inc*)
+  local(i, inc)
+  global(EQ_TOTAL_MEM, EQ_INDICES_MEM_POS, EQ_COEF_MEM_POS, EQ_FILTERS_MEM_POS)
+  (
+    EQ_INDICES_MEM_POS= mem_inc; mem_inc += count;
+    EQ_COEF_MEM_POS = mem_inc; mem_inc += count;
+    EQ_FILTERS_MEM_POS = mem_inc;
+    i = inc = 0;
+    loop(count,
+      EQ_INDICES_MEM_POS[i] = mem_inc + inc;
+      inc += EQ_TOTAL_MEM;
+      i += 1;
+    );
+    i = 0;
+    loop(count,
+      EQ_COEF_MEM_POS[i] = mem_inc + inc;
+      inc += 10;
+      i += 1;
+    );
+    memset(mem_inc, 0, inc);
+    mem_inc += inc;
+  );
+
+function get_EQ_mem_pos(idx)
+  global(EQ_INDICES_MEM_POS)
+  (
+    EQ_INDICES_MEM_POS[idx];
+  );
+
+function get_EQ_coef_mem_pos(idx)
+  global(EQ_COEF_MEM_POS)
+  (
+    EQ_COEF_MEM_POS[idx];
+  );
+
+function update_EQ_node(mem)
+  local(
+    freq, bw, gain, spread, freq_spread,
+    f0_L, f0_R, Q_L, Q_R, dB_L, dB_R,
+    g_L, g_R, R_L, R_R, wd_L, wd_R, wa_L, wa_R,
+    Kp_L, Kp_R, Ks_L, Ks_R, T
+  )
+  global(
+    EQ_SPREAD_OFFSET, SVF_MAX_FREQ_SPREAD, EQ_FREQUENCY_OFFSET, EQ_BANDWIDTH_OFFSET,
+    EQ_F0_L_OFFSET, EQ_F0_R_OFFSET, EQ_Q_L_OFFSET, EQ_Q_R_OFFSET,
+    EQ_G_L_OFFSET, EQ_G_R_OFFSET, EQ_R_L_OFFSET, EQ_R_R_OFFSET,
+    EQ_KP_L_OFFSET, EQ_KP_R_OFFSET, EQ_KS_L_OFFSET, EQ_KS_R_OFFSET,
+    EQ_GAIN_OFFSET, SVF_GAIN_RANGE, EQ_DECIBEL_L_OFFSET, EQ_DECIBEL_R_OFFSET,
+    ONE_OVER_SAMPLE_RATE, EQ_IS_DIRTY_OFFSET
+  )
+  (
+    spread = mem[EQ_SPREAD_OFFSET];
+    freq = mem[EQ_FREQUENCY_OFFSET];
+    freq_spread = SVF_MAX_FREQ_SPREAD * spread;
+    f0_L = clamp(freq - freq_spread, 0., 1.);
+    f0_L = pct_To_Hz(f0_L);
+    mem[EQ_F0_L_OFFSET] = f0_L;
+
+    bw = mem[EQ_BANDWIDTH_OFFSET];
+    Q_L = BW_to_Q(bw);
+    mem[EQ_Q_L_OFFSET] = Q_L;
+
+    gain = mem[EQ_GAIN_OFFSET];
+    dB_L = clamp(gain, -SVF_GAIN_RANGE, SVF_GAIN_RANGE);
+    mem[EQ_DECIBEL_L_OFFSET] = dB_L;
+
+    T = ONE_OVER_SAMPLE_RATE;
+    wd_L = f0_L * 2. * $pi;
+    wa_L = (2. / T) * tan(wd_L * T / 2.);
+    g_L = wa_L * T / 2.;
+    R_L = 1. / (2. * Q_L);
+    Kp_L = K_peak(dB_L, Q_L);
+    Ks_L = K_bshelf(dB_L);
+    mem[EQ_G_L_OFFSET] = g_L;
+    mem[EQ_R_L_OFFSET] = R_L;
+    mem[EQ_KP_L_OFFSET] = Kp_L;
+    mem[EQ_KS_L_OFFSET] = Ks_L;
+
+    spread ? (
+      f0_R = clamp(freq + freq_spread, 0., 1.);
+      f0_R = pct_To_Hz(f0_R);
+      Q_R = BW_to_Q(bw);
+      dB_R = clamp(gain, -SVF_GAIN_RANGE, SVF_GAIN_RANGE);
+      wd_R = f0_R * 2. * $pi;
+      wa_R = (2. / T) * tan(wd_R * T / 2.);
+      g_R = wa_R * T / 2.;
+      R_R = 1. / (2. * Q_R);
+      Kp_R = K_peak(dB_R, Q_R);
+      Ks_R = K_bshelf(dB_R);
+      mem[EQ_F0_R_OFFSET] = f0_R;
+      mem[EQ_Q_R_OFFSET] = Q_R;
+      mem[EQ_DECIBEL_R_OFFSET] = dB_R;
+      mem[EQ_G_R_OFFSET] = g_R;
+      mem[EQ_R_R_OFFSET] = R_R;
+      mem[EQ_KP_R_OFFSET] = Kp_R;
+      mem[EQ_KS_R_OFFSET] = Ks_R;
+    );
+
+    mem[EQ_IS_DIRTY_OFFSET] = 0;
+  );
+
+function set_EQ_initialized(idx, is_on)
+  local(mem)
+  global(EQ_INDICES_MEM_POS, EQ_STATE_OFFSET)
+  (
+    mem = EQ_INDICES_MEM_POS[idx];
+    is_on ? (
+      mem[EQ_STATE_OFFSET] |= 1;
+    ) : (
+      mem[EQ_STATE_OFFSET] = 0;
+    );
+  );
+
+function is_EQ_initialized(idx)
+  global(EQ_INDICES_MEM_POS, EQ_STATE_OFFSET)
+  (
+    EQ_INDICES_MEM_POS[idx][EQ_STATE_OFFSET]&1;
+  );
+
+function set_EQ_dirty(idx, is_dirty)
+  global(EQ_INDICES_MEM_POS, EQ_IS_DIRTY_OFFSET)
+  (
+    EQ_INDICES_MEM_POS[idx][EQ_IS_DIRTY_OFFSET] = is_dirty;
+  );
+
+function is_EQ_dirty(idx)
+  global(EQ_INDICES_MEM_POS, EQ_IS_DIRTY_OFFSET)
+  (
+    EQ_INDICES_MEM_POS[idx][EQ_IS_DIRTY_OFFSET];
+  );
+
+function set_EQ_active(idx, is_active)
+  local(mem)
+  global(EQ_INDICES_MEM_POS, EQ_STATE_OFFSET)
+  (
+    mem = EQ_INDICES_MEM_POS[idx];
+    is_active ? (
+      mem[EQ_STATE_OFFSET] = 3;
+    ) : (
+      mem[EQ_STATE_OFFSET] &= $~2;
+    );
+    set_EQ_dirty(idx, 1);
+  );
+
+function is_EQ_active(idx)
+  global(EQ_INDICES_MEM_POS, EQ_STATE_OFFSET)
+  (
+    EQ_INDICES_MEM_POS[idx][EQ_STATE_OFFSET]&2;
+  );
+
+function remove_EQ_node(idx)
+  local(mem)
+  global(EQ_INDICES_MEM_POS, EQ_STATE_OFFSET, EQ_X_POS_OFFSET, EQ_Y_POS_OFFSET)
+  (
+    mem = EQ_INDICES_MEM_POS[idx];
+    mem[EQ_STATE_OFFSET] = 0;
+    mem[EQ_X_POS_OFFSET] = -999;
+    mem[EQ_Y_POS_OFFSET] = -999;
+  );
+
+function update_EQ_pos(idx, x, y)
+  local(mem)
+  global(EQ_INDICES_MEM_POS, EQ_STATE_OFFSET, EQ_X_POS_OFFSET, EQ_Y_POS_OFFSET)
+  (
+    mem = EQ_INDICES_MEM_POS[idx];
+    mem[EQ_X_POS_OFFSET] = x;
+    mem[EQ_Y_POS_OFFSET] = y;
+  );
+
+function get_EQ_pos(idx, cx*, cy*)
+  local(mem)
+  global(EQ_INDICES_MEM_POS, EQ_STATE_OFFSET, EQ_X_POS_OFFSET, EQ_Y_POS_OFFSET)
+  (
+    mem = EQ_INDICES_MEM_POS[idx];
+    cx = mem[EQ_X_POS_OFFSET];
+    cy = mem[EQ_Y_POS_OFFSET];
+  );
+
+function get_distance_sqr_from(idx, x, y)
+  local(mem, dx, dy)
+  global(EQ_INDICES_MEM_POS, EQ_X_POS_OFFSET, EQ_Y_POS_OFFSET)
+  (
+    mem = EQ_INDICES_MEM_POS[idx];
+    dx = x - mem[EQ_X_POS_OFFSET]; dy = y - mem[EQ_Y_POS_OFFSET];
+    dx*dx + dy*dy;
+  );
+
+function update_all_EQ_nodes(node_count)
+  local(i, mem)
+  global(EQ_INDICES_MEM_POS)
+  (
+    i = 0;
+    loop(node_count,
+      mem = EQ_INDICES_MEM_POS[i];
+      is_EQ_active(i) ? update_EQ_node(mem);
+      i += 1;
+    );
+  );
+
+function copy_param_from_all_svf_filter(filter_count, filter_mem_pos)
+  local(i, eq_mem, filter_mem)
+  global(
+    EQ_INDICES_MEM_POS,
+    EQ_STATE_OFFSET, SVF_STATE_OFFSET, EQ_TOTAL_PARAM_MEM
+  )
+  (
+    i = 0;
+    loop(filter_count,
+      filter_mem = filter_mem_pos[i];
+      filter_mem[SVF_STATE_OFFSET] ? (
+        eq_mem = EQ_INDICES_MEM_POS[i];
+        memcpy(
+          eq_mem + EQ_STATE_OFFSET,
+          filter_mem + SVF_STATE_OFFSET,
+          EQ_TOTAL_PARAM_MEM
+        );
+        update_EQ_node(eq_mem)
+      );
+      i += 1;
+    );
+  );
+
+function calculate_all_EQ_biquads(filter_count)
+  local(i, chan, mem, coef_mem, type, spread, dB, R, g, Ks, Kp, channel)
+  global(
+    EQ_INDICES_MEM_POS, EQ_COEF_MEM_POS,
+    EQ_TYPE_OFFSET, EQ_SPREAD_OFFSET, EQ_DECIBEL_L_OFFSET,
+    EQ_R_L_OFFSET, EQ_G_L_OFFSET, EQ_KS_L_OFFSET, EQ_KP_L_OFFSET
+  )
+  (
+    i = 0;
+    loop(filter_count,
+      mem = EQ_INDICES_MEM_POS[i];
+      is_EQ_active(i) ? (
+        coef_mem = EQ_COEF_MEM_POS[i];
+        type = mem[EQ_TYPE_OFFSET];
+        spread = mem[EQ_SPREAD_OFFSET];
+        chan = 0;
+        loop(2,
+          channel = spread ? chan : 0;
+          dB = mem[EQ_DECIBEL_L_OFFSET + channel];
+          R = mem[EQ_R_L_OFFSET + channel];
+          g = mem[EQ_G_L_OFFSET + channel];
+          Ks = mem[EQ_KS_L_OFFSET + channel];
+          Kp = mem[EQ_KP_L_OFFSET + channel];
+          store_SVF_biquad_to_mem(type, dB, R, g, Ks, Kp, coef_mem + chan * 5);
+          chan += 1;
+        );
+      );
+      i += 1;
+    );
+  );

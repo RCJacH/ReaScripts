@@ -1,0 +1,284 @@
+
+@init
+BUTTON_MAIN_OFFSET = 0;
+BUTTON_BORDER_OFFSET = 1;
+BUTTON_BG_OFFSET = 2;
+BUTTON_TEXT_OFFSET = 3;
+TOTAL_BUTTON_COMPONENTS = 4;
+
+BUTTON_STATUS_NORMAL = 0;
+BUTTON_STATUS_HOVER = 1;
+BUTTON_STATUS_PRESS = 2;
+BUTTON_STATUS_DISABLED = 3;
+BUTTON_STATUS_DISABLED_HOVER = 4;
+BUTTON_STATUS_DISABLED_PRESS = 5;
+TOTAL_TRIGGLE_BUTTON_STATUS = 3;
+TOTAL_TOGGLE_BUTTON_STATUS = 6;
+
+COLOR_MEM_POS = 0;
+COLOR_BLACK = 0;
+COLOR_DANGER = 0;
+
+function hue2RGB(p, q, t)
+  local(o)
+  global()
+  (
+    t = (t + 360) % 360;
+    t < 60 ? p + (q - p) * t / 60 :
+    t < 180 ? q :
+    t < 240 ? p + (q - p) * (240 - t) / 60 : p;
+  );
+
+
+function to_rgb(mem_inc*)
+  local(mem, q, p, s001, l001, r, g, b)
+  instance(h, s, l)
+  global()
+  (
+    mem = mem_inc;
+    s001 = s * 0.01;
+    l001 = l * 0.01;
+    !s001 ? r=g=b=l001 :
+    !l001 ? r=g=b=l001 :
+    l001 == 1.0 ? r=g=b=l001 :
+    (
+      q = l001 < 0.5 ? l001 * (1.0 + s001) : l001 + s001 - l001 * s001;
+      p = 2.0 * l001 - q;
+      r = hue2RGB(p, q, h + 120);
+      g = hue2RGB(p, q, h);
+      b = hue2RGB(p, q, h - 120);
+    );
+    mem_inc[0] = r; mem_inc[1] = g; mem_inc[2] = b; mem_inc += 3;
+    mem;
+  );
+
+
+function scale_HSL_color(scale_h, scale_s, scale_l)
+  instance(h, s, l)
+  global()
+  (
+    h = (h * (scale_h / 360 + 1.0) + 360) % 360;
+    s = (
+          scale_s > 0 ? s + (100 - s) * (scale_s * 0.01) :
+          scale_s < 0 ? s * abs(scale_s * 0.01 + 1.0) :
+          s
+        );
+    l = (
+          scale_l > 0 ? l + (100 - l) * (scale_l * 0.01) :
+          scale_l < 0 ? l * abs(scale_l * 0.01 + 1.0) :
+          l
+        );
+    this;
+  );
+
+
+function create_HSL_color(hue, saturation, lightness)
+  instance(h, s, l)
+  global()
+  (
+    h = hue; s = saturation; l = lightness;
+    this;
+  );
+
+
+function HSL_color_adjusted(add_h, add_s, add_l)
+  instance(h, s, l)
+  global()
+  (
+    h = (this..h + add_h + 360) % 360;
+    s = max(0, min(100, this..s + add_s));
+    l = max(0, min(100, this..l + add_l));
+    this;
+  );
+
+
+function HSL_color_scaled(scale_h, scale_s, scale_l)
+  instance(h, s, l)
+  global()
+  (
+    h = (this..h * (scale_h / 360 + 1.0) + 360) % 360;
+    s = (
+          scale_s > 0 ? this..s + (100 - this..s) * (scale_s * 0.01) :
+          scale_s < 0 ? this..s * abs(scale_s * 0.01 + 1.0) :
+          this..s
+        );
+    l = (
+          scale_l > 0 ? this..l + (100 - this..l) * (scale_l * 0.01) :
+          scale_l < 0 ? this..l * abs(scale_l * 0.01 + 1.0) :
+          this..l
+        );
+    this;
+  );
+
+
+function HSL_color_modified(add_h, add_s, add_l, scale_h, scale_s, scale_l)
+  global()
+  (
+    this.HSL_color_adjusted(add_h, add_s, add_l);
+    this.scale_HSL_color(scale_h, scale_s, scale_l);
+  );
+
+
+function HSL_button(add_h, add_s, add_l, scale_h, scale_s, scale_l, mem_inc*)
+  local(mem)
+  global()
+  (
+    mem = mem_inc;
+    this.HSL_color_modified(add_h, add_s, add_l, scale_h, scale_s, scale_l);
+    this.to_rgb(mem_inc);
+    this.BORDER.HSL_color_scaled(0, -10, 20);
+    this.BORDER.to_rgb(mem_inc);
+    this.BG.HSL_color_scaled(0, -80, -60);
+    this.BG.to_rgb(mem_inc);
+    this.LABEL.HSL_color_scaled(0, -10, 80);
+    this.LABEL.to_rgb(mem_inc);
+    mem;
+  );
+
+
+function HSL_button_control(add_h, scale_s, scale_l, mem_inc*)
+  local(mem)
+  global()
+  (
+    mem = mem_inc;
+    this.HSL_button(add_h, 0, 0, 0, scale_s, scale_l, mem_inc);
+    this.HOVER.HSL_button(0, -5, 5, 0, 0, 0, mem_inc);
+    this.PRESS.HSL_button(0, -10, 10, 0, 0, 0, mem_inc);
+    mem;
+  );
+
+
+function HSL_toggle_button(mem_inc*)
+  local(mem)
+  global()
+  (
+    mem = mem_inc;
+    this.HSL_button_control(0, 0, 0, mem_inc);
+    this.DISABLED.HSL_button_control(-90, -30, this.l >= 50 ? -5 : 10, mem_inc);
+    mem;
+  );
+
+function HSL_toggle_button_monochrome(mem_inc*)
+  local(mem)
+  global()
+  (
+    mem = mem_inc;
+    this.HSL_button_control(0, 0, 0, mem_inc);
+    this.DISABLED.HSL_button_control(0, -50, -30, mem_inc);
+    mem;
+  );
+
+
+function HSL_trigger_button(mem_inc*)
+  global()
+  (
+    this.HSL_toggle_button(mem_inc)
+  );
+
+
+function HSL_switch_button(num_of_colors, mem_inc*)
+  local(mem, i, dh)
+  global()
+  (
+    mem = mem_inc;
+    dh = 240 / num_of_colors;
+
+    0 < num_of_colors ? (
+      this.I = mem_inc;
+      this.I.HSL_button_control(dh, 0, 0, mem_inc);
+    );
+    1 < num_of_colors ? (
+      this.II = mem_inc;
+      this.II.HSL_button_control(2*dh, 0, 0, mem_inc);
+    );
+    2 < num_of_colors ? (
+      this.III = mem_inc;
+      this.III.HSL_button_control(3*dh, 0, 0, mem_inc);
+    );
+    3 < num_of_colors ? (
+      this.IV = mem_inc;
+      this.IV.HSL_button_control(4*dh, 0, 0, mem_inc);
+    );
+    4 < num_of_colors ? (
+      this.V = mem_inc;
+      this.V.HSL_button_control(5*dh, 0, 0, mem_inc);
+    );
+    mem;
+  );
+
+
+function HSL_section_color(add_h, mem_inc*)
+  local(mem)
+  global()
+  (
+    mem = mem_inc;
+    this.HSL_color_adjusted(add_h, 0, 0);
+    this.to_rgb(mem_inc);
+    this.BG.HSL_color_adjusted(0, 0, 5);
+    this.BG.to_rgb(mem_inc);
+    this.TEXT_HEADER.HSL_color_scaled(0, 5, 50);
+    this.TEXT_HEADER.to_rgb(mem_inc);
+    this.button.HSL_toggle_button_monochrome(mem_inc);
+    mem;
+  );
+
+
+function init_HSL_COLORS(hue, saturation, lightness, mem_inc*)
+  local(mem)
+  instance()
+  global(COLOR_MEM_POS, COLOR_BLACK, COLOR_DANGER)
+  (
+    COLOR_BLACK = COLOR_MEM_POS = mem_inc;
+    this.create_HSL_color(0, 0, 0);
+    this.to_rgb(mem_inc);
+    COLOR_DANGER = mem_inc;
+    this.create_HSL_color(0, 90, 50);
+    this.danger.HSL_trigger_button(mem_inc);
+    this.create_HSL_color(hue, saturation, lightness);
+    this.main.HSL_section_color(0, mem_inc);
+  );
+
+
+function set_HSL_color(base_mem)
+  local(mem)
+  global()
+  (
+    mem = base_mem;
+    gfx_set(mem[0], mem[1], mem[2]);
+  );
+
+
+function set_HSL_colora(base_mem, alpha)
+  local(mem)
+  global()
+  (
+    mem = base_mem;
+    gfx_set(mem[0], mem[1], mem[2], alpha);
+  );
+
+
+function set_HSL_color(base_mem, component)
+  global()
+  (
+    set_HSL_color(base_mem + component * 3.);
+  );
+
+
+function set_HSL_colora(base_mem, component, alpha)
+  global()
+  (
+    set_HSL_colora(base_mem + component * 3., alpha);
+  );
+
+
+function set_HSL_button_color(base_mem, status, component)
+  global(TOTAL_BUTTON_COMPONENTS)
+  (
+    set_HSL_color(base_mem, status * TOTAL_BUTTON_COMPONENTS + component);
+  );
+
+function set_HSL_button_colora(base_mem, status, component, alpha)
+  global(TOTAL_BUTTON_COMPONENTS)
+  (
+    set_HSL_colora(base_mem, status * TOTAL_BUTTON_COMPONENTS + component, alpha);
+  );

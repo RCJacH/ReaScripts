@@ -1,0 +1,3839 @@
+/*
+JSFX Name: RCModEQ
+Author: RCJacH
+Release Date: Aug 2025
+Link: https://github.com/RCJacH/ReaScripts
+Version: 1.0.0
+Provides:
+  dependencies/*
+Reference:
+  Surge Synth
+  Vital Synth
+  UVI Shade
+  ReEQ
+About:
+  RCModEQ is a compact JSFX equaliser with modulation capacity for REAPER.
+  It lets you stack up to eight filters and drive their parameters with
+  up to eight shape-selectable and deformable LFOs.
+Changelog:
+  * v1.0.0 (2025-08-01)
+    + Initial Release
+*/
+
+// License: GPL- http://www.gnu.org/licenses/gpl.html
+
+desc: RCModEQ
+<?
+  TOTAL_FILTER_COUNT = 8;
+  TOTAL_LFO_COUNT = 8;
+  TOTAL_SIDECHAIN_COUNT = 8;
+  MIN_GAIN_DECIBEL = -136.;
+  MAX_GAIN_DECIBEL = 30.;
+  LIMITER_RANGE = 30.;
+  printf("slider1:makeup_gain_db=0.<%f,%f,0.01>-Makeup Gain (dB)\n", MIN_GAIN_DECIBEL, MAX_GAIN_DECIBEL);
+  printf("slider2:limit_output=0<0,1,1>-Limit Output\n");
+  printf("slider3:limiter_threshold=0.<-%f,%f,0.01>-Limiter Threshold (dB)\n", LIMITER_RANGE, LIMITER_RANGE);
+  sl_idx = 5;
+  idx = 1;
+  loop(TOTAL_FILTER_COUNT,
+    hide = idx == 1 ? "-" : "-";
+    printf("slider%d:f%d_active=0<0,1,1>%sFilter %d On/Off\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:f%d_channel=0<0,2,1{Stereo,Left,Right,Mid/Side,Mid,Side}>%sFilter %d Channel\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:f%d_type=0<0,8,1{Low Pass,Band Pass,High Pass,Notch,Unity-gain Band Pass,High Shelf,Low Shelf,Peak,All Pass}>%sFilter %d Shape\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:f%d_freq=1000.<20.,20000.,.1:log=1000.>%sFilter %d Cutoff\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:f%d_bandwidth=2.<.01,4.,.01>%sFilter %d Bandwidth (Octave)\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:f%d_gain=0<-32.,32.,0.1>%sFilter %d Gain (dB)\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:f%d_spread=0<-1, 1>%sFilter %d Spread\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    idx += 1;
+  );
+  idx = 1;
+  loop(TOTAL_LFO_COUNT,
+    hide = idx == 1 ? "-" : "-";
+    printf("slider%d:lfo%d_active=0<0,1,1>%sLFO %d On/Off\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:lfo%d_trigger_mode=0<0,3,1{Free,Synced,Bar Reset,MIDI Reset}>%sLFO %d Trigger Mode\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:lfo%d_rate_mode=0<0,2,1{Hz,QN,Bar}>%sLFO %d Sync Mode\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:lfo%d_shape=0<0,6,1{Sin,Tri,RampUp,RampDown,Square,S&H,Random}>%sLFO %d Shape\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:lfo%d_hz_rate=.5<0.,1.>%sLFO %d Rate\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:lfo%d_sync_rate=29<0, 57, 1{8,7,6,5,4,3,2,7/4,3/2,5/4,1,7/8,6/7,4/5,3/4,5/7,2/3,5/8,3/5,4/7,1/2,3/7,2/5,3/8,5/14,1/3,3/10,2/7,5/18,1/4,2/9,3/14,1/5,7/36,3/16,5/28,1/6,3/20,1/7,5/36,1/8,1/9,3/28,1/10,3/32,1/12,1/14,1/16,3/64,1/18,1/20,1/24,1/28,1/32,1/36,1/64,1/128}>%sLFO %d Sync Rate\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:lfo%d_start_phase=0<0,1,0.0001>%sLFO %d Start Phase\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:lfo%d_deform=0<-1,1,0.0001>%sLFO %d Deform\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:lfo%d_amp=0<0,1,0.0001>%sLFO %d Amplitude\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:lfo%d_spread=0<-1, 1>%sLFO %d Spread\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    idx += 1;
+  );
+?>
+
+import dependencies/svf_filter.jsfx-inc
+import dependencies/lfo.jsfx-inc
+import dependencies/sidechain.jsfx-inc
+import dependencies/router.jsfx-inc
+import dependencies/eq_node.jsfx-inc
+import dependencies/hsl_colors.jsfx-inc
+
+in_pin:Left Input
+in_pin:Right Input
+<?
+  idx = 1;
+  loop(TOTAL_SIDECHAIN_COUNT,
+    printf("in_pin:SC input %d\n", idx);
+    idx += 1;
+  );
+?>
+out_pin:Left Output
+out_pin:Right Output
+
+@init
+  // ───────────── Plugin Constants ─────────────
+  <?
+    printf("TOTAL_FILTER_COUNT = %d;\n", TOTAL_FILTER_COUNT);
+    printf("TOTAL_LFO_COUNT = %d;\n", TOTAL_LFO_COUNT);
+    printf("TOTAL_SIDECHAIN_COUNT = %d;\n", TOTAL_SIDECHAIN_COUNT);
+    printf("MIN_GAIN_DECIBEL = %f;\n", MIN_GAIN_DECIBEL);
+    printf("MAX_GAIN_DECIBEL = %f;\n", MAX_GAIN_DECIBEL);
+    printf("LIMITER_RANGE = %f;\n", LIMITER_RANGE);
+  ?>
+
+  TAU = 2. * $pi;
+  ONE_OVER_255 = 1. / 255.;
+  CUR_TEMPO = tempo;
+  GAIN_DECIBEL_RANGE = MAX_GAIN_DECIBEL - MIN_GAIN_DECIBEL;
+
+  gfx_ext_retina  = 1;
+  ext_nodenorm    = 1;
+  ext_noinit = 1;
+  last_gfx_ext_retina = -1;
+
+  // ───────────── MIDI Constants ─────────────
+  STATUS_NOTE_ON          = $x90; // Note On Message
+  STATUS_NOTE_OFF         = $x80; // Note Off Message
+
+  // ───────────── GUI Constants ─────────────
+
+  // Strings
+  #TITLE_STRING = "RCModEQ";
+  #AUTHOR_STRING = "RCJacH";
+  #LIMITER_TITLE = "LIMITER";
+  #GAIN_TITLE = "GAIN";
+
+  // Fonts Indice
+  FONT_TITLE = 1;
+  FONT_AUTHOR = 2;
+  FONT_SECTION_TITLE = 3;
+  FONT_VISUAL_MARKERS = 4;
+  FONT_ADD_FILTER = 5;
+  FONT_PARAM_TITLE = 6;
+  FONT_PARAM_VALUE = 7;
+  FONT_LFO_BUTTON = 8;
+
+  // EQ Graph
+  EQ_MIN_FREQ      =  18.5;
+  EQ_MAX_FREQ      = 22050.;
+  EQ_MIN_GAIN_RANGE    = 2.;
+  EQ_MAX_GAIN_RANGE    = 30.;
+  EQ_FREQ_STEPS    =  512;
+  EQ_DOT_RADIUS    =   5;     // px
+  EQ_Q_MIN         = 0.;
+  EQ_Q_MAX         = 1.;
+  EQ_MIN_GAIN_STEP     = 0.5;
+  EQ_MAX_GAIN_STEP     = 6.;
+
+  // ───────────── Functions ─────────────
+  function clamp(v, b, t) global() ( max(b, min(t, v)); );
+  function clamp(v) global() ( clamp(v, 0., 1.); );
+  function init_band_colors(mem_inc*)
+    local(i, l, count, band_mem, color_bands_mem_size)
+    global(TOTAL_FILTER_COUNT, TOTAL_LFO_COUNT, TOTAL_SIDECHAIN_COUNT, COLOR_BANDS)
+    (
+      COLOR_BANDS = mem_inc;
+      count = TOTAL_FILTER_COUNT + TOTAL_LFO_COUNT + TOTAL_SIDECHAIN_COUNT;
+      mem_inc += count;
+      band_mem = mem_inc;
+      this.create_HSL_color(220, 100, 70);
+      this.button.HSL_toggle_button_monochrome(mem_inc);
+      color_bands_mem_size = mem_inc - band_mem;
+      i = 1;
+      loop(TOTAL_FILTER_COUNT - 1,
+        l = i == 2 || i == 5 || i == 6 ? 40 : 70;
+        this.create_HSL_color(220 + 110 * i, 100, l);
+        this.button.HSL_toggle_button_monochrome(mem_inc);
+        i += 1;
+      );
+      i = 0;
+      loop(TOTAL_LFO_COUNT,
+        l = i == 2 || i == 6 || i == 3 ? 40 : i == 7 ? 50 : 60;
+        this.create_HSL_color(300 + 80 * i, 60, l);
+        this.button.HSL_toggle_button_monochrome(mem_inc);
+        i += 1;
+      );
+
+      i = 0;
+      loop(TOTAL_LFO_COUNT,
+        this.create_HSL_color(25 + 70 * i, 35, 60);
+        this.button.HSL_toggle_button_monochrome(mem_inc);
+        i += 1;
+      );
+
+      i = 0;
+      loop(count,
+        COLOR_BANDS[i] = band_mem + i * color_bands_mem_size;
+        i += 1;
+      );
+      COLOR_BANDS;
+    );
+
+  function get_band_color_mem(idx)
+    global(COLOR_BANDS)
+    (
+      COLOR_BANDS[idx];
+    );
+
+  function get_lfo_band_color_mem(idx)
+    global(COLOR_BANDS, TOTAL_FILTER_COUNT)
+    (
+      COLOR_BANDS[idx + TOTAL_FILTER_COUNT];
+    );
+
+  function get_band_color(idx, a)
+    local(mem)
+    global(BAND_COLORS)
+    (
+      mem = get_band_color_mem(idx);
+      gfx_set(mem[0], mem[1], mem[2], a);
+    );
+
+  function get_band_color(idx) global() ( get_band_color(idx, 1.); );
+
+
+  function round(x) global() ( floor(x + .5); );
+  function dB_to_norm(dB, min_gain, max_gain, range)
+    global()
+    (
+      dB = clamp(dB, min_gain, max_gain);
+      ( dB - min_gain ) / range;
+    );
+
+  function norm_to_dB(n, min_gain, range)
+    global()
+    (
+      clamp(n) * range + min_gain;
+    );
+
+  function pct_to_Hz(pct, min_freq, max_freq)
+    global()
+    (
+      exp(log(min_freq) + pct * (log(max_freq) - log(min_freq)));
+    );
+
+  function Hz_to_pct(freq_hz, min_freq, max_freq)
+    global()
+    (
+      freq_hz = clamp(freq_hz, min_freq, max_freq);
+
+      (log(freq_hz) - log(min_freq))
+      /
+      (log(max_freq) - log(min_freq));
+    );
+
+  function rangedVToDecibel(v, range)
+    global(EQ_MAX_GAIN_RANGE)
+    (
+      clamp((v - .5) * 2. * range, -EQ_MAX_GAIN_RANGE, EQ_MAX_GAIN_RANGE);
+    );
+
+  function decibelToRangedV(g, range)
+    global()
+    (
+      (g + range) / (range * 2.);
+    );
+
+  function rangedVToBandwidth(v)
+    global(SVF_MIN_BW, SVF_MAX_BW)
+    (
+      clamp(2. - 4. * asin(2. * (v - 0.5)) / $pi, SVF_MIN_BW, SVF_MAX_BW);
+    );
+
+  function bandwidthToRangedV(oct)
+    local(v)
+    global()
+    (
+      v = clamp((oct - 2) * .5, -1., 1.);
+      0.5 + .5 * sin($pi * .5 * v);
+    );
+
+  function Hz_to_theta(f) global(TAU, ONE_OVER_SAMPLE_RATE) ( TAU * f * ONE_OVER_SAMPLE_RATE; );
+
+  /*
+  * Notify Reaper that active has been touched
+  */
+  function notify_touched_filter_active(idx, is_active, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_FILTER_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("f%i_active = is_active;\n", i);
+        printf("sliderchange(f%i_active);\n", i);
+        printf("slider_automate(f%i_active, end);\n", i);
+        printf(")%s\n", i == TOTAL_FILTER_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that channel mode has been touched
+  */
+  function notify_touched_filter_channel_mode(idx, channel_mode, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_FILTER_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("f%i_channel = channel_mode;\n", i);
+        printf("sliderchange(f%i_channel);\n", i);
+        printf("slider_automate(f%i_channel, end);\n", i);
+        printf(")%s\n", i == TOTAL_FILTER_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that filter type has been touched
+  */
+  function notify_touched_filter_type(idx, type, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_FILTER_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("f%i_type = type;\n", i);
+        printf("sliderchange(f%i_type);\n", i);
+        printf("slider_automate(f%i_type, end);\n", i);
+        printf(")%s\n", i == TOTAL_FILTER_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that filter spread has been touched
+  */
+  function notify_touched_filter_spread(idx, spread, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_FILTER_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("f%i_spread = spread;\n", i);
+        printf("sliderchange(f%i_spread);\n", i);
+        printf("slider_automate(f%i_spread, end);\n", i);
+        printf(")%s\n", i == TOTAL_FILTER_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that frequency has been touched
+  */
+  function notify_touched_filter_frequency(idx, Hz, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_FILTER_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("f%i_freq = Hz;\n", i);
+        printf("sliderchange(f%i_freq);\n", i);
+        printf("slider_automate(f%i_freq, end);\n", i);
+        printf(")%s\n", i == TOTAL_FILTER_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that gain has been touched
+  */
+  function notify_touched_filter_gain(idx, dB, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_FILTER_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("f%i_gain = dB;\n", i);
+        printf("sliderchange(f%i_gain);\n", i);
+        printf("slider_automate(f%i_gain, end);\n", i);
+        printf(")%s\n", i == TOTAL_FILTER_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that bandwidth has been touched
+  */
+  function notify_touched_filter_bandwidth(idx, octave, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_FILTER_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("f%i_bandwidth = octave;\n", i);
+        printf("sliderchange(f%i_bandwidth);\n", i);
+        printf("slider_automate(f%i_bandwidth, end);\n", i);
+        printf(")%s\n", i == TOTAL_FILTER_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO active has been touched
+  */
+  function notify_touched_lfo_active(idx, is_active, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_active = is_active;\n", i);
+        printf("sliderchange(lfo%i_active);\n", i);
+        printf("slider_automate(lfo%i_active, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO trigger mode has been touched
+  */
+  function notify_touched_lfo_trigger_mode(idx, trigger_mode, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_trigger_mode = trigger_mode;\n", i);
+        printf("sliderchange(lfo%i_trigger_mode);\n", i);
+        printf("slider_automate(lfo%i_trigger_mode, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO rate mode has been touched
+  */
+  function notify_touched_lfo_rate_mode(idx, rate_mode, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_rate_mode = rate_mode;\n", i);
+        printf("sliderchange(lfo%i_rate_mode);\n", i);
+        printf("slider_automate(lfo%i_rate_mode, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO shape has been touched
+  */
+  function notify_touched_lfo_shape(idx, shape, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_shape = shape;\n", i);
+        printf("sliderchange(lfo%i_shape);\n", i);
+        printf("slider_automate(lfo%i_shape, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO hz_rate has been touched
+  */
+  function notify_touched_lfo_hz_rate(idx, hz_rate, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_hz_rate = hz_rate;\n", i);
+        printf("sliderchange(lfo%i_hz_rate);\n", i);
+        printf("slider_automate(lfo%i_hz_rate, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO sync_rate has been touched
+  */
+  function notify_touched_lfo_sync_rate(idx, sync_rate, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_sync_rate = sync_rate;\n", i);
+        printf("sliderchange(lfo%i_sync_rate);\n", i);
+        printf("slider_automate(lfo%i_sync_rate, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO start_phase has been touched
+  */
+  function notify_touched_lfo_start_phase(idx, start_phase, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_start_phase = start_phase;\n", i);
+        printf("sliderchange(lfo%i_start_phase);\n", i);
+        printf("slider_automate(lfo%i_start_phase, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO deform has been touched
+  */
+  function notify_touched_lfo_deform(idx, deform, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_deform = deform;\n", i);
+        printf("sliderchange(lfo%i_deform);\n", i);
+        printf("slider_automate(lfo%i_deform, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO amp has been touched
+  */
+  function notify_touched_lfo_amp(idx, amp, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_amp = amp;\n", i);
+        printf("sliderchange(lfo%i_amp);\n", i);
+        printf("slider_automate(lfo%i_amp, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that LFO spread has been touched
+  */
+  function notify_touched_lfo_spread(idx, spread, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_LFO_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("lfo%i_spread = spread;\n", i);
+        printf("sliderchange(lfo%i_spread);\n", i);
+        printf("slider_automate(lfo%i_spread, end);\n", i);
+        printf(")%s\n", i == TOTAL_LFO_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  function set_filter_active(idx, is_active)
+    global()
+    (
+      set_SVF_active(idx, is_active);
+      notify_touched_filter_active(idx, is_active, 1);
+      sliderchange(-1);
+    );
+
+  function toggle_filter_active(idx)
+    global()
+    (
+      set_filter_active(idx, !is_SVF_active(idx))
+    );
+
+  function set_filter_channel_mode(idx, channel_mode, is_end)
+    global()
+    (
+      set_SVF_channel_mode(idx, channel_mode);
+      notify_touched_filter_channel_mode(idx, channel_mode, is_end);
+    );
+
+  function set_filter_type(idx, type, is_end)
+    global()
+    (
+      set_SVF_type(idx, type);
+      notify_touched_filter_type(idx, type, is_end);
+    );
+
+  function set_filter_spread(idx, spread, is_end)
+    global()
+    (
+      set_SVF_spread(idx, spread);
+      notify_touched_filter_spread(idx, spread, is_end);
+    );
+
+  function adjust_filter_spread(idx, spread_delta, is_end)
+    global()
+    (
+      notify_touched_filter_spread(idx, adjust_SVF_spread(idx, spread_delta), is_end);
+    );
+
+  function set_filter_frequency(idx, v, is_end)
+    global()
+    (
+      set_SVF_freq(idx, v);
+      notify_touched_filter_frequency(idx, pct_to_Hz(v), is_end);
+    );
+
+  function adjust_filter_frequency(idx, v_delta, is_end)
+    local(v)
+    global()
+    (
+      v = adjust_SVF_frequency(idx, v_delta);
+      notify_touched_filter_frequency(idx, v, is_end);
+    );
+
+  function set_filter_bandwidth(idx, bandwidth, is_end)
+    global()
+    (
+      set_SVF_bandwidth(idx, bandwidth);
+      notify_touched_filter_bandwidth(idx, bandwidth, is_end);
+    );
+
+  function adjust_filter_bandwidth(idx, octave_delta, is_end)
+    local(octave)
+    global()
+    (
+      octave = adjust_SVF_bandwidth(idx, octave_delta);
+      notify_touched_filter_bandwidth(idx, octave, is_end);
+    );
+
+  function set_filter_gain(idx, gain, is_end)
+    global()
+    (
+      set_SVF_gain(idx, gain);
+      notify_touched_filter_gain(idx, gain, is_end);
+    );
+
+  function adjust_filter_gain(idx, dB_delta, is_end)
+    local(dB)
+    global()
+    (
+      dB = adjust_SVF_gain(idx, dB_delta);
+      notify_touched_filter_gain(idx, dB, is_end);
+    );
+
+  function add_filter(idx, Hz, dB)
+    local(shape)
+    global(
+      SVF_SHAPE_HP, SVF_SHAPE_LS, SVF_SHAPE_LP, SVF_SHAPE_HS, SVF_SHAPE_PEAK,
+    )
+    (
+      shape = Hz < 30. ? SVF_SHAPE_HP :
+        Hz < 100. ? SVF_SHAPE_LS :
+          Hz > 16000. ? SVF_SHAPE_LP :
+            Hz > 8000. ? SVF_SHAPE_HS :
+              SVF_SHAPE_PEAK;
+      on_SVF_slider_change(idx, 1, 0, shape, 0., Hz_to_pct(Hz), 2., dB);
+      set_EQ_active(idx, 1);
+      notify_touched_filter_active(idx, 1, 1);
+      notify_touched_filter_channel_mode(idx, 0, 1);
+      notify_touched_filter_type(idx, shape, 1);
+      notify_touched_filter_spread(idx, 0, 1);
+      notify_touched_filter_frequency(idx, Hz, 1);
+      notify_touched_filter_bandwidth(idx, 2., 1);
+      notify_touched_filter_gain(idx, dB, 1);
+      sliderchange(-1);
+    );
+
+  function remove_filter(idx)
+    global()
+    (
+      remove_SVF_filter(idx);
+      remove_EQ_node(idx);
+      notify_touched_filter_active(idx, 0, 1);
+    );
+
+  function set_lfo_active(idx, is_active)
+    global()
+    (
+      toggle_LFO_active(idx, is_active);
+      notify_touched_lfo_active(idx, is_active, 1);
+      set_dirty_for_router_routes_with_src_mod(idx);
+      sliderchange(-1);
+    );
+
+  function toggle_lfo_active(idx)
+    local(is_active)
+    global()
+    (
+      is_active = !is_LFO_active(idx);
+      set_lfo_active(idx, is_active);
+    );
+
+  function set_lfo_trigger_mode(idx, trigger_mode, is_end)
+    global()
+    (
+      set_LFO_trigger_mode(idx, trigger_mode);
+      notify_touched_lfo_trigger_mode(idx, trigger_mode, is_end);
+    );
+
+  function set_lfo_rate_mode(idx, rate_mode, is_end)
+    global()
+    (
+      set_LFO_rate_mode(idx, rate_mode);
+      notify_touched_lfo_rate_mode(idx, rate_mode, is_end);
+    );
+
+  function next_lfo_rate_mode(idx, is_end)
+    local(mode)
+    global()
+    (
+      mode = get_LFO_rate_mode(idx);
+      set_lfo_rate_mode(idx, (mode + 1) % 3, is_end);
+    );
+
+  function set_lfo_shape(idx, shape, is_end)
+    global()
+    (
+      set_LFO_shape(idx, shape);
+      notify_touched_lfo_shape(idx, shape, is_end);
+    );
+
+  function set_lfo_hz_rate(idx, hz_rate, is_end)
+    global()
+    (
+      set_LFO_hz_rate(idx, hz_rate);
+      notify_touched_lfo_hz_rate(idx, hz_rate, is_end);
+    );
+
+  function set_lfo_sync_rate(idx, sync_rate, is_end)
+    global()
+    (
+      set_LFO_sync_rate(idx, sync_rate);
+      notify_touched_lfo_sync_rate(idx, sync_rate, is_end);
+    );
+
+  function set_lfo_sync_rate_pct(idx, sync_rate, is_end)
+    local(v)
+    global(LFO_SYNC_TIME_LOOKUP_TABLE_COUNT)
+    (
+      set_lfo_sync_rate(idx, sync_rate * LFO_SYNC_TIME_LOOKUP_TABLE_COUNT, is_end);
+    );
+
+  function set_lfo_start_phase(idx, start_phase, is_end)
+    global()
+    (
+      set_LFO_start_phase(idx, start_phase);
+      notify_touched_lfo_start_phase(idx, start_phase, is_end);
+    );
+
+  function set_lfo_deform(idx, deform, is_end)
+    global()
+    (
+      set_LFO_deform(idx, deform);
+      notify_touched_lfo_deform(idx, deform, is_end);
+    );
+
+  function set_lfo_amp(idx, amp, is_end)
+    global()
+    (
+      set_LFO_amp(idx, amp);
+      notify_touched_lfo_amp(idx, amp, is_end);
+    );
+
+  function set_lfo_spread(idx, spread, is_end)
+    global()
+    (
+      set_LFO_spread(idx, spread);
+      notify_touched_lfo_spread(idx, spread, is_end);
+    );
+
+  function adjust_lfo_spread(idx, spread_delta, is_end)
+    local(spread)
+    global()
+    (
+      spread = adjust_LFO_spread(idx, spread_delta);
+      notify_touched_lfo_spread(idx, spread, is_end);
+    );
+
+  function set_makeup_gain(gain_dB, is_end)
+    global(makeup_gain_db, makeup_gain_linear)
+    (
+      makeup_gain_db = gain_dB;
+      makeup_gain_linear = dB_to_A(makeup_gain_db);
+      sliderchange(makeup_gain_db);
+      slider_automate(makeup_gain_db, is_end);
+      is_end ? sliderchange(-1);
+    );
+
+  function set_limiter_threshold(treshold_dB, is_end)
+    global(limiter_threshold, limiter_threshold_linear)
+    (
+      limiter_threshold = treshold_dB;
+      limiter_threshold_linear = dB_to_A(limiter_threshold);
+      sliderchange(limiter_threshold);
+      slider_automate(limiter_threshold, is_end);
+      is_end ? sliderchange(-1);
+    );
+
+  function add_lfo(idx)
+    local()
+    global()
+    (
+      on_LFO_slider_change(idx, 1, 0, 0, 0, 0., .5, 29, 0., 0., 1.);
+      notify_touched_lfo_active(idx, 1, 1);
+      notify_touched_lfo_trigger_mode(idx, 0, 1);
+      notify_touched_lfo_rate_mode(idx, 0, 1);
+      notify_touched_lfo_shape(idx, 0, 1);
+      notify_touched_lfo_spread(idx, 0., 1);
+      notify_touched_lfo_hz_rate(idx, .5, 1);
+      notify_touched_lfo_sync_rate(idx, 29, 1);
+      notify_touched_lfo_start_phase(idx, 0., 1);
+      notify_touched_lfo_deform(idx, 0., 1);
+      notify_touched_lfo_amp(idx, 1., 1);
+      sliderchange(-1);
+    );
+  function remove_lfo(idx)
+    global()
+    (
+      toggle_LFO_initialized(idx, 0);
+      notify_touched_lfo_active(idx, 0, 1);
+      set_dirty_for_router_routes_with_src_mod(idx);
+    );
+
+  // ───────────── Memory Allocations ─────────────
+  function initialize()
+    (
+      mem_inc = 1;
+      init_SVFs(TOTAL_FILTER_COUNT, mem_inc);
+      init_LFOs(TOTAL_LFO_COUNT, mem_inc);
+      init_SideChains(TOTAL_SIDECHAIN_COUNT, !is_initialized, mem_inc);
+      init_router(TOTAL_LFO_COUNT, 4, TOTAL_FILTER_COUNT, 3, 16, !is_initialized, mem_inc);
+      init_EQ_nodes(TOTAL_FILTER_COUNT, mem_inc);
+      COLOR_MAIN = COLORS.init_HSL_COLORS(285, 50, 50, mem_inc);
+      COLORS.Highlight.HSL_color_scaled(0, 80, 95);
+      COLOR_HIGHLIGHT = COLORS.Highlight.to_rgb(mem_inc);
+      COLORS.Screen.HSL_color_scaled(0, -80, -95);
+      COLOR_SCREEN = COLORS.Screen.to_rgb(mem_inc);
+      COLORS.Gain.HSL_color_adjusted(-90, 0, 0);
+      COLOR_GAIN = COLORS.Gain.Button.HSL_toggle_button(mem_inc);
+      COLORS.Limiter.HSL_color_adjusted(45, 0, 0);
+      COLOR_LIMITER = COLORS.Limiter.Button.HSL_toggle_button_monochrome(mem_inc);
+      COLORS.band.init_band_colors(mem_inc);
+      is_initialized = 1;
+
+      // ───────────── Non persistant variable initiation ─────────────
+
+      g_cur_gain_range = 6.;
+      g_cur_gain_step = EQ_MAX_GAIN_STEP;
+      g_mod_route_idx = -1;
+    );
+
+  initialize();
+  init_rate != srate ? (
+    init_rate = srate;
+    set_all_SVFs_dirty(TOTAL_FILTER_COUNT);
+  );
+
+@serialize
+  file_avail(handle) >= 0 ? (
+    // Read mode
+    file_var(0, version);
+    file_var(0, is_initialized);
+    file_var(0, g_cur_gain_range);
+    file_var(0, g_cur_gain_step);
+    file_mem(0, ROUTER_INDICES_MEM_POS, ROUTER_TOTAL_ROUTE_COUNT);
+    file_mem(0, ROUTER_ROUTING_MEM_POS, ROUTER_TOTAL_ROUTING_MEM_COUNT);
+    file_mem(0, SIDECHAIN_PARAM_MEM_POS, TOTAL_SIDECHAIN_PARAM_MEM_COUNT);
+  ) : (
+    // Write mode
+    // TODO: The version number should reflect the current script version
+    version = 1;
+
+    file_var(0, verison);
+    file_var(0, is_initialized);
+    file_var(0, g_cur_gain_range);
+    file_var(0, g_cur_gain_step);
+    file_mem(0, ROUTER_INDICES_MEM_POS, ROUTER_TOTAL_ROUTE_COUNT);
+    file_mem(0, ROUTER_ROUTING_MEM_POS, ROUTER_TOTAL_ROUTING_MEM_COUNT);
+    file_mem(0, SIDECHAIN_PARAM_MEM_POS, TOTAL_SIDECHAIN_PARAM_MEM_COUNT);
+  );
+
+
+@slider
+  <?
+    i = 1;
+    loop(TOTAL_FILTER_COUNT,
+      printf("on_SVF_slider_change(%d, f%d_active, f%d_channel, f%d_type, f%d_spread, Hz_to_pct(f%d_freq), f%d_bandwidth, f%d_gain);\n", i-1, i,i,i,i,i,i,i);
+      i += 1;
+    );
+  ?>
+  <?
+    i = 1;
+    loop(TOTAL_LFO_COUNT,
+      printf("on_LFO_slider_change(%d, lfo%d_active, lfo%d_trigger_mode, lfo%d_rate_mode,
+        lfo%d_shape, lfo%d_spread, lfo%d_hz_rate, lfo%d_sync_rate, lfo%d_start_phase, lfo%d_deform, lfo%d_amp
+        );\n", i-1,i,i,i,i,i,i,i,i,i,i
+      );
+      i += 1;
+    );
+  ?>
+  makeup_gain_linear = dB_to_A(makeup_gain_db);
+  limiter_threshold_linear = dB_to_A(limiter_threshold);
+
+@block
+  CUR_TEMPO = tempo;
+  router_update_active_routes(TOTAL_LFO_COUNT);
+  while (midirecv(offset, msg1, msg2, msg3)) (
+    status = $xF0;
+    (status == STATUS_NOTE_ON && msg3) ? maybe_parse_all_LFO_midi_reset(TOTAL_LFO_COUNT, offset);
+  );
+
+@sample
+  reset_all_SVF_modulations(TOTAL_FILTER_COUNT);
+  reset_all_LFO_modulations(TOTAL_LFO_COUNT);
+  process_all_SideChains(TOTAL_SIDECHAIN_COUNT);
+  process_router(0, TOTAL_LFO_COUNT);
+  process_all_LFOs(TOTAL_LFO_COUNT);
+  process_router(1, TOTAL_LFO_COUNT);
+  process_all_SVFs(TOTAL_FILTER_COUNT, spl0, spl1);
+  spl0 *= makeup_gain_linear;
+  spl1 *= makeup_gain_linear;
+  limit_output ? (
+    spl0 = clamp(spl0, -limiter_threshold_linear, limiter_threshold_linear);
+    spl1 = clamp(spl1, -limiter_threshold_linear, limiter_threshold_linear);
+  );
+
+@gfx 800 600
+  gfx_mode = 0;
+  actual_width = gfx_w / gfx_ext_retina;
+  actual_height = gfx_h / gfx_ext_retina;
+
+  // This is necessary
+  // Without this, the mouse_caps don't register key presses until the
+  // mouse button is clicked.
+  gfx_getchar();
+  // Calculage compact view flags
+  // These are used to disable certain elements for graceful visual shrinking
+  g_is_compact_width = actual_width < 600;
+  g_is_compact_height = actual_height < 400;
+  g_is_compact = g_is_compact_width || g_is_compact_height;
+  g_is_very_compact_width = actual_width < 300;
+  g_is_very_compact_height = actual_height < 200;
+  g_is_very_compact = g_is_very_compact_width || g_is_very_compact_height;
+
+
+  w_scaling = gfx_w / 800;
+  h_scaling = gfx_h / 600;
+  g_scaling = min(w_scaling, h_scaling);
+  g_border_size = floor(4.0 * g_scaling);
+  g_button_border_size = floor(2.0 * g_scaling);
+  g_padding_size = floor(2.0 * g_scaling);
+
+  fontscaling = max(1., h_scaling);
+  gfx_setfont(FONT_TITLE, "Arial", 32 * fontscaling, 'b');
+  gfx_setfont(FONT_AUTHOR, "Arial", 16 * fontscaling, 'bi');
+  gfx_setfont(FONT_SECTION_TITLE, "Arial", 16 * fontscaling, 'b');
+  gfx_setfont(FONT_VISUAL_MARKERS, "Arial", 14 * fontscaling, 'b');
+  gfx_setfont(FONT_ADD_FILTER, "Arial", 20 * fontscaling, 'b');
+  gfx_setfont(FONT_PARAM_TITLE, "Arial", 14 * fontscaling, 'b');
+  gfx_setfont(FONT_PARAM_VALUE, "Arial", 14 * fontscaling);
+  gfx_setfont(FONT_LFO_BUTTON, "Arial", 12 * fontscaling, 'b');
+
+  function uix_is_compact() global(g_is_compact) ( g_is_compact; );
+  function uix_is_very_compact() global(g_is_very_compact) ( g_is_very_compact; );
+  function uix_setPosition(x, y)
+    global(gfx_x, gfx_y)
+    (
+      gfx_x = x; gfx_y = y;
+    );
+
+  function uix_getColorLightness(r, g, b) local(vmax, vmin) global() (
+    vmax = max(max(r, g), b);
+    vmin = min(min(r, g), b);
+    (vmax + vmin) * .5;
+  );
+
+  function uix_getColorLightness()
+    global(gfx_r, gfx_g, gfx_b)
+    (
+      uix_getColorLightness(gfx_r, gfx_g, gfx_b);
+    );
+
+  function uix_invertColor()
+    global(gfx_r, gfx_g, gfx_b)
+    (
+      gfx_r = 1. - clamp(gfx_r);
+      gfx_g = 1. - clamp(gfx_g);
+      gfx_b = 1. - clamp(gfx_b);
+    );
+
+  function uix_brightenColor(amount)
+    global(gfx_r, gfx_g, gfx_b)
+    (
+      gfx_r += (1. - gfx_r) * amount;
+      gfx_g += (1. - gfx_g) * amount;
+      gfx_b += (1. - gfx_b) * amount;
+    );
+
+  function uix_darkenColor(amount)
+    local(inv)
+    global(gfx_r, gfx_g, gfx_b)
+    (
+      inv = clamp(1. - amount);
+      gfx_r *= inv; gfx_g *= inv; gfx_b *= inv;
+    );
+
+  function uix_desaturateColor(amount)
+    local(avg)
+    global(gfx_r, gfx_g, gfx_b)
+    (
+      avg = (gfx_r + gfx_g + gfx_b) / 3;
+      gfx_r += (avg - gfx_r) * amount;
+      gfx_g += (avg - gfx_g) * amount;
+      gfx_b += (avg - gfx_b) * amount;
+    );
+
+  function uix_maybeInvertColor(bg_l)
+    local(gain, text_l)
+    global(gfx_r, gfx_g, gfx_b)
+    (
+      text_l = uix_getColorLightness();
+      (text_l + .05) / (bg_l + .05) < 1.5 ? (
+        gain = (1. - text_l) / max(0.0001, text_l);
+        gfx_set(
+          min(1., gfx_r * gain),
+          min(1., gfx_g * gain),
+          min(1., gfx_b * gain)
+        );
+      );
+    );
+
+  function uix_drawLine(x1,y1,x2,y2,w)
+    local(dx,dy,len,ux,uy,i,half,ofs)
+    global(g_scaling, gfx_a)
+    (
+      dx   = x2 - x1;
+      dy   = y2 - y1;
+      len  = sqrt(dx*dx + dy*dy);  // line length
+      w = uix_is_very_compact() ? 1. : w * g_scaling;
+      len > 0 ? (
+          // unit vector 90° to the line (points “sideways”)
+          ux = -dy / len;
+          uy =  dx / len;
+
+          half = w * 0.5;
+          gfx_triangle(
+              x1 + ux*half, y1 + uy*half,   // P0
+              x1 - ux*half, y1 - uy*half,   // P1
+              x2 - ux*half, y2 - uy*half,   // P2
+              x2 + ux*half, y2 + uy*half    // P3
+          );
+      );
+    );
+
+  function uix_centered(base, size)
+    global()
+    (
+      base + size * 0.5;
+    );
+
+  function uix_getAngleFromTwoPoints(ax, ay, bx, by)
+    local(dx, dy, ang)
+    global()
+    (
+      dx  = bx - ax;
+      dy  = by - ay;
+
+      // gfx's Y axis points **down**, so flip dy if you want
+      // the usual clockwise knob-style direction:
+      ang = atan2(-dy, dx);   // atan2(y, x) gives −π … +π
+
+      ang < 0 ? ang += 2*$pi; // wrap to 0 … 2π
+      ang;                    // return radians
+    );
+
+  function uix_isMouseInRect(x, y, w, h)
+    global(mouse_x, mouse_y)
+    (
+      (
+        mouse_x > x && mouse_x < x + w
+        && mouse_y > y && mouse_y < y + h
+      );
+    );
+
+  function uix_isMouseInCirc(x, y, r)
+    local(dx, dy)
+    global(mouse_x, mouse_y)
+    (
+      dx = mouse_x-x;
+      dy = mouse_y-y;
+      dx*dx + dy*dy < r*r;
+    );
+
+  function ui_drawColorRect(x, y, w, h, color_mem_pos)
+    global()
+    (
+      set_HSL_color(color_mem_pos);
+      gfx_rect(x, y, w, h)
+    );
+
+  function ui_drawColorRect(x, y, w, h, color_mem_pos, alpha)
+    global()
+    (
+      set_HSL_colora(color_mem_pos, alpha);
+      gfx_rect(x, y, w, h)
+    );
+
+  function ui_drawCenteredText(x, y, w, h, s)
+    local(sw, sh)
+    global()
+    (
+      gfx_measurestr(s, sw, sh);
+      uix_setPosition(
+        uix_centered(x, w - sw), uix_centered(y, h - sh)
+      );
+      gfx_drawstr(s);
+    );
+
+
+  function ui_drawAlignedText(x, y, w, h, halign, valign, s)
+    local(sw, sh)
+    global()
+    (
+      gfx_measurestr(s, sw, sh);
+      uix_setPosition(
+        x + (w - sw) * halign, y + (h - sh) * valign
+      );
+      gfx_drawstr(s);
+    );
+
+  function ui_showMenuAtMousePosition(s)
+    global(mouse_x, mouse_y)
+    (
+      uix_setPosition(mouse_x, mouse_y);
+      gfx_showmenu(s);
+    );
+
+  function ui_drawButtonFill(x, y, w, h)
+    global(g_button_border_size)
+    (
+      gfx_rect(
+        x + g_button_border_size,
+        y + g_button_border_size,
+        w - g_button_border_size - g_button_border_size,
+        h - g_button_border_size - g_button_border_size
+      );
+    );
+
+  function ui_drawButtonBorder(x, y, w, h)
+    global()
+    (
+      gfx_rect(x, y, w, h);
+    );
+
+  function ui_drawButtonText(x, y, w, h, s)
+    global()
+    (
+      uix_setPosition(x, y);
+      gfx_drawstr(s, 5, x+w, y+h);
+    );
+
+  function ui_drawButton(x, y, w, h, color_mem_pos, status)
+    instance(fill_type)
+    global(
+      BUTTON_BORDER_OFFSET, BUTTON_BG_OFFSET, BUTTON_MAIN_OFFSET, BUTTON_TEXT_OFFSET,
+      COLOR_BLACK
+    )
+    (
+      set_HSL_button_color(color_mem_pos, status, BUTTON_BORDER_OFFSET);
+      ui_drawButtonBorder(x, y, w, h);
+      fill_type == -1 ? (
+        status == 0 ? set_HSL_color(COLOR_BLACK) :
+          set_HSL_button_color(color_mem_pos, status, BUTTON_BG_OFFSET);
+      ) : fill_type >= 0 ? (
+        set_HSL_button_color(color_mem_pos, status, fill_type ? BUTTON_MAIN_OFFSET : BUTTON_BG_OFFSET);
+      );
+      ui_drawButtonFill(x, y, w, h);
+    );
+
+  function ui_drawButton(x, y, w, h, color_mem_pos, status, s)
+    local(fill_l)
+    instance(no_invert)
+    global(BUTTON_TEXT_OFFSET)
+    (
+      this.ui_drawButton(x, y, w, h, color_mem_pos, status);
+      s ? (
+        fill_l = uix_getColorLightness();
+        set_HSL_button_color(color_mem_pos, status, BUTTON_TEXT_OFFSET);
+        !no_invert ? uix_maybeInvertColor(fill_l);
+        ui_drawButtonText(x, y, w, h, s);
+      );
+    );
+
+  function ui_parseButtonState(x, y, w, h, status)
+    local(status)
+    instance(in_section, l_click, r_click, l_clicked, r_clicked)
+    global(
+      BUTTON_STATUS_HOVER, BUTTON_STATUS_PRESS, mouse_cap
+    )
+    (
+      uix_isMouseInRect(x, y, w, h) ? (
+        !mouse_cap ? in_section = 1;
+        in_section ? (
+          mouse_cap&1 ? l_click = 1;
+          l_click && mouse_cap == 0 ? l_click = 2;
+          l_click == 2 ? (l_clicked = 1; l_click = 0);
+          mouse_cap&2 ? r_click = 1;
+          r_click && mouse_cap == 0 ? r_click = 2;
+          r_click == 2 ? (r_clicked = 1; r_click = 0);
+
+          status += l_click || r_click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
+        );
+      ) : (
+        !mouse_cap ? (
+          in_section = l_click = r_click = 0;
+        );
+      );
+      status
+    );
+
+  function ui_drawTriggerButton(x, y, w, h, color, active, s)
+    instance(status, in_section, l_click, r_click)
+    global(BUTTON_STATUS_NORMAL, BUTTON_STATUS_DISABLED)
+    (
+      active ? (
+        status = this.ui_parseButtonState(
+          x, y, w, h, BUTTON_STATUS_NORMAL
+        );
+      ) : (
+        status = BUTTON_STATUS_DISABLED;
+        l_click = r_click = in_section = 0;
+      );
+      this.ui_drawButton(x, y, w, h, color, status, s);
+    );
+
+  function ui_drawToggleButton(x, y, w, h, color, active, s)
+    instance(status)
+    global(BUTTON_STATUS_NORMAL, BUTTON_STATUS_DISABLED)
+    (
+      status = this.ui_parseButtonState(
+        x, y, w, h,
+        active ? BUTTON_STATUS_NORMAL : BUTTON_STATUS_DISABLED
+      );
+      this.ui_drawButton(x, y, w, h, color, status, s);
+    );
+
+  function ui_drawTabSwitch(x, y, w, h, color_mem, is_active, columns, rows, active_idx)
+    local(raw_status, x2, i, total, column, row, item_w, item_h, gap, cur_x, cur_y, is_active)
+    instance(status, draw_style, hover_idx)
+    global(
+      BUTTON_STATUS_NORMAL, BUTTON_STATUS_DISABLED,
+      BUTTON_MAIN_OFFSET, BUTTON_BG_OFFSET, BUTTON_BORDER_OFFSET,
+      mouse_x, mouse_y, g_scaling, g_button_border_size
+    )
+    (
+      raw_status = is_active ? BUTTON_STATUS_NORMAL : BUTTON_STATUS_DISABLED;
+      status = this.ui_parseButtonState(x, y, w, h, raw_status);
+      total = columns * rows;
+      this.in_section ? (
+        row = floor((mouse_y - y) / h * rows);
+        column = floor((mouse_x - x) / w * columns);
+        hover_idx = row * columns + column;
+      ) : hover_idx = active_idx;
+      i = 0;
+      !draw_style ? (
+        gap = 2. * g_scaling;
+        item_w = (w - gap * (columns - 1) ) / columns;
+        item_h = (h - gap * (rows - 1)) / rows;
+        cur_x = x; cur_y = y;
+        x2 = x + w;
+        column = 0;
+        loop(total,
+          this.fill_type = i == active_idx ? 1 : -1;
+          this.ui_drawButton(
+            cur_x, cur_y, item_w, item_h, color_mem, i == hover_idx ? status : raw_status
+          );
+          cur_x += item_w + gap;
+          column += 1;
+          column >= columns ? (
+            cur_x = x; cur_y += item_h + gap;
+          );
+          i += 1;
+        );
+      ) : draw_style == 1 ? (
+        set_HSL_button_color(color_mem, raw_status, BUTTON_BORDER_OFFSET);
+        w = round(w); h = round(h);
+        gfx_rect(x, y, w, h);
+        x += g_button_border_size; y += g_button_border_size;
+        w -= g_button_border_size * 2.; h -= g_button_border_size * 2.;
+        set_HSL_button_color(color_mem, raw_status, BUTTON_BG_OFFSET);
+        gfx_rect(x, y, w, h);
+        item_w = round(w / columns);
+        item_h = round(h / rows);
+        cur_x = x; cur_y = y; x2 = x + w;
+        column = 0;
+        loop(total,
+          set_HSL_button_color(
+            color_mem,
+            i == hover_idx ? status : raw_status,
+            i == active_idx ? BUTTON_MAIN_OFFSET : BUTTON_BG_OFFSET
+          );
+          gfx_rect(cur_x, cur_y, min(x + w - cur_x, item_w), min(y + h - cur_y, item_h));
+          cur_x += item_w;
+          column += 1;
+          column >= columns ? (
+            column = 0;
+            cur_x = x; cur_y += item_h;
+          );
+          i += 1;
+        );
+      );
+    );
+
+  function ui_parseKnobState(cx, cy, r, type, status)
+    local(dx, dy, offset, bottom, top, ang, tm)
+    instance(
+      in_section, click_time, l_click, l_clicked, initial_l_click,
+      r_click, r_clicked,
+      l_dragging, l_dragged, r_dragging, r_dragged, wheel_scrolled,
+      lmb_x, lmb_y, rmb_x, rmb_y, v_l, v_r
+    )
+    global(
+      mouse_cap, mouse_x, mouse_y, mouse_wheel,
+      BUTTON_STATUS_HOVER, BUTTON_STATUS_PRESS,
+      TAU,
+    )
+    (
+      uix_isMouseInCirc(cx, cy, r) ? (
+        !mouse_cap ? in_section = 1;
+        in_section ? (
+          mouse_wheel ? (
+            wheel_scrolled = sign(mouse_wheel) * (mouse_cap&8 ? .1 : 1.);
+            mouse_wheel = 0;
+          );
+          mouse_cap&1 ? (
+            !l_click ? (
+              lmb_x = mouse_x;
+              lmb_y = mouse_y;
+              initial_l_click = 1;
+              l_dragged = 0;
+            );
+            l_click = 1;
+            !l_dragging && (mouse_y != lmb_y || mouse_x != lmb_x) ? (
+              l_dragging = 1;
+              l_click = 0;
+            );
+          ) : (
+            l_click ? (
+              tm = time_precise();
+              l_click ? (
+                // Double click?
+                l_clicked = (tm - click_time < 0.4) ? -l_click : l_click;
+              );
+
+              l_click = 0;
+              click_time = tm;
+            ) : l_dragging ? (
+              l_dragged = 1;
+              l_dragging = 0;
+            );
+          );
+          mouse_cap&2 ? (
+            !r_click ? (
+              rmb_x = mouse_x;
+              rmb_y = mouse_y;
+              r_dragged = 0;
+            );
+            r_click = 1;
+            !r_dragging && (mouse_y != rmb_y || mouse_x != rmb_x) ? (
+              r_click = 0;
+              r_dragging = 1;
+            );
+          ) : (
+            r_click ? (
+              r_clicked = 1;
+              r_click = 0;
+            );
+          );
+          !mouse_cap&3 ? status += BUTTON_STATUS_HOVER;
+        );
+      ) : (
+        !(mouse_cap&1) ? (
+          l_dragging ? l_dragged = 1;
+          l_dragging = l_click = 0;
+        );
+        !(mouse_cap&2) ? (
+          r_dragging ? r_dragged = 1;
+          r_dragging = r_click = 0;
+        );
+        !(l_dragging || r_dragging) ? in_section = 0;
+      );
+
+      l_click || r_click || l_dragging || r_dragging ? (
+        status += BUTTON_STATUS_PRESS;
+      );
+      l_dragging || r_dragging ? (
+        l_clicked = r_clicked = 0;
+        bottom = type ? -1. : 0.;
+        top = 1.;
+      );
+
+      l_dragging ? (
+        mouse_cap&4 ? ( // Holding Ctrl assigns value based on mouse position
+          ang = uix_getAngleFromTwoPoints(cx, cy, mouse_x, mouse_y);
+          ang += .25 * $pi; ang > 1.75 * $pi ? ang -= TAU;
+          ang = 1. - ang / (1.5 * $pi);
+          type ? ang = ang * 2. - 1.;
+          v_l = clamp(ang, bottom, top);
+        ) : (
+          dx = mouse_x - lmb_x; dy = mouse_y - lmb_y;
+          dx /= r * 8.; dy /= r * 8.;
+          mouse_cap&8? (
+            dx *= .1; dy *= .1;
+          );
+          v_l += dx; v_l -= dy;
+          v_l = clamp(v_l, bottom, top);
+          lmb_x = mouse_x; lmb_y = mouse_y;
+        );
+      );
+      r_dragging ? (
+        mouse_cap&4 ? ( // Holding Ctrl assigns value based on mouse position
+          ang = uix_getAngleFromTwoPoints(cx, cy, mouse_x, mouse_y);
+          ang += .25 * $pi; ang > 1.75 * $pi ? ang -= TAU;
+          ang = 1. - ang / (1.5 * $pi);
+          type ? ang = ang * 2. - 1.;
+          v_l = clamp(ang, bottom, top);
+        ) : (
+          dx = mouse_x - rmb_x; dy = mouse_y - rmb_y;
+          dx /= r * 8.; dy /= r * 8.;
+          mouse_cap&8? (
+            dx *= .1; dy *= .1;
+          );
+          v_r += dx; v_r -= dy;
+          v_r = clamp(v_r, bottom, top);
+          rmb_x = mouse_x; rmb_y = mouse_y;
+        );
+      );
+      status;
+    );
+
+  function ui_drawKnob(cx, cy, r, type, color_mem, active)
+    local(
+      status, ang_step, start, end, ang, rsize, rwidth, roffset,
+      x1, y1, x2, y2, x1r, y1r, x2r, y2r,
+      range, st, en, an, ofs, c, i, rad
+    )
+    instance(v_l, v_r)
+    global(
+      BUTTON_STATUS_NORMAL, BUTTON_STATUS_DISABLED,
+      BUTTON_MAIN_OFFSET, BUTTON_BORDER_OFFSET, BUTTON_BG_OFFSET,
+      COLOR_BLACK,
+      g_scaling, gfx_ext_retina
+    )
+    (
+      status = this.ui_parseKnobState(cx, cy, r, type, active ? BUTTON_STATUS_NORMAL : BUTTON_STATUS_DISABLED);
+
+      set_HSL_color(COLOR_BLACK);
+      gfx_circle(cx, cy, r, 1, 1);
+      r -= 1. * g_scaling;
+      set_HSL_button_color(color_mem, status, BUTTON_BG_OFFSET);
+      gfx_circle(cx, cy, r, 1, 1);
+      ang_step = $pi * .25;
+      start = 3. * ang_step;
+      end = 9. * ang_step;
+      ofs = 2 * ang_step;
+      st = start + ofs;
+      en = end + ofs;
+
+      set_HSL_button_colora(color_mem, status, BUTTON_BORDER_OFFSET, 0.1);
+      c = r * .5;
+      rad = r;
+      loop(c,
+        gfx_arc(cx, cy, rad, st, end+ofs, 1);
+        rad -= 0.5;
+      );
+
+      range = end - start;
+      type ? (
+        st += range * .5;
+        ang = start + (range * (0.5 + v_l * .5));
+      ) : (
+        ang = start + (range * v_l);
+      );
+
+      an = ang + ofs;
+      set_HSL_button_colora(color_mem, status, BUTTON_MAIN_OFFSET, 1.);
+      rad = r;
+      loop(c,
+        gfx_arc(cx, cy, rad, st, an, 1);
+        rad -= 0.5;
+      );
+
+      rsize = r - 1.;
+      rwidth = 2. * gfx_ext_retina;
+      roffset = c * .5;
+
+      x1 = roffset;
+      y1 = 0;
+      x2 = rsize;
+      y2 = 0;
+      x1r = x1 * cos(ang) - y1 * sin(ang);
+      y1r = y1 * cos(ang) + x1 * sin(ang);
+
+      x2r = x2 * cos(ang) - y2 * sin(ang);
+      y2r = y2 * cos(ang) + x2 * sin(ang);
+
+      uix_drawLine(cx+x1r, cy+y1r, cx+x2r, cy+y2r, 2.);
+    );
+
+  function ui_drawKnobModOverlay(cx, cy, r, is_src_centered, is_bipolar, color_mem, is_active, src_value, mod_value)
+    local(start, ang_step, end, ofs, st, en, range, start_ang, end_ang, rad, thickness)
+    global(g_scaling)
+    (
+      set_HSL_color(color_mem);
+      is_active ? (
+        uix_brightenColor(.125);
+        thickness = 4.;
+      ) : (
+        uix_desaturateColor(.5);
+        uix_darkenColor(.125);
+        thickness = 2.;
+      );
+      thickness *= g_scaling;
+
+      r += 1.;
+      ang_step = $pi * .25;
+      start = 3. * ang_step;
+      end = 9. * ang_step;
+      ofs = 2 * ang_step;
+      st = start + ofs;
+      en = end + ofs;
+
+      range = end - start;
+      is_src_centered ? src_value = src_value * .5 + .5;
+
+      start_ang = st + range * src_value;
+      end_ang = clamp(start_ang + mod_value * range, st, en);
+
+      rad = r;
+      loop(thickness,
+        gfx_arc(cx, cy, rad, start_ang, end_ang, 1);
+        rad += 0.5;
+      );
+
+      is_bipolar ? (
+        end_ang = clamp(start_ang - mod_value * range, st, en);
+
+        uix_darkenColor(.25);
+        rad = r;
+        loop(thickness,
+          gfx_arc(cx, cy, rad, start_ang, end_ang, 1);
+          rad += 0.5;
+        );
+      );
+    );
+
+  function ui_parseSliderState(x, y, w, h, type, is_active)
+    local(tm, top, bottom, dx, dy, d_ratio)
+    instance(
+      status, in_section, click_time, initial_l_click,
+      l_click, l_clicked, r_click, r_clicked,
+      l_dragging, l_dragged, r_dragging, r_dragged, wheel_scrolled,
+      v_xl, v_yl, v_xr, v_yr, prev_x, prev_y,
+      /* reset value */
+      omp_xl, omp_yl, omp_xr, omp_yr, ov_xl, ov_yl, ov_xr, ov_yr,
+    )
+    global(
+      mouse_x, mouse_y, mouse_cap, mouse_wheel,
+      BUTTON_STATUS_NORMAL, BUTTON_STATUS_DISABLED,
+      BUTTON_STATUS_HOVER, BUTTON_STATUS_PRESS,
+    )
+    (
+      status = is_active ? BUTTON_STATUS_NORMAL : BUTTON_STATUS_DISABLED;
+
+      uix_isMouseInRect(x, y, w, h) ? (
+        !(mouse_cap&3) ? in_section = 1;
+        in_section ? (
+          mouse_wheel ? (
+            wheel_scrolled = sign(mouse_wheel) * (mouse_cap&8 ? .1 : 1.);
+            mouse_wheel = 0;
+          );
+          mouse_cap&1 ? (
+            !l_click && !l_dragging? (
+              omp_xl = mouse_x; omp_yl = mouse_y;
+              ov_xl = v_xl; ov_yl = v_yl;
+              initial_l_click = 1;
+              l_dragged = 0;
+            );
+            l_click = 1;
+            type&1 && !l_dragging && (mouse_x != prev_x || mouse_y != prev_y) ? (
+              l_dragging = 1;
+              l_click = 0;
+            );
+          ) : (
+            l_click ? (
+              tm = time_precise();
+              l_clicked = (tm - click_time < 0.4) ? -l_click : l_click;
+              l_click = 0;
+              click_time = tm;
+            ) : l_dragging ? (
+              l_dragged = 1;
+              l_dragging = 0;
+            );
+          );
+          mouse_cap&2 ? (
+            !r_click ? (
+              omp_xr = mouse_x; omp_yr = mouse_y;
+              ov_xr = v_xr; ov_yr = v_yr;
+              r_dragged = 0;
+            );
+            r_click = 1;
+            type&8 && !r_dragging && (mouse_x != prev_x || mouse_y != prev_y) ? (
+              r_click = 0;
+              r_dragging = 1;
+            );
+          ) : (
+            r_click ? (
+              r_clicked = 1;
+              r_click = 0;
+            );
+          );
+          !mouse_cap&3 ? status += BUTTON_STATUS_HOVER;
+        );
+      ) : ( // Outside of Rect
+        !(mouse_cap&1) ? (
+          l_dragging ? l_dragged = 1;
+          l_dragging = l_click = 0;
+        );
+        l_dragging ? (
+          mouse_cap&2 && !r_dragging? (
+            r_click = 1;
+          ) : r_click ? (
+            r_clicked = 1;
+            r_click = 0;
+          ); // Reset dragging on right click
+        );
+        !(mouse_cap&2) ? (
+          r_dragging ? r_dragged = 1;
+          r_dragging = r_click = 0;
+        );
+        !(l_dragging || r_dragging) ? in_section = 0;
+      );
+
+      l_click || r_click || l_dragging || r_dragging ? (
+        status += BUTTON_STATUS_PRESS;
+      );
+
+      l_dragging ? l_clicked = 0;
+      r_dragging ? r_clicked = 0;
+      !(mouse_cap&1) ? initial_l_click = 0;
+
+      l_dragging ? (
+        r_clicked ? (
+          v_xl = ov_xl; v_yl = ov_yl;
+          l_dragged = l_dragging;
+          l_dragging = l_click = r_click = l_clicked = r_clicked = in_section = 0;
+        ) : (
+          mouse_cap&4 ? ( // Holding Ctrl/Command assigns value based on mouse position
+            v_xl = (mouse_x - x) / w;
+            v_yl = (y - mouse_y) / h;
+            type&2 ? v_xl = v_xl * 2. - 1.;
+            type&4 ? v_yl = v_yl * 2. - 1.;
+          ) : ( // otherwise change value relatively
+            dx = (mouse_x - prev_x) / w; dy = (mouse_y - prev_y) / h;
+            d_ratio = mouse_cap&8 ? .01 : .1; // Holding shift finetunes
+            v_xl += dx * d_ratio;
+            v_yl -= dy * d_ratio;
+          );
+          mouse_cap&16 ? ( // Holding alt/opt changes value on one axis only
+            abs(mouse_x - omp_xl) > abs(mouse_y - omp_yl) ? (
+              v_yl = ov_yl;
+            ) : (
+              v_xl = ov_xl;
+            );
+          );
+          v_xl = clamp(v_xl, type&2?-1.:0., 1.);
+          v_yl = clamp(v_yl, type&4?-1.:0., 1.);
+        );
+      );
+      r_dragging ? (
+        mouse_cap&4 ? ( // Holding Ctrl/Command assigns value based on mouse position
+          v_xr = (mouse_x - x) / w;
+          v_yr = (y - mouse_y) / h;
+          type&16 ? v_xr = v_xr * 2. - 1.;
+          type&32 ? v_yr = v_yr * 2. - 1.;
+        ) : ( // otherwise change value relatively
+          dx = (mouse_x - prev_x) / w; dy = (mouse_y - prev_y) / h;
+          d_ratio = mouse_cap&8 ? .01 : .1; // Holding shift finetunes
+          v_xr += dx * d_ratio;
+          v_yr -= dy * d_ratio;
+        );
+        mouse_cap&16 ? ( // Holding alt/opt changes value on one axis only
+          abs(mouse_x - omp_xr) > abs(mouse_y - omp_yr) ? (
+            v_yr = ov_yr;
+          ) : (
+            v_xr = ov_xr;
+          );
+        );
+        v_xr = clamp(v_xr, type&16?-1.:0., 1.);
+        v_yr = clamp(v_yr, type&32?-1.:0., 1.);
+      );
+      prev_x = mouse_x; prev_y = mouse_y;
+      status;
+    );
+
+  function ui_drawSlider(x, y, w, h, type, color_mem_pos, is_active, s)
+    local(mw, x0, y0, w0, h0)
+    instance(status, v_xl)
+    global(
+      g_button_border_size,
+      BUTTON_BORDER_OFFSET, BUTTON_BG_OFFSET, BUTTON_MAIN_OFFSET,
+      BUTTON_TEXT_OFFSET
+    )
+    (
+      x0 = x + g_button_border_size; y0 = y + g_button_border_size;
+      w0 = w - g_button_border_size - g_button_border_size;
+      h0 = h - g_button_border_size - g_button_border_size;
+      this.ui_parseSliderState(x0, y0, w0, h0, type, is_active);
+      set_HSL_button_color(color_mem_pos, status, BUTTON_BORDER_OFFSET);
+      ui_drawButtonBorder(x, y, w, h);
+      set_HSL_button_color(color_mem_pos, status, BUTTON_BG_OFFSET);
+      gfx_rect(x0, y0, w0, h0);
+      set_HSL_button_color(color_mem_pos, status, BUTTON_MAIN_OFFSET);
+      type&2 ? (
+        mw = w0 * .5;
+        w0 = mw * abs(v_xl); x0 = v_xl < 0? x0 + mw - w0 : x0 + mw;
+        gfx_rect(x0, y0, w0, h0);
+      ) : gfx_rect(x0, y0, w0 * v_xl, h0);
+      set_HSL_button_color(color_mem_pos, status, BUTTON_TEXT_OFFSET);
+      ui_drawButtonText(x, y, w, h, s);
+    );
+
+  function ui_drawSliderModOverlay(x, y, w, h, is_src_centered, is_bipolar, color_mem, is_active, src_value, range)
+    local(start, end, diff, thickness, x0, w0)
+    global(g_scaling)
+    (
+      set_HSL_color(color_mem);
+      is_active ? (
+        uix_brightenColor(.125);
+        thickness = 2.;
+      ) : (
+        uix_desaturateColor(.5);
+        uix_darkenColor(.125);
+        thickness = 1.;
+      );
+      thickness *= g_scaling;
+      is_src_centered ? src_value = src_value * .5 + .5;
+      start = x + (w * src_value);
+        end = clamp(x + (src_value + range) * w, x, x+w);
+        diff = abs(start - end);
+        x0 = end < start? end : start;
+        w0 = diff;
+        uix_drawLine(x0, floor(y), x0+w0, floor(y), thickness);
+        uix_drawLine(x0, floor(y+h), x0+w0, floor(y+h), thickness);
+
+      is_bipolar ? (
+        end = clamp(x + (src_value - range) * w, x, x+w);
+        diff = abs(start - end);
+        x0 = end < start? end : start;
+        w0 = diff;
+        uix_darkenColor(.2);
+        uix_drawLine(x0, floor(y), x0+w0, floor(y), thickness);
+        uix_drawLine(x0, floor(y+h), x0+w0, floor(y+h), thickness);
+      );
+    );
+
+  function ui_drawTitle(x, y, w, h)
+    local(title_w, title_h, author_w, author_h)
+    (
+      gfx_setfont(FONT_TITLE);
+      gfx_measurestr(#TITLE_STRING, title_w, title_h);
+      set_HSL_color(COLOR_HIGHLIGHT);
+      uix_setPosition(x, y);
+      gfx_drawstr(#TITLE_STRING);
+
+      set_HSL_color(COLOR_MAIN + 6);
+      gfx_setfont(FONT_AUTHOR);
+      gfx_measurestr(#AUTHOR_STRING, author_w, author_h);
+      x += title_w; y += title_h - author_h - 3. * fontscaling;
+      uix_setPosition(x, y);
+      gfx_drawstr(#AUTHOR_STRING);
+      x += author_w;
+      x;
+    );
+
+  function ui_drawHeader(x, y, w, h)
+    local(
+      w_margin, h_margin, gap, x0, x1, y0, w0, h0,
+      ctrl_w, gain_w, gain_h, limit_w, limit_h,
+      is_w_enough_for_param_title
+    )
+    instance(sl_gain, sl_limiter, bt_limiter)
+    (
+      w_margin = 16. * w_scaling;
+      h_margin = max(4., 4. * h_scaling);
+      gap = 4. * w_scaling;
+      x += w_margin; y += h_margin; w -= w_margin * 2.; h -= h_margin;
+      x0 = ui_drawTitle(x, y, w, h);
+
+      ctrl_w = w * .4 + gap * 4.;
+      gfx_setfont(FONT_SECTION_TITLE);
+      gfx_measurestr(#GAIN_TITLE, gain_w, gain_h);
+      ctrl_w += gain_w;
+      gfx_measurestr(#LIMITER_TITLE, limit_w, limit_h);
+      ctrl_w += limit_w;
+
+      is_w_enough_for_param_title = x0 < w - ctrl_w;
+
+      y += h_margin; h -= h_margin;
+      x1 = x + w * .8; w0 = max(64., w * .2);
+      sl_limiter.v_xl = dB_to_norm(limiter_threshold, -LIMITER_RANGE, LIMITER_RANGE, LIMITER_RANGE * 2.);
+      sl_limiter.ui_drawSlider(x1, y, w0, h, 1, COLOR_LIMITER, limit_output, sprintf(#, w0 > 100. ? "%.2f dB" : "%.1f dB", limiter_threshold));
+      sl_limiter.r_clicked ? (
+        limit_output = !limit_output;
+        sliderchange(limit_output);
+        slider_automate(limit_output, 1);
+        sliderchange(-1);
+        sl_limiter.r_clicked = 0;
+      );
+      sl_limiter.l_dragging ? (
+        set_limiter_threshold(norm_to_dB(sl_limiter.v_xl, -LIMITER_RANGE, LIMITER_RANGE * 2.), 0);
+      );
+      sl_limiter.l_dragged ? (
+        set_limiter_threshold(norm_to_dB(sl_limiter.v_xl, -LIMITER_RANGE, LIMITER_RANGE * 2.), 1);
+        sl_limiter.l_dragged = 0;
+      );
+      sl_limiter.l_clicked < 0 ? (
+        set_limiter_threshold(0., 1);
+        sl_limiter.l_clicked = 0;
+      );
+
+      is_w_enough_for_param_title ? (
+        x1 -= limit_w + gap;
+        gfx_setfont(FONT_SECTION_TITLE);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        !limit_output ? uix_darkenColor(.5);
+        bt_limiter.ui_parseButtonState(x1, y, limit_w, h, BUTTON_STATUS_NORMAL);
+        ui_drawCenteredText(x1, y, limit_w, h, #LIMITER_TITLE);
+        bt_limiter.l_clicked ? (
+          limit_output = !limit_output;
+          sliderchange(limit_output);
+          slider_automate(limit_output, 1);
+          sliderchange(-1);
+          bt_limiter.l_clicked = 0;
+        );
+      );
+      x1 -= w0 + gap;
+
+      sl_gain.v_xl = dB_to_norm(makeup_gain_db, MIN_GAIN_DECIBEL, MAX_GAIN_DECIBEL, GAIN_DECIBEL_RANGE);
+      sl_gain.ui_drawSlider(x1, y, w0, h, 1, COLOR_GAIN, 1, sprintf(#, w0 > 100. ? "%.2f dB" : "%.1f dB", makeup_gain_db));
+      sl_gain.l_dragging ? (
+        set_makeup_gain(norm_to_dB(sl_gain.v_xl, MIN_GAIN_DECIBEL, GAIN_DECIBEL_RANGE), 0);
+      );
+      sl_gain.l_dragged ? (
+        set_makeup_gain(norm_to_dB(sl_gain.v_xl, MIN_GAIN_DECIBEL, GAIN_DECIBEL_RANGE), 1);
+        sl_gain.l_dragged = 0;
+      );
+      sl_gain.l_clicked < 0 ? (
+        set_makeup_gain(0., 1);
+        sl_gain.l_clicked = 0;
+      );
+
+      is_w_enough_for_param_title ? (
+        x1 -= gain_w + gap;
+        gfx_setfont(FONT_SECTION_TITLE);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        ui_drawCenteredText(x1, y, gain_w, h, #GAIN_TITLE);
+      );
+    );
+
+  function ui_updateEQGainStep()
+    global(g_cur_gain_range, g_cur_gain_step)
+    (
+      g_cur_gain_step = g_cur_gain_range <= 5. && !uix_is_compact() ? 0.5 :
+        g_cur_gain_range <= 7. ? 1. :
+          g_cur_gain_range <= 14. ? 2. :
+            g_cur_gain_range <= 27. ? 3. :
+              6.;
+    );
+
+  function ui_setEQGainRange(new_gain_range)
+    global(g_cur_gain_range, EQ_MIN_GAIN_RANGE, EQ_MAX_GAIN_RANGE)
+    (
+      g_cur_gain_range = clamp(new_gain_range, EQ_MIN_GAIN_RANGE, EQ_MAX_GAIN_RANGE);
+    );
+
+  function ui_drawEQBG(x, y, w, h)
+    local(i, g, f, label, x0, y0, w0, h0)
+    global(
+      g_cur_gain_range, g_cur_gain_step,
+      EQ_MAX_FREQ, EQ_MIN_FREQ,
+    )
+    (
+      g = 0;
+      while (g < g_cur_gain_range) (
+        i = -1;
+        loop(2,
+          y0 = y + (decibelToRangedV(sign(i) * g, g_cur_gain_range)) * h;
+          gfx_line(x, y0, x+w, y0);
+          i += 2;
+        );
+        g += g_cur_gain_step;
+      );
+
+      f = 30.;
+      while (f < (EQ_MAX_FREQ))
+      (
+        x0 = x + Hz_to_pct(f, EQ_MIN_FREQ, EQ_MAX_FREQ) * w;
+        gfx_line(x0, y, x0, y+h);
+        f *= 2.;
+        f == 240. ? f += 10.;
+      );
+    );
+
+  function ui_drawEQGainLabels(x, y, w, h)
+    local(g, i, y0, w0, h0, label)
+    global(g_scaling, g_cur_gain_range, g_cur_gain_step)
+    (
+      w0 = w - 4 * g_scaling;
+      h0 = 16. * g_scaling;
+      g = 0;
+      while (g < g_cur_gain_range) (
+        i = -1;
+        loop(2,
+          y0 = y + (decibelToRangedV(sign(i) * g, g_cur_gain_range)) * h;
+          (y0 - h0) > y && (y0 + h0) < y + h ?(
+            sprintf(label, g == floor(g) ? "%.0f" : "%.1f", g);
+            ui_drawAlignedText(x, y0 - h0, w0, h0, 1., 1., label);
+          );
+          i += 2;
+        );
+        g += g_cur_gain_step;
+      );
+    );
+
+  function ui_drawEQFreqLabels(x, y, w, h)
+    local(f, x0, label)
+    global(w_scaling, h_scaling, EQ_MIN_FREQ, EQ_MAX_FREQ)
+    (
+      f = 30.;
+      while (f < (EQ_MAX_FREQ))
+      (
+        x0 = x + Hz_to_pct(f, EQ_MIN_FREQ, EQ_MAX_FREQ) * w;
+        f < 1000. ? sprintf(label, "%.0f", f) : sprintf(label, "%.0fk", f * .001);
+        uix_setPosition(x0 + 4. * w_scaling, y - 2. * h_scaling);
+        gfx_drawstr(label);
+        f *= 2.;
+        f == 240. ? f += 10.;
+      );
+    );
+
+  function get_audio_filter_channel_mag_at_theta(chan, theta)
+    global(TOTAL_FILTER_COUNT)
+    (
+      get_combined_channel_mag_at_theta(TOTAL_FILTER_COUNT, chan, theta);
+    );
+
+  function ui_drawEQStereoCurves(x, y, w, h)
+    local(
+      x_pct, f, theta, chan, mem, inc, g, x0, y0, x1, y1, cy, yb, yt
+    )
+    global(
+      EQ_MIN_FREQ, EQ_MAX_FREQ, g_cur_gain_range, EQ_MAX_GAIN_RANGE,
+      EQ_FREQ_STEPS, TOTAL_FILTER_COUNT,
+      g_scaling,
+      COLOR_HIGHLIGHT, gfx_a,
+    )
+    (
+      set_HSL_color(COLOR_HIGHLIGHT);
+      inc = w / EQ_FREQ_STEPS;
+      chan = 0;
+      cy = y + h * .5;
+      yb = y + 1 * g_scaling;
+      yt = y + h - 2 * g_scaling;
+      loop(2,
+        x0 = x1 = x;
+        y0 = cy;
+        gfx_a = 1. - chan * .5;
+        loop(EQ_FREQ_STEPS,
+          x_pct = (x1 - x) / w;
+          f = pct_to_Hz(x_pct, EQ_MIN_FREQ, EQ_MAX_FREQ);
+          theta = Hz_to_theta(f);
+          g = get_audio_filter_channel_mag_at_theta(chan, theta);
+          g = 20. * log10(g);
+          g = clamp(-g, -g_cur_gain_range, g_cur_gain_range);
+          y1 = y + h * decibelToRangedV(g, g_cur_gain_range);
+          y1 = clamp(y1, yb, yt);
+          x1 == x || (y0 == y1 && (y1 == yb || y1 == yt)) ? uix_setPosition(x1, y1) : uix_drawLine(x0, y0, x1, y1, 1.5);
+          x0 = x1; y0 = y1;
+          x1 += inc;
+        );
+        chan += 1;
+      );
+    );
+
+  function get_eq_node_channel_mag_at_theta(idx, chan, theta)
+    local(i, mem, g)
+    global()
+    (
+      g = 1.;
+      is_EQ_active(idx) ? (
+        mem = get_EQ_coef_mem_pos(idx) + chan * 5;
+        g = biquad_mag(mem[0], mem[1], mem[2], mem[3], mem[4], theta);
+      );
+      g;
+    );
+
+  function ui_drawEQNodeCurve(x, y, w, h, idx, mem)
+    local(
+      inc, chan, eq_mem, f, theta, g
+      cy, yb, yt, x0, x1, y0, y1, x_pct,
+    )
+    global(
+      gfx_a, g_scaling, g_cur_gain_range
+      EQ_FREQ_STEPS, EQ_MIN_FREQ, EQ_MAX_FREQ,
+    )
+    (
+      get_band_color(idx, 0.125);
+      inc = w / EQ_FREQ_STEPS;
+      chan = 0;
+      cy = y + h * .5;
+      yb = y + 1 * g_scaling;
+      yt = y + h - 2 * g_scaling;
+      loop(2,
+        x0 = x1 = x;
+        y0 = cy;
+        eq_mem = get_SVF_coef_mem_pos(idx) + chan * 5;
+        loop(EQ_FREQ_STEPS,
+          x_pct = (x1 - x) / w;
+          f = pct_to_Hz(x_pct, EQ_MIN_FREQ, EQ_MAX_FREQ);
+          theta = Hz_to_theta(f);
+          g = get_eq_node_channel_mag_at_theta(idx, chan, theta);
+          g = 20. * log10(g);
+          g = clamp(-g, -g_cur_gain_range, g_cur_gain_range);
+          y1 = y + h * decibelToRangedV(g, g_cur_gain_range);
+          y1 = clamp(y1, yb, yt);
+          x1|0 > x0|0 ? gfx_triangle(x0, cy, x0, y1, x1-1, y1, x1-1, cy);
+          x0 = x1; y0 = y1;
+          x1 += inc;
+        );
+        chan += 1;
+      );
+    );
+
+  function ui_drawEQCurves(x, y, w, h)
+    local(i)
+    global(TOTAL_FILTER_COUNT)
+    (
+      i = 0;
+      loop(TOTAL_FILTER_COUNT,
+        is_EQ_initialized(i) ? (
+          ui_drawEQNodeCurve(x, y, w, h, i, get_EQ_mem_pos(i));
+        );
+        i += 1;
+      );
+    );
+
+  function ui_drawEQNodeChannelMode(cx, cy, r, idx, dir)
+    local(i, inc, mid, flag, width, start, end)
+    global(TAU, gfx_ext_retina)
+    (
+      i = 0;
+      inc = TAU / 16.;
+      mid = 0.;
+      flag = 1;
+      loop(8,
+        dir&flag ? (
+          width = inc * (i % 2 ? .9 : 1.1);
+          start = mid - width;
+          end = mid + width;
+
+          gfx_arc(cx, cy, r, start, end, 1);
+          !uix_is_very_compact() ? gfx_arc(cx, cy, r-0.5, start, end, 1);
+          gfx_ext_retina == 2 ? gfx_arc(cx, cy, r-1., start, end, 1);
+        );
+        i += 1;
+        flag *= 2;
+        mid += inc * 2.;
+      );
+    );
+
+  function ui_drawEQNodeIcon(x, y, w, h, shape)
+    local(t, steps, t_inc, x_inc, x0, x1, y0, y1)
+    global()
+    (
+      t = 0;
+      steps = max(16, w);
+      t_inc = 1 / steps;
+      x_inc = w * t_inc;
+      x0 = x1 = x;
+      y0 = y;
+      loop(steps+1,
+        y1 = y + h - get_SVF_filter_shape(shape, t) * h;
+        !t ? uix_setPosition(x0, y1) : (
+          uix_is_compact() ? (
+            gfx_line(x0, y0, x1, y1);
+          ) : (
+            gfx_line(x0, y0-.5, x1, y1-.5);
+            gfx_line(x0, y0+.5, x1, y1+.5);
+          );
+        );
+        x0 = x1; y0 = y1;
+        t += t_inc;
+        x1 += x_inc;
+      );
+    );
+
+  function ui_getHoveringEQNode(r)
+    local(i, min_i, d, min_d, cx, cy)
+    global(TOTAL_FILTER_COUNT, mouse_x, mouse_y)
+    (
+      i = 0;
+      min_d = 999999.;
+      loop(TOTAL_FILTER_COUNT,
+        is_EQ_initialized(i) ? (
+          d = get_distance_sqr_from(i, mouse_x, mouse_y);
+          d < min_d ? (
+            min_d = d;
+            min_i = i;
+          );
+        );
+        i += 1;
+      );
+      min_d < r*r ? min_i : -1;
+    );
+
+  function ui_parseEQControlState(x, y, w, h, x0, y0, w0, h0)
+    local(i, dx, dy, tm, d_ratio)
+    instance(
+      node_r, in_section, click_time, omx, omy, opx, opy, pos_x, pos_y, prev_x, prev_y,
+      l_dragging, l_dragged, l_click, r_click, l_clicked, r_clicked,
+      wheel_scrolled, initial_l_click
+    )
+    global(mouse_cap, mouse_x, mouse_y, mouse_wheel)
+    (
+      i = uix_isMouseInRect(x, y, w, h) ? ui_getHoveringEQNode(node_r * 1.25) + 2 : 0;
+      i || uix_isMouseInRect(x0, y0, w0, h0) ? (
+        !mouse_cap ? in_section = i;
+        in_section == i ? (
+          mouse_wheel ? (
+            wheel_scrolled = sign(mouse_wheel) * i;
+            mouse_wheel = 0;
+          );
+          mouse_cap&1 ? (
+            !l_click ? (
+              omx = mouse_x; omy = mouse_y;
+              opx = pos_x = (omx - x0) / w0;
+              opy = pos_y = 1. - (omy - y0) / h0;
+              initial_l_click = i;
+            );
+            l_click = i;
+            !l_dragging && ((abs(mouse_x - omx) > 0.) || (abs(mouse_y - omy) > 0.)) ? (
+              l_dragging = i;
+            );
+          ) : (
+            l_click ? (
+              tm = time_precise();
+              l_click == i ? (
+                // Double click?
+                l_clicked = (tm - click_time < 0.4) && i == l_clicked ? -l_click : l_click;
+              );
+
+              l_click = 0;
+              click_time = tm;
+            ) : l_dragging ? (
+              l_dragged = l_dragging;
+              l_dragging = 0;
+            );
+          );
+          mouse_cap&2 ? r_click = i : r_click ? ( r_clicked = r_click; r_click = 0;);
+        );
+      ) : ( // Mouse not in control
+        !mouse_cap? (
+          l_dragging ? l_dragged = l_dragging;
+          l_dragging = l_click = r_click = 0;
+        );
+        !l_dragging ? in_section = 0;
+      );
+      l_dragging ? (
+        r_clicked ? (
+          pos_x = opx; pos_y = opy;
+          l_dragged = l_dragging;
+          l_dragging = l_click = r_click = l_clicked = r_clicked = in_section = 0;
+        ) : (
+          dx = (mouse_x - prev_x) / w0; dy = (mouse_y - prev_y) / h0;
+          mouse_cap&4 ? ( // Holding Ctrl/Command assigns value based on mouse position
+            pos_x = (mouse_x - x) / w0;
+            pos_y = 1. - (mouse_y - y) / h0;
+          ) : ( // otherwise change value relatively
+            d_ratio = mouse_cap&8 ? .1 : 1.; // Holding shift finetunes
+            pos_x += dx * d_ratio;
+            pos_y -= dy * d_ratio;
+          );
+          mouse_cap&16 ? ( // Holding alt/opt changes value on one axis only
+            abs(mouse_x - omx) > abs(mouse_y - omy) ? (
+              pos_y = opy;
+            ) : (
+              pos_x = opx;
+            );
+          );
+        );
+        pos_x = clamp(pos_x, 0., 1.);
+        pos_y = clamp(pos_y, 0., 1.);
+      );
+      prev_x = mouse_x; prev_y = mouse_y;
+    );
+
+  function ui_createEQContextMenu(idx)
+    local(is_active, shape, channel_mode)
+    global(
+      SVF_SHAPE_LP, SVF_SHAPE_BP, SVF_SHAPE_HP, SVF_SHAPE_NOTCH,
+      SVF_SHAPE_UBP, SVF_SHAPE_HS, SVF_SHAPE_LS, SVF_SHAPE_PEAK,
+      SVF_SHAPE_AP, #menu
+    )
+    (
+      is_active = is_SVF_active(idx);
+      shape = get_SVF_type(idx);
+      channel_mode = get_SVF_channel_mode(idx);
+      #menu = "";
+      #menu = sprintf(#,
+        is_active ? "!Filter %d Enabled||" : "Filter %d Bypassed||", idx + 1
+      );
+
+      shape == SVF_SHAPE_LP ? #menu += "!"; #menu += "Low Pass|";
+      shape == SVF_SHAPE_BP ? #menu += "!"; #menu += "Band Pass|";
+      shape == SVF_SHAPE_HP ? #menu += "!"; #menu += "High Pass|";
+      shape == SVF_SHAPE_NOTCH ? #menu += "!"; #menu += "Notch|";
+      shape == SVF_SHAPE_UBP ? #menu += "!"; #menu += "Unity-gain Band Pass|";
+      shape == SVF_SHAPE_HS ? #menu += "!"; #menu += "High Shelf|";
+      shape == SVF_SHAPE_LS ? #menu += "!"; #menu += "Low Shelf|";
+      shape == SVF_SHAPE_PEAK ? #menu += "!"; #menu += "Peak|";
+      shape == SVF_SHAPE_AP ? #menu += "!"; #menu += "All Pass|";
+
+      #menu += "|>Stereo Placement|";
+      channel_mode == 0 ? #menu += "!"; #menu += "Stereo||";
+      channel_mode == 1 ? #menu += "!"; #menu += "Left|";
+      channel_mode == 2 ? #menu += "!"; #menu += "Right||";
+      channel_mode == 3 ? #menu += "!"; #menu += "Mid/Side||";
+      channel_mode == 4 ? #menu += "!"; #menu += "Mid|";
+      channel_mode == 5 ? #menu += "!"; #menu += "<Side|";
+
+      #menu += "|Invert Gain|Zero Gain|";
+      #menu += "|Duplicate|DELETE";
+
+      ui_showMenuAtMousePosition(#menu);
+    );
+
+  function ui_handleEQContextMenu(idx)
+    local(ret, v, mem)
+    global(
+      SVF_TOTAL_PARAM_MEM, SVF_STATE_OFFSET, SVF_CHANNEL_MODE_OFFSET,
+      SVF_TYPE_OFFSET, SVF_SPREAD_OFFSET,
+      SVF_FREQUENCY_OFFSET, SVF_BANDWIDTH_OFFSET, SVF_GAIN_OFFSET
+    )
+    (
+      ret = ui_createEQContextMenu(idx);
+      ret == 1 ? ( // Enable/Disable
+        v = !is_SVF_active(idx);
+        set_SVF_active(idx, v);
+        notify_touched_filter_active(idx, v, 1);
+      ) : ret >= 2 && ret <= 10 ? ( // Filter Shape
+        v = ret - 2;
+        set_SVF_type(idx, v);
+        notify_touched_filter_type(idx, v, 1);
+      ) : ret >= 11 && ret <= 16 ? ( // Filter Channel
+        v = ret - 11;
+        set_SVF_channel_mode(idx, v);
+        notify_touched_filter_channel_mode(idx, v, 1);
+      ) : ret == 17 ? ( // Invert Gain
+        v = -get_SVF_gain(idx);
+        set_SVF_gain(idx, v);
+        notify_touched_filter_gain(idx, v, 1);
+      ) : ret == 18 ? ( // Zero Gain
+        v = 0.;
+        set_SVF_gain(idx, v);
+        notify_touched_filter_gain(idx, v, 1);
+      ) : ret == 19 ? ( // Duplicate
+        v = get_free_slot();
+        v > -1 ? (
+          mem = get_SVF_mem_pos(v);
+          memcpy(
+            mem,
+            get_SVF_mem_pos(idx),
+            SVF_TOTAL_PARAM_MEM
+          );
+          set_EQ_initialized(v, 1);
+          notify_touched_filter_active(v, mem[SVF_STATE_OFFSET]&2, 1);
+          notify_touched_filter_channel_mode(v, mem[SVF_CHANNEL_MODE_OFFSET], 1);
+          notify_touched_filter_type(v, mem[SVF_TYPE_OFFSET], 1);
+          notify_touched_filter_spread(v, mem[SVF_SPREAD_OFFSET], 1);
+          notify_touched_filter_frequency(v, mem[SVF_FREQUENCY_OFFSET], 1);
+          notify_touched_filter_bandwidth(v, mem[SVF_BANDWIDTH_OFFSET], 1);
+          notify_touched_filter_gain(v, mem[SVF_GAIN_OFFSET], 1);
+          sliderchange(-1);
+        );
+      ) : ret == 20 ? remove_filter(idx);
+      ret ? sliderchange(-1);
+    );
+
+  function ui_parseEQFGState(x, y, w, h, x0, y0, w0, h0)
+    local(idx, ret, Hz, octave, dB, shape, clicked_item)
+    instance(
+      status, in_section, l_click, r_click, l_clicked, r_clicked,
+      initial_l_click,
+      l_dragging, l_dragged, pos_x, pos_y, wheel_scrolled,
+      hover_idx, selected_idx
+    )
+    global(
+      EQ_MIN_FREQ, EQ_MAX_FREQ, SVF_MIN_FREQ, SVF_MAX_FREQ,
+      g_cur_gain_range
+    )
+    (
+      this.ui_parseEQControlState(x, y, w, h, x0, y0, w0, h0);
+      hover_idx = in_section - 2;
+      initial_l_click ? ( // single click
+        selected_idx = initial_l_click - 2;
+        initial_l_click = 0;
+      );
+      l_dragging > 0 ? (
+        idx = l_dragging - 2;
+        selected_idx = idx;
+        idx != -1 ? (
+          Hz = pct_To_Hz(pos_x, EQ_MIN_FREQ, EQ_MAX_FREQ);
+          Hz = clamp(Hz, SVF_MIN_FREQ, SVF_MAX_FREQ);
+          set_filter_frequency(idx, Hz_to_pct(Hz), 0);
+          shape = get_SVF_type(idx);
+          is_SVF_type_gain_based(shape) ? (
+            dB = rangedVToDecibel(pos_y, g_cur_gain_range);
+            set_filter_gain(idx, dB, 0);
+          ) : (
+            octave = rangedVToBandwidth(pos_y);
+            set_filter_bandwidth(idx, octave, 0);
+          );
+        );
+      ) : l_dragged ? (
+        idx = l_dragged - 2;
+        selected_idx = idx;
+        idx != -1 ? (
+          Hz = pct_To_Hz(pos_x, EQ_MIN_FREQ, EQ_MAX_FREQ);
+          Hz = clamp(Hz, SVF_MIN_FREQ, SVF_MAX_FREQ);
+          set_filter_frequency(idx, Hz_to_pct(Hz), 1);
+          shape = get_SVF_type(idx);
+          is_SVF_type_gain_based(shape) ? (
+            dB = rangedVToDecibel(pos_y, g_cur_gain_range);
+            set_filter_gain(idx, dB, 1);
+          ) : (
+            octave = rangedVToBandwidth(pos_y);
+            set_filter_bandwidth(idx, octave, 1);
+          );
+        );
+        l_dragged = 0;
+      );
+      l_clicked < 0 ? ( // double click
+        idx = -l_clicked - 2;
+        idx == -1 ? (
+          idx = get_free_slot();
+          idx > -1 ? (
+            Hz = pct_To_Hz(pos_x, EQ_MIN_FREQ, EQ_MAX_FREQ);
+            Hz = clamp(Hz, SVF_MIN_FREQ, SVF_MAX_FREQ);
+            dB = rangedVToDecibel(pos_y, g_cur_gain_range);
+            add_filter(idx, Hz, dB);
+          );
+        ) : (
+          toggle_filter_active(idx);
+        );
+        l_clicked = 0;
+      );
+      r_clicked > 0 ? (
+        selected_idx = idx = r_clicked - 2;
+        idx > -1 ? this.ui_handleEQContextMenu(idx);
+        r_clicked = 0;
+      );
+      wheel_scrolled ? (
+        idx = abs(wheel_scrolled) - 2;
+        idx == -1 ? (
+          ui_setEQGainRange(g_cur_gain_range - 3. * sign(wheel_scrolled));
+        ) : (
+          adjust_filter_bandwidth(idx, 0.1 * sign(wheel_scrolled), 1);
+        );
+        wheel_scrolled = 0;
+      );
+    );
+
+  function ui_drawEQNode(cx, cy, idx, is_active, type, channel_mode, f, gain)
+    local(dir, a, r)
+    instance(node_r, hover_idx, selected_idx)
+    global(g_scaling, COLOR_SCREEN, COLOR_HIGHLIGHT)
+    (
+      r = node_r;
+      a = (is_active ? 1. : 0.5);
+      !uix_is_very_compact() ? (
+        dir = !channel_mode ? 255 : // Stereo -> circle
+          channel_mode == 1 ? 64 : // Left -> Left
+            channel_mode == 2 ? 4 : // Right -> Right
+              channel_mode == 3 ? 85 : // Mid/Side -> Cross
+                channel_mode == 4 ? 17 : // Mid -> Top + Bottom
+                  channel_mode == 5 ? 68; // Side -> Left + Right
+        gfx_set(max(.8, a));
+        ui_drawEQNodeChannelMode(cx, cy, r+1*g_scaling, idx, dir);
+        ui_drawEQNodeChannelMode(cx, cy, r, idx, dir);
+      );
+
+      set_HSL_colora(COLOR_SCREEN, a);
+      gfx_circle(cx, cy, r-5.*g_scaling, 1, 1);
+
+      set_HSL_colora(COLOR_HIGHLIGHT, a);
+      !uix_is_compact() ? (
+        gfx_circle(cx, cy, max(2., r-6.*g_scaling), 0, 1);
+      );
+      get_band_color(idx, a);
+      gfx_circle(cx, cy, r-7.*g_scaling, 1, 1);
+
+      r = (r - 7. * g_scaling) * .5;
+      set_HSL_colora(COLOR_HIGHLIGHT, a);
+      !uix_is_very_compact() ?
+        ui_drawEQNodeIcon(round(cx-r+1.), round(cy-r+1.), round(r*2.), round(r*2.), type);
+
+      r = r * 2. + 3. * g_scaling;
+      hover_idx == idx || selected_idx == idx ? (
+        a = (hover_idx == idx) * .15 + (selected_idx == idx) * .2;
+        gfx_set(1., 1., 0.3, a);
+        gfx_circle(cx, cy, max(2., r), 1, 1);
+        gfx_set(1., 1., 1., a * 2);
+        gfx_circle(cx, cy, max(2., r), 0, 1);
+      );
+    );
+
+  function ui_drawEQNodes(x, y, w, h)
+    local(i, mem, is_active, type, channel_mode, f, bw, gain, cx, cy, r)
+    global(
+      TOTAL_FILTER_COUNT, g_cur_gain_range,
+      EQ_STATE_OFFSET, EQ_TYPE_OFFSET, EQ_CHANNEL_MODE_OFFSET,
+      EQ_FREQUENCY_OFFSET, EQ_BANDWIDTH_OFFSET, EQ_GAIN_OFFSET,
+      EQ_MIN_FREQ, EQ_MAX_FREQ
+    )
+    (
+      i = 0;
+      loop(TOTAL_FILTER_COUNT,
+        is_EQ_initialized(i) ? (
+          mem = get_EQ_mem_pos(i);
+          is_active = mem[EQ_STATE_OFFSET]&2;
+          type = mem[EQ_TYPE_OFFSET];
+          channel_mode = mem[EQ_CHANNEL_MODE_OFFSET];
+          f = pct_to_Hz(mem[EQ_FREQUENCY_OFFSET]);
+          cx = x + Hz_to_pct(f, EQ_MIN_FREQ, EQ_MAX_FREQ) * w - 1;
+          is_SVF_type_gain_based(type) ? (
+            gain = clamp(mem[EQ_GAIN_OFFSET], -g_cur_gain_range, g_cur_gain_range);
+            cy = y + (1. - decibelToRangedV(gain, g_cur_gain_range)) * h - 1;
+          ) : (
+            bw = mem[EQ_BANDWIDTH_OFFSET];
+            cy = y + bandwidthToRangedV(bw) * h - 1;
+          );
+          update_EQ_pos(i, cx, cy);
+          this.ui_drawEQNode(cx, cy, i, is_active, type, channel_mode, f, gain);
+        );
+        i += 1;
+      );
+    );
+
+  function ui_drawEQFG(x, y, w, h, x0, y0, w0, h0)
+    instance(node_r)
+    global(g_scaling)
+  (
+    node_r = max(3., 16. * g_scaling);
+    this.ui_parseEQFGState(x, y, w, h, x0, y0, w0, h0);
+    this.ui_drawEQCurves(x0, y0, w0, h0);
+    this.ui_drawEQStereoCurves(x0, y0, w0, h0);
+    this.ui_drawEQNodes(x0, y0, w0, h0);
+  );
+
+  function ui_drawEQ(x, y, w, h)
+    local(
+      margin, border_size, gain_label_padding, t_padding,
+      x0, y0, w0, h0, str_w, str_h,
+    )
+    global(
+      g_scaling, g_border_size, w_scaling, h_scaling, fontscaling,
+      FONT_VISUAL_MARKERS,
+      COLOR_SCREEN, COLOR_HIGHLIGHT
+    )
+    (
+      margin = g_scaling * 16.;
+      x += margin; y += margin * .5; w -= margin * 2.; h -= margin;
+      ui_drawColorRect(x, y, w, h, COLOR_SCREEN);
+
+      uix_is_very_compact() ? (
+        this.ui_drawEQFG(x, y, w, h, x, y, w, h);
+      ) : (
+        gain_label_padding = w_scaling * 24.;
+        gfx_setfont(FONT_VISUAL_MARKERS);
+        gfx_measurestr("123456789k", str_w, str_h);
+        t_padding = max(str_h, h_scaling * 16.);
+        x0 = x; y0 = y + t_padding;
+        w0 = w; h0 = h - t_padding;
+        ui_drawColorRect(x0, y0, w0, h0, COLOR_HIGHLIGHT, .3);
+        border_size = uix_is_very_compact() ? 0. : ceil(g_border_size * .5);
+        x0 += border_size; y0 += border_size;
+        w0 -= border_size * 2; h0 -= border_size * 2;
+        ui_drawColorRect(x0, y0, w0, h0, COLOR_SCREEN);
+
+        set_HSL_colora(COLOR_HIGHLIGHT, .5);
+        ui_drawEQGainLabels(x+w-gain_label_padding, y0, gain_label_padding, h0);
+        ui_drawEQFreqLabels(x0, y, w0, h-h0);
+        set_HSL_colora(COLOR_HIGHLIGHT, .3);
+        ui_drawEQBG(x0, y0, w0, h0);
+        this.ui_drawEQFG(x, y, w, h, x0, y0, w0, h0);
+      );
+    );
+
+  function ui_handleMODContextMenu(idx, offset, mem_pos)
+    local(ret, is_lfo, is_bypassed, is_bipolar)
+    global(#menu, g_mod_route_idx)
+    (
+      is_bypassed = get_router_route_bypassed(g_mod_route_idx, idx, offset);
+      is_bipolar = get_router_route_bipolar(g_mod_route_idx, idx, offset);
+      is_lfo = is_router_offset_lfo(offset);
+      #menu = "";
+      is_bipolar ? #menu += "!"; #menu += "Bipolar||";
+      is_bypassed ? #menu += "!"; #menu += "Bypassed||";
+      #menu += "RESET";
+
+      ret = ui_showMenuAtMousePosition(#menu);
+      ret == 1 ? (
+        toggle_router_route_bipolar(g_mod_route_idx, idx, offset);
+        sliderchange(-1);
+      ) : ret == 2 ? (
+        toggle_router_route_bypassed(g_mod_route_idx, idx, offset);
+        sliderchange(-1);
+      ) : ret == 3 ? (
+        is_lfo ? adjust_router_lfo_param(g_mod_route_idx, idx, offset, mem_pos, 0.)
+          : adjust_router_filter_param(g_mod_route_idx, idx, offset, mem_pos, 0.);
+        sliderchange(-1);
+      );
+      ret;
+    );
+
+  function ui_drawFilterSelectorCurve(x, y, w, h, idx)
+    local(
+      inc, chan, eq_mem, f, theta, g
+      cy, yb, yt, x0, x1, y0, y1, x_pct,
+    )
+    global(
+      g_scaling, EQ_MAX_GAIN_RANGE
+      EQ_FREQ_STEPS, EQ_MIN_FREQ, EQ_MAX_FREQ,
+    )
+    (
+      get_band_color(idx);
+      inc = w / EQ_FREQ_STEPS;
+      chan = 0;
+      cy = y + h * .5;
+      yb = y + 1 * g_scaling;
+      yt = y + h - 2 * g_scaling;
+      loop(2,
+        x0 = x1 = x;
+        y0 = cy;
+        eq_mem = get_EQ_coef_mem_pos(idx) + chan * 5;
+        loop(EQ_FREQ_STEPS,
+          x_pct = (x1 - x) / w;
+          f = pct_to_Hz(x_pct, EQ_MIN_FREQ, EQ_MAX_FREQ);
+          theta = Hz_to_theta(f);
+          g = get_eq_node_channel_mag_at_theta(idx, chan, theta);
+          g = 20. * log10(g);
+          g = clamp(-g, -EQ_MAX_GAIN_RANGE, EQ_MAX_GAIN_RANGE);
+          y1 = y + h * decibelToRangedV(g, EQ_MAX_GAIN_RANGE + 2.);
+          y1 = clamp(y1, yb, yt);
+          x1 == x || (y0 == y1 && (y1 == yb || y1 == yt)) ? uix_setPosition(x1, y1) : gfx_line(x0, y0, x1, y1);
+          x0 = x1; y0 = y1;
+          x1 += inc;
+        );
+        chan += 1;
+      );
+    );
+
+  function ui_drawFilterSelector(x, y, w, h, idx, selected_idx*)
+    local(is_active, is_selected, grow, base_color_mem, border, status)
+    instance()
+    global(
+      BUTTON_STATUS_NORMAL, BUTTON_STATUS_DISABLED,
+      BUTTON_MAIN_OFFSET, BUTTON_BG_OFFSET,
+      g_scaling
+    )
+    (
+      is_active = is_SVF_active(idx);
+      is_selected = idx == selected_idx;
+      status = this.ui_parseButtonState(x, y, w, h, is_active ? BUTTON_STATUS_NORMAL : BUTTON_STATUS_DISABLED);
+      base_color_mem = get_band_color_mem(idx);
+      set_HSL_button_color(base_color_mem, status, BUTTON_MAIN_OFFSET);
+      is_selected ? (
+        gfx_rect(x, y, w, h + 4. * g_scaling)
+      ) : gfx_rect(x, y, w, h);
+      border = ceil(g_scaling);
+      x += border; y += border; w -= border + border; h -= border + border;
+      set_HSL_button_color(base_color_mem, status, BUTTON_BG_OFFSET);
+      gfx_rect(x, y, w, h);
+      is_selected ? (
+        set_HSL_button_colora(base_color_mem, status, BUTTON_MAIN_OFFSET, .25);
+        gfx_rect(x, y, w, h);
+      );
+      ui_drawFilterSelectorCurve(x, y, w, h, idx);
+      this.l_clicked ? (
+        selected_idx = idx;
+        this.l_clicked = 0;
+      );
+      this.r_clicked ? (
+        this.ui_handleEQContextMenu(idx);
+        this.r_clicked = 0;
+      );
+    );
+
+  function ui_drawFilterSelectors(x, y, w, h)
+    local(
+      h_padding, v_padding, gap, item_w, cur_x,
+      i, instantiated, count, open_i, status, color_mem
+    )
+    instance(selected_idx, bt_add)
+    global(
+      w_scaling, h_scaling, TOTAL_FILTER_COUNT,
+      FONT_ADD_FILTER, BUTTON_STATUS_NORMAL,
+      BUTTON_MAIN_OFFSET, BUTTON_BG_OFFSET,
+      COLOR_BLACK, COLOR_HIGHLIGHT,
+    )
+    (
+      set_HSL_colora(COLOR_BLACK, .5);
+      gfx_rect(x, y, w, h);
+      h_padding = 4. * w_scaling;
+      v_padding = 2. * h_scaling;
+      x += h_padding; y += v_padding;
+      w -= h_padding * 2.; h -= v_padding * 2.;
+      gap = ceil(2. * w_scaling);
+      cur_x = x;
+      item_w = (w - gap * (TOTAL_FILTER_COUNT - 1)) / TOTAL_FILTER_COUNT;
+      open_i = -1;
+      count = 0;
+      <?
+        i = 0;
+        loop(TOTAL_FILTER_COUNT,
+          printf("is_SVF_initialized(%d) ? (", i);
+          printf("this.selector.%d.ui_drawFilterSelector(cur_x, y, item_w, h, %d, selected_idx);", i, i);
+          printf("cur_x += item_w + gap;");
+          printf("count += 1;");
+          printf(") : (");
+          printf("open_i == -1 ? open_i = %d;", i);
+          printf(");");
+          i += 1;
+        );
+      ?>
+      count < TOTAL_FILTER_COUNT ? (
+        gfx_setfont(FONT_ADD_FILTER);
+        status = bt_add.ui_parseButtonState(cur_x, y, h, h, BUTTON_STATUS_NORMAL);
+        color_mem = get_band_color_mem(open_i);
+        set_HSL_button_color(color_mem, status, BUTTON_MAIN_OFFSET);
+        ui_drawButtonBorder(cur_x, y, h, h);
+        status == BUTTON_STATUS_NORMAL ? set_HSL_color(COLOR_BLACK) : set_HSL_button_color(color_mem, status, BUTTON_BG_OFFSET);
+        ui_drawButtonFill(cur_x, y, h, h);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        ui_drawButtonText(cur_x, y, h, h, "+");
+        bt_add.l_clicked ? (
+          add_filter(open_i, 1000., 0.);
+          selected_idx = open_i;
+          bt_add.l_clicked = 0;
+        );
+      );
+    );
+
+  function ui_drawChannelModeIcon(x, y, w, h, idx)
+    local(i, dir, cx, cy, r, r1)
+    global(gfx_a)
+    (
+      r = w * .5;
+      cx = round(x + r);
+      cy = round(y + r);
+      idx < 3 ? (
+        r *= 0.5;
+        r1 = r * 1.5;
+        i = 1;
+        dir = 1;
+        loop(2,
+          gfx_a = (3 - idx)&i ? 1. : .5;
+          gfx_circle(round(cx + r * dir)-1., cy, r1, 0, 1);
+          i += 1;
+          dir -= 2;
+        );
+      ) : (
+        r *= .4;
+        r1 = w * .4;
+        gfx_a = (6 - idx)&1 ? 1. : .5;
+        dir = 1;
+        loop(2,
+          x = round(cx + r1 * dir - 1.); y = round(cy - r);
+          gfx_arc(x, cy, r, 0, $pi * dir, 1);
+          gfx_line(x, y, x + round(r1*.3*-dir), y);
+          y = cy + r;
+          gfx_line(x, y, x + round(r1*.3*-dir), y);
+          dir -= 2;
+        );
+        r1 = round(w * .1);
+        gfx_a = (6 - idx)&2 ? 1. : .5;
+        x = floor(cx - r1); y = cy - h*.4;
+        gfx_roundrect(x-1., y, r1*2., h*.8, r1*2., 1);
+      );
+    );
+
+
+  function ui_drawFilterChannelSelectors(x, y, w, h, idx, is_active color_mem)
+    local(i, channel, padding, gap, item_w, ratio)
+    instance(in_section, l_click, l_clicked, hover_idx)
+    global(g_scaling, COLOR_HIGHLIGHT)
+    (
+      channel = get_SVF_channel_mode(idx);
+      ratio = w / h;
+      item_w = h;
+      padding = ceil(6. * g_scaling);
+      ratio > 36. || in_section || l_click ? (
+        gap = 2. * g_scaling;
+        w = h * 6 + gap * 5;
+        this.ui_drawTabSwitch(x, y, w, h, color_mem, is_active, 6, 1, channel);
+        y += padding; h -= padding + padding;
+        set_HSL_color(COLOR_HIGHLIGHT);
+        i = 0;
+        loop(6,
+          ui_drawChannelModeIcon(x + padding, y, h, h, i);
+          x += item_w + gap;
+          i += 1;
+        );
+        l_clicked ? (
+          set_filter_channel_mode(idx, hover_idx, 1);
+          l_clicked = 0;
+        );
+      ) : (
+        this.ui_drawTabSwitch(x, y, item_w, h, color_mem, is_active, 1, 1, 0);
+        y += padding; h -= padding + padding;
+        set_HSL_color(COLOR_HIGHLIGHT);
+        ui_drawChannelModeIcon(x + padding, y, h, h, channel);
+        x += item_w + gap;
+      );
+      x - gap;
+    );
+
+  function ui_drawFilterShapeSelectors(x, y, w, h, idx, is_active, color_mem)
+    local(i, type, padding, gap, item_w, ratio)
+    instance(in_section, l_click, l_clicked, hover_idx)
+    global(g_scaling, COLOR_HIGHLIGHT)
+    (
+      type = get_SVF_type(idx);
+      padding = ceil(4. * g_scaling);
+      ratio = w / h;
+      item_w = h;
+      ratio > 36. || in_section || l_click ? (
+        gap = 2. * g_scaling;
+        w = h * 9 + gap * 8;
+        this.ui_drawTabSwitch(x, y, w, h, color_mem, is_active, 9, 1, type);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        i = 0;
+        y += padding; h -= padding + padding;
+        loop(9,
+          ui_drawEQNodeIcon(x + padding, y, h, h, i);
+          x += item_w + gap;
+          i += 1;
+        );
+        l_clicked ? (
+          set_filter_type(idx, hover_idx, 1);
+          l_clicked = 0;
+        );
+      ) : (
+        this.ui_drawTabSwitch(x, y, item_w, h, color_mem, is_active, 1, 1, 0);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        y += padding; h -= padding + padding;
+        ui_drawEQNodeIcon(x + padding, y, h, h, type);
+        x += item_w + gap;
+      );
+      x - gap;
+    );
+
+  function ui_drawFilterInfo(x, y, w, h)
+    local(
+      x0, sw, sh,
+      border, h_padding, v_padding, gap,
+      idx, i, mem, color_mem, is_active,
+      spread, freq, bw, gain,
+      mod_color_mem
+    )
+    instance(
+      bt_active, bt_invert, bt_delete, kb_spread, kb_freq, kb_bw, kb_gain
+      ctrl_freq_mod, ctrl_bw_mod, ctrl_gain_mod,
+      selected_idx
+    )
+    global(
+      w_scaling, h_scaling, g_scaling,
+      SVF_GAIN_RANGE,
+      BUTTON_BG_OFFSET, BUTTON_MAIN_OFFSET,
+      COLOR_BLACK, COLOR_HIGHLIGHT, COLOR_DANGER,
+      FONT_PARAM_TITLE, FONT_PARAM_VALUE,
+      ROUTER_FILTER_FREQ, ROUTER_FILTER_BW, ROUTER_FILTER_GAIN,
+      SVF_FREQUENCY_MOD_OFFSET, SVF_BANDWIDTH_MOD_OFFSET, SVF_GAIN_MOD_OFFSET,
+      g_mod_route_idx,
+    )
+    (
+      set_HSL_colora(COLOR_BLACK, .5);
+      gfx_rect(x, y, w, h);
+      idx = this.selected_idx;
+      idx > -1 && is_SVF_initialized(idx) ? (
+        color_mem = get_band_color_mem(idx);
+        set_HSL_color(color_mem);
+        gfx_rect(x, y, w, h);
+        border = ceil(2. * g_scaling);
+        x += border; y += border; w -= border + border; h -= border + border;
+        set_HSL_color(color_mem, BUTTON_BG_OFFSET);
+        gfx_rect(x, y, w, h);
+        mem = get_SVF_mem_pos(idx);
+        h_padding = floor(10. * w_scaling);
+        v_padding = floor(8. * h_scaling);
+        x += h_padding; y += v_padding;
+        w -= h_padding * 2.; h -= v_padding * 2.;
+
+        mod_color_mem = get_lfo_band_color_mem(g_mod_route_idx);
+
+        gap = ceil(h * .2);
+        x0 = x;
+        is_active = is_SVF_active(idx);
+        w > 412. ? (
+          gfx_setfont(FONT_PARAM_TITLE);
+          bt_active.fill_type = 1;
+          bt_active.no_invert = 1;
+          bt_active.ui_drawToggleButton(x0, y, h, h, color_mem, is_active, sprintf(#, "%d", idx+1));
+          bt_active.l_clicked ? (
+            toggle_filter_active(idx);
+            bt_active.l_clicked = 0;
+          );
+          x0 += h + gap;
+        );
+        w > 512. ? (
+          x0 = this.channels.ui_drawFilterChannelSelectors(x0, y, w, h, idx, is_active, color_mem);
+          x0 += gap;
+          x0 = this.shapes.ui_drawFilterShapeSelectors(x0, y, w, h, idx, is_active, color_mem);
+          x0 += gap;
+        );
+
+        w > 500. ? (
+          kb_spread.v_l = get_SVF_spread(selected_idx);
+          kb_spread.ui_drawKnob(x0+h*.5, floor(y+h*.5), floor(h*.5), 1, color_mem, 1);
+          kb_spread.l_clicked < 0 ? (
+            set_filter_spread(selected_idx, 0., 1);
+            kb_spread.v_l = 0.;
+            kb_spread.l_clicked = 0;
+          );
+          kb_spread.l_dragging ? set_filter_spread(selected_idx, kb_spread.v_l, 0);
+          kb_spread.l_dragged ? (
+            set_filter_spread(selected_idx, kb_spread.v_l, 1);
+            kb_spread.l_dragged = 0;
+          );
+          kb_spread.wheel_scrolled ? (
+            adjust_filter_spread(selected_idx, kb_spread.wheel_scrolled * 0.1, 1);
+            kb_spread.wheel_scrolled = 0;
+          );
+          x0 += h + gap;
+          set_HSL_color(COLOR_HIGHLIGHT);
+          gfx_setfont(FONT_PARAM_TITLE);
+          ui_drawAlignedText(x0, y, 48., h*.5, 0., 0.5, "SPREAD");
+          gfx_measurestr("SPREAD", sw, sh);
+          gfx_setfont(FONT_PARAM_VALUE);
+          ui_drawAlignedText(x0, y+h*.5, 64., h*.5, 0., 0.5, sprintf(#, "%.1f%%", get_SVF_spread(selected_idx) * 100.));
+          x0 += sw + gap;
+        );
+
+        kb_freq.v_l = get_SVF_freq(selected_idx);
+        kb_freq.ui_drawKnob(x0+h*.5, floor(y+h*.5), floor(h*.5), 0, color_mem, 1);
+        kb_freq.l_clicked < 0 ? (
+          set_filter_frequency(selected_idx, .5, 1);
+          kb_freq.v_l = 0.;
+          kb_freq.l_clicked = 0;
+        );
+        kb_freq.l_dragging ? set_filter_frequency(selected_idx, kb_freq.v_l, 0);
+        kb_freq.l_dragged ? (
+          set_filter_frequency(selected_idx, kb_freq.v_l, 1);
+          kb_freq.l_dragged = 0;
+        );
+        kb_freq.wheel_scrolled ? (
+          adjust_filter_frequency(selected_idx, kb_freq.wheel_scrolled * 0.1, 1);
+          kb_freq.wheel_scrolled = 0;
+        );
+
+        g_mod_route_idx != -1 ? (
+          ui_drawKnobModOverlay(
+            x0+h*.5, floor(y+h*.5), floor(h*.5),
+            0,
+            get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_FILTER_FREQ),
+            mod_color_mem,
+            !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_FILTER_FREQ),
+            kb_freq.v_l,
+            ctrl_freq_mod.v_yl
+          );
+        );
+
+        x0 += h + gap;
+        set_HSL_color(COLOR_HIGHLIGHT);
+        gfx_setfont(FONT_PARAM_TITLE);
+
+        g_mod_route_idx != -1 ? (
+          ctrl_freq_mod.v_yl = get_router_route_amount(g_mod_route_idx, idx, ROUTER_FILTER_FREQ);
+          ctrl_freq_mod.ui_parseSliderState(x0, y, 64., h*.5, 1+4, 1);
+          ctrl_freq_mod.l_dragging ? (
+            adjust_router_filter_param(
+              g_mod_route_idx, idx, ROUTER_FILTER_FREQ,
+              get_SVF_mem_pos(idx) + SVF_FREQUENCY_MOD_OFFSET, ctrl_freq_mod.v_yl
+            );
+            sliderchange(-1);
+          );
+          ctrl_freq_mod.l_clicked < 0 ? (
+            adjust_router_filter_param(
+              g_mod_route_idx, idx, ROUTER_FILTER_FREQ,
+              get_SVF_mem_pos(idx) + SVF_FREQUENCY_MOD_OFFSET, 0.
+            );
+            sliderchange(-1);
+            ctrl_freq_mod.l_clicked = 0;
+          );
+          ctrl_freq_mod.r_clicked ? (
+            ui_handleMODContextMenu(
+              idx, ROUTER_FILTER_FREQ, get_SVF_mem_pos(idx) + SVF_FREQUENCY_MOD_OFFSET
+            );
+            ctrl_freq_mod.r_clicked = 0;
+          );
+          set_HSL_button_color(mod_color_mem, ctrl_freq_mod.status, BUTTON_MAIN_OFFSET);
+        );
+
+        ui_drawAlignedText(x0, y, 64., h*.5, 0., 0.5, "FREQUENCY");
+        gfx_measurestr("FREQUENCY", sw, sh);
+        freq = pct_to_Hz(get_SVF_freq(selected_idx));
+        set_HSL_color(COLOR_HIGHLIGHT);
+        gfx_setfont(FONT_PARAM_VALUE);
+        ui_drawAlignedText(
+          x0, y+h*.5, 64., h*.5, 0., 0.5,
+          freq < 100 ? sprintf(#, "%.2f Hz", freq) :
+            freq < 1000. ? sprintf(#, "%.1f Hz", freq) :
+              sprintf(#, "%.2f kHz", freq * .001)
+        );
+        x0 += sw + gap;
+
+        kb_bw.v_l = bandwidthToRangedV(get_SVF_bandwidth(selected_idx));
+        kb_bw.ui_drawKnob(x0+h*.5, floor(y+h*.5), floor(h*.5), 0, color_mem, 1);
+        kb_bw.l_clicked < 0 ? (
+          set_filter_bandwidth(selected_idx, 2., 1);
+          kb_bw.v_l = 0.;
+          kb_bw.l_clicked = 0;
+        );
+        kb_bw.l_dragging ? set_filter_bandwidth(selected_idx, rangedVToBandwidth(1. - kb_bw.v_l), 0);
+        kb_bw.l_dragged ? (
+          set_filter_bandwidth(selected_idx, rangedVToBandwidth(1. - kb_bw.v_l), 1);
+          kb_bw.l_dragged = 0;
+        );
+        kb_bw.wheel_scrolled ? (
+          adjust_filter_bandwidth(selected_idx, kb_bw.wheel_scrolled * 0.1, 1);
+          kb_bw.wheel_scrolled = 0;
+        );
+
+        g_mod_route_idx != -1 ? (
+          ui_drawKnobModOverlay(
+            x0+h*.5, floor(y+h*.5), floor(h*.5),
+            0,
+            get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_FILTER_BW),
+            mod_color_mem,
+            !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_FILTER_BW),
+            kb_bw.v_l,
+            ctrl_bw_mod.v_yl
+          );
+        );
+
+        x0 += h + gap;
+        set_HSL_color(COLOR_HIGHLIGHT);
+        gfx_setfont(FONT_PARAM_TITLE);
+
+        g_mod_route_idx != -1 ? (
+          ctrl_bw_mod.v_yl = get_router_route_amount(g_mod_route_idx, idx, ROUTER_FILTER_BW);
+          ctrl_bw_mod.ui_parseSliderState(x0, y, 64., h*.5, 1+4, 1);
+          ctrl_bw_mod.l_dragging ? (
+            adjust_router_filter_param(
+              g_mod_route_idx, idx, ROUTER_FILTER_BW,
+              get_SVF_mem_pos(idx) + SVF_BANDWIDTH_MOD_OFFSET, ctrl_bw_mod.v_yl
+            );
+            sliderchange(-1);
+          );
+          ctrl_bw_mod.l_clicked < 0 ? (
+            adjust_router_filter_param(
+              g_mod_route_idx, idx, ROUTER_FILTER_BW,
+              get_SVF_mem_pos(idx) + SVF_BANDWIDTH_MOD_OFFSET, 0.
+            );
+            sliderchange(-1);
+            ctrl_bw_mod.l_clicked = 0;
+          );
+          ctrl_bw_mod.r_clicked ? (
+            ui_handleMODContextMenu(
+              idx, ROUTER_FILTER_BW, get_SVF_mem_pos(idx) + SVF_BANDWIDTH_MOD_OFFSET
+            );
+            ctrl_bw_mod.r_clicked = 0;
+          );
+          set_HSL_button_color(mod_color_mem, ctrl_bw_mod.status, BUTTON_MAIN_OFFSET);
+        );
+
+        ui_drawAlignedText(x0, y, 64., h*.5, 0., 0.5, "BANDWIDTH");
+        gfx_measurestr("BANDWIDTH", sw, sh);
+        bw = get_SVF_bandwidth(selected_idx);
+        gfx_setfont(FONT_PARAM_VALUE);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        ui_drawAlignedText(x0, y+h*.5, 64., h*.5, 0., 0.5, sprintf(#, "%.2f Oct", bw));
+        x0 += sw + gap;
+
+        kb_gain.v_l = get_SVF_gain(selected_idx) / SVF_GAIN_RANGE;
+        kb_gain.ui_drawKnob(x0+h*.5, floor(y+h*.5), floor(h*.5), 1, color_mem, 1);
+        kb_gain.l_clicked < 0 ? (
+          set_filter_gain(selected_idx, 0., 1);
+          kb_gain.v_l = 0.;
+          kb_gain.l_clicked = 0;
+        );
+        kb_gain.l_dragging ? set_filter_gain(selected_idx, kb_gain.v_l * SVF_GAIN_RANGE, 0);
+        kb_gain.l_dragged ? (
+          set_filter_gain(selected_idx, kb_gain.v_l * SVF_GAIN_RANGE, 1);
+          kb_gain.l_dragged = 0;
+        );
+        kb_gain.wheel_scrolled ? (
+          adjust_filter_gain(selected_idx, kb_gain.wheel_scrolled * 0.1, 1);
+          kb_gain.wheel_scrolled = 0;
+        );
+
+        g_mod_route_idx != -1 ? (
+          ui_drawKnobModOverlay(
+            x0+h*.5, floor(y+h*.5), floor(h*.5),
+            1,
+            get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_FILTER_GAIN),
+            mod_color_mem,
+            !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_FILTER_GAIN),
+            kb_gain.v_l,
+            ctrl_gain_mod.v_yl
+          );
+        );
+
+        x0 += h + gap;
+        set_HSL_color(COLOR_HIGHLIGHT);
+        gfx_setfont(FONT_PARAM_TITLE);
+
+        g_mod_route_idx != -1 ? (
+          ctrl_gain_mod.v_yl = get_router_route_amount(g_mod_route_idx, idx, ROUTER_FILTER_GAIN);
+          ctrl_gain_mod.ui_parseSliderState(x0, y, 64., h*.5, 1+4, 1);
+          ctrl_gain_mod.l_dragging ? (
+            adjust_router_filter_param(
+              g_mod_route_idx, idx, ROUTER_FILTER_GAIN,
+              get_SVF_mem_pos(idx) + SVF_BANDWIDTH_MOD_OFFSET, ctrl_gain_mod.v_yl
+            );
+            sliderchange(-1);
+          );
+          ctrl_gain_mod.l_clicked < 0 ? (
+            adjust_router_filter_param(
+              g_mod_route_idx, idx, ROUTER_FILTER_GAIN,
+              get_SVF_mem_pos(idx) + SVF_BANDWIDTH_MOD_OFFSET, 0.
+            );
+            sliderchange(-1);
+            ctrl_gain_mod.l_clicked = 0;
+          );
+          ctrl_gain_mod.r_clicked ? (
+            ui_handleMODContextMenu(
+              idx, ROUTER_FILTER_GAIN, get_SVF_mem_pos(idx) + SVF_BANDWIDTH_MOD_OFFSET
+            );
+            ctrl_gain_mod.r_clicked = 0;
+          );
+          set_HSL_button_color(mod_color_mem, ctrl_gain_mod.status, BUTTON_MAIN_OFFSET);
+        );
+
+        ui_drawAlignedText(x0, y, 64., h*.5, 0., 0.5, "GAIN");
+        gfx_measurestr("GAIN", sw, sh);
+        gain = get_SVF_gain(selected_idx);
+        gfx_setfont(FONT_PARAM_VALUE);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        ui_drawAlignedText(x0, y+h*.5, 64., h*.5, 0., 0.5, sprintf(#, "%.2f dB", gain));
+        x0 += 64. * g_scaling + gap;
+
+        x0 + h * 4.2 < x + w ? (
+          bt_invert.fill_type = 1;
+          gfx_setfont(FONT_PARAM_TITLE);
+          bt_invert.ui_drawTriggerButton(x0, y, h * 2., h, color_mem, 1, "INVERT");
+          bt_invert.l_clicked ? (
+            set_filter_gain(selected_idx, -get_SVF_gain(selected_idx), 1);
+            bt_invert.l_clicked = 0;
+          );
+          x0 += h * 2. + gap;
+        );
+
+        x0 + h * 2 <= x + w ? (
+          bt_delete.fill_type = 1;
+          gfx_setfont(FONT_PARAM_TITLE);
+          bt_delete.ui_drawTriggerButton(x + w - h * 2., y, h * 2., h, COLOR_DANGER, 1, "DELETE");
+          bt_delete.l_clicked ? (
+            ui_showMenuAtMousePosition(sprintf(#, "CONFIRM DELETING FILTER %d", idx + 1)) ? remove_filter(selected_idx);
+            bt_delete.l_clicked = 0;
+          );
+        );
+      );
+    );
+
+  function ui_drawFoldedLFO(x, y, w, h, idx, color_mem)
+    local(padding, is_active, w0, h0)
+    instance(status)
+    global(fontscaling, g_scaling, BUTTON_MAIN_OFFSET, FONT_LFO_BUTTON)
+    (
+      w0 = w = 20. * fontscaling;
+      is_active = is_LFO_active(idx);
+      this.ui_drawToggleButton(x, y, w, h, color_mem, is_active, "");
+      padding = 4. * g_scaling;
+      x += padding; y += padding; w -= padding + padding; h -= padding + padding;
+      set_HSL_button_color(color_mem, status, BUTTON_MAIN_OFFSET);
+      gfx_setfont(FONT_LFO_BUTTON);
+      h0 = h / 4.;
+      ui_drawAlignedText(x, y, w, h0, 0.5, 1., "L");
+      ui_drawAlignedText(x, y+h0, w, h0, 0.5, 0.66, "F");
+      ui_drawAlignedText(x, y+h0+h0, w, h0, 0.5, 0.33, "O");
+      ui_drawAlignedText(x, y+h0+h0+h0, w, h0, 0.5, 0., sprintf(#, "%d", idx + 1));
+
+      this.l_clicked ? (
+        this..selected_idx = idx;
+        this.l_clicked = 0;
+      );
+      this.r_clicked ? (
+        toggle_lfo_active(idx);
+        this.r_clicked = 0;
+      );
+      w0;
+    );
+
+  function ui_getLFOShapeIcon(shape, deform, t)
+    global()
+    (
+      shape < 5 ? _get_amp_from_shape_and_phase(shape, deform, t, 0., 0.) :
+        shape == 5 ? ((t < .3) * .9 + (t < .6) * .1 + (t >= .6) * .6) * 2. - 1. :
+          shape == 6 ? (
+            t < .25 ?
+              _get_amp_from_shape_and_phase(shape, deform, t * 4., .3, .5)
+            : t < .5 ?
+              _get_amp_from_shape_and_phase(shape, deform, t * 4. - 1., .5, 0.)
+            : t < .75 ?
+              _get_amp_from_shape_and_phase(shape, deform, t * 4. - 2., 0., 1.)
+            :
+              _get_amp_from_shape_and_phase(shape, deform, t * 4. - 3., 1., .6);
+          );
+    );
+
+  function ui_drawLFOShapeIcon(x, y, w, h, shape, deform)
+    local(padding, steps, t, t_inc, x_inc, mh, x0, x1, y0, y1)
+    global()
+    (
+      padding = min(w, h) * .2;
+      x += padding; y += padding; w -= padding + padding; h -= padding + padding;
+      steps = max(16, w * 2.);
+      t = 0;
+      t_inc = 1 / steps;
+      x_inc = w * t_inc;
+      mh = h * .5;
+      x0 = x1 = x;
+      y0 = y;
+      loop(steps + 1,
+        y1 = y + mh - mh * ui_getLFOShapeIcon(shape, deform, t);
+        !t ? uix_setPosition(x0, y1) : (
+          uix_is_compact() ? (
+            gfx_line(x0, y0, x1, y1);
+          ) : (
+            gfx_line(x0, y0-.5, x1, y1-.5);
+            gfx_line(x0, y0+.5, x1, y1+.5);
+          );
+        );
+        t += t_inc;
+        x0 = x1; y0 = y1;
+        x1 += x_inc;
+      );
+      shape != 6 ? (
+        y1 = y + mh - mh * ui_getLFOShapeIcon(shape, deform, 0.);
+          uix_is_compact() ? (
+            gfx_line(x0, y0, x0, y1);
+          ) : (
+            gfx_line(x0-.5, y0, x0-.5, y1);
+            gfx_line(x0+.5, y0, x0+.5, y1);
+          );
+      );
+    );
+
+  function ui_drawExpandedLFO(x, y, w, h, idx, color_mem)
+    local(
+      x0, y0, w0, h0, x1, y1, w1, h1, gap,
+      total_w, header_w, param_w, slider_w, mode_w, end_w,
+      is_active, trigger_mode, rate_mode, rate_hz, rate_sync, ms,
+      phase, deform, amp, spread, shape, s, s_ms, sw, sh,
+      mod_color_mem
+    )
+    instance(
+      bt_active, kb_spread,
+      tb_trigger_mode, tb_shape, bt_link, bt_unlink, bt_delete
+      sl_rate, sl_sphase, sl_deform, sl_amp,
+      sl_rate_mod, sl_sphase_mod, sl_deform_mod, sl_amp_mod,
+      ctrl_rate_mod, ctrl_sphase_mod, ctrl_deform_mod, ctrl_amp_mod,
+    )
+    (
+      padding = 4. * g_scaling;
+      header_w = ceil(13. * fontscaling) + padding + padding;
+      param_w = 48. * fontscaling;
+      end_w = round((h - padding - padding) * .35 + 176. * fontscaling);
+      slider_w = w * .15;
+      gap = min(8., 8. * w_scaling);
+      total_w = header_w + param_w + end_w + slider_w + gap * 4.;
+      mode_w = 60. * fontscaling;
+      (w - total_w) > mode_w ? total_w += mode_w : mode_w = 0.;
+      w = total_w;
+      this.fill_type = -1;
+      this.ui_drawButton(x, y, w, h, color_mem, BUTTON_STATUS_NORMAL);
+
+      w0 = header_w;
+      is_active = is_LFO_active(idx);
+      bt_active.fill_type = 1;
+      bt_active.ui_drawToggleButton(x, y, w0, h, color_mem, is_active, "");
+      x += padding; y += padding; w -= padding + padding; h -= padding + padding;
+      x0 = x; y0 = y; w0 = ceil(13. * fontscaling); h0 = h / 4.;
+      set_HSL_color(COLOR_HIGHLIGHT);
+      gfx_setfont(FONT_LFO_BUTTON);
+      ui_drawAlignedText(x, y0, w0, h0, 0.5, 1., "L"); y0 += h0;
+      ui_drawAlignedText(x, y0, w0, h0, 0.5, 0.66, "F"); y0 += h0;
+      ui_drawAlignedText(x, y0, w0, h0, 0.5, 0.33, "O"); y0 += h0;
+      ui_drawAlignedText(x, y0, w0, h0, 0.5, 0., sprintf(#, "%d", idx + 1));
+      x0 += w0 + padding;
+      bt_active.l_clicked ? (
+        this..selected_idx = -1;
+        bt_active.l_clicked = 0;
+      );
+      bt_active.r_clicked ? (
+        toggle_lfo_active(idx);
+        bt_active.r_clicked = 0;
+      );
+
+      mod_color_mem = get_lfo_band_color_mem(g_mod_route_idx);
+
+      gfx_setfont(FONT_LFO_BUTTON);
+      y0 = y; w0 = param_w;
+      set_HSL_color(COLOR_HIGHLIGHT);
+
+      g_mod_route_idx != -1 ? (
+        ctrl_rate_mod.v_yl = get_router_route_amount(g_mod_route_idx, idx, ROUTER_LFO_RATE);
+        ctrl_rate_mod.ui_parseSliderState(x0, y0, w0, h0, 1+4, 1);
+        ctrl_rate_mod.l_dragging ? (
+          adjust_router_lfo_param(
+            g_mod_route_idx, idx, ROUTER_LFO_RATE,
+            get_LFO_mem_pos(idx) + LFO_RATE_MOD_OFFSET, ctrl_rate_mod.v_yl
+          );
+          sliderchange(-1);
+        );
+        ctrl_rate_mod.l_clicked < 0 ? (
+          adjust_router_lfo_param(
+            g_mod_route_idx, idx, ROUTER_LFO_RATE,
+            get_LFO_mem_pos(idx) + LFO_RATE_MOD_OFFSET, 0.
+          );
+          sliderchange(-1);
+          ctrl_rate_mod.l_clicked = 0;
+        );
+        ctrl_rate_mod.r_clicked ? (
+          ui_handleMODContextMenu(
+            idx, ROUTER_LFO_RATE, get_LFO_mem_pos(idx) + LFO_RATE_MOD_OFFSET
+          );
+          ctrl_rate_mod.r_clicked = 0;
+        );
+        set_HSL_button_color(mod_color_mem, ctrl_rate_mod.status, BUTTON_MAIN_OFFSET);
+      );
+      ui_drawAlignedText(x0, y0, w0, h0, 1., 0.5, "RATE"); y0 += h0;
+
+      g_mod_route_idx != -1 ? (
+        ctrl_sphase_mod.v_yl = get_router_route_amount(g_mod_route_idx, idx, ROUTER_LFO_START_PHASE);
+        ctrl_sphase_mod.ui_parseSliderState(x0, y0, w0, h0, 1+4, 1);
+        ctrl_sphase_mod.l_dragging ? (
+          adjust_router_lfo_param(
+            g_mod_route_idx, idx, ROUTER_LFO_START_PHASE,
+            get_LFO_mem_pos(idx) + LFO_START_PHASE_MOD_OFFSET, ctrl_sphase_mod.v_yl
+          );
+          sliderchange(-1);
+        );
+        ctrl_sphase_mod.l_clicked < 0 ? (
+          adjust_router_lfo_param(
+            g_mod_route_idx, idx, ROUTER_LFO_START_PHASE,
+            get_LFO_mem_pos(idx) + LFO_START_PHASE_MOD_OFFSET, 0.
+          );
+          sliderchange(-1);
+          ctrl_sphase_mod.l_clicked = 0;
+        );
+        ctrl_sphase_mod.r_clicked ? (
+          ui_handleMODContextMenu(
+            idx, ROUTER_LFO_START_PHASE, get_LFO_mem_pos(idx) + LFO_START_PHASE_MOD_OFFSET
+          );
+          ctrl_sphase_mod.r_clicked = 0;
+        );
+        set_HSL_button_color(mod_color_mem, ctrl_sphase_mod.status, BUTTON_MAIN_OFFSET);
+      );
+      ui_drawAlignedText(x0, y0, w0, h0, 1., 0.5, "PHASE"); y0 += h0;
+
+      g_mod_route_idx != -1 ? (
+        ctrl_deform_mod.v_yl = get_router_route_amount(g_mod_route_idx, idx, ROUTER_LFO_DEFORM);
+        ctrl_deform_mod.ui_parseSliderState(x0, y0, w0, h0, 1+4, 1);
+        ctrl_deform_mod.l_dragging ? (
+          adjust_router_lfo_param(
+            g_mod_route_idx, idx, ROUTER_LFO_DEFORM,
+            get_LFO_mem_pos(idx) + LFO_DEFORM_MOD_OFFSET, ctrl_deform_mod.v_yl
+          );
+          sliderchange(-1);
+        );
+        ctrl_deform_mod.l_clicked < 0 ? (
+          adjust_router_lfo_param(
+            g_mod_route_idx, idx, ROUTER_LFO_DEFORM,
+            get_LFO_mem_pos(idx) + LFO_DEFORM_MOD_OFFSET, 0.
+          );
+          sliderchange(-1);
+          ctrl_deform_mod.l_clicked = 0;
+        );
+        ctrl_deform_mod.r_clicked ? (
+          ui_handleMODContextMenu(
+            idx, ROUTER_LFO_DEFORM, get_LFO_mem_pos(idx) + LFO_DEFORM_MOD_OFFSET
+          );
+          ctrl_deform_mod.r_clicked = 0;
+        );
+        set_HSL_button_color(mod_color_mem, ctrl_deform_mod.status, BUTTON_MAIN_OFFSET);
+      );
+      ui_drawAlignedText(x0, y0, w0, h0, 1., 0.5, "DEFORM"); y0 += h0;
+
+
+      g_mod_route_idx != -1 ? (
+        ctrl_amp_mod.v_yl = get_router_route_amount(g_mod_route_idx, idx, ROUTER_LFO_AMP);
+        ctrl_amp_mod.ui_parseSliderState(x0, y0, w0, h0, 1+4, 1);
+        ctrl_amp_mod.l_dragging ? (
+          adjust_router_lfo_param(
+            g_mod_route_idx, idx, ROUTER_LFO_AMP,
+            get_LFO_mem_pos(idx) + LFO_AMP_MOD_OFFSET, ctrl_amp_mod.v_yl
+          );
+          sliderchange(-1);
+        );
+        ctrl_amp_mod.l_clicked < 0 ? (
+          adjust_router_lfo_param(
+            g_mod_route_idx, idx, ROUTER_LFO_AMP,
+            get_LFO_mem_pos(idx) + LFO_AMP_MOD_OFFSET, 0.
+          );
+          sliderchange(-1);
+          ctrl_amp_mod.l_clicked = 0;
+        );
+        ctrl_amp_mod.r_clicked ? (
+          ui_handleMODContextMenu(
+            idx, ROUTER_LFO_AMP, get_LFO_mem_pos(idx) + LFO_AMP_MOD_OFFSET
+          );
+          ctrl_amp_mod.r_clicked = 0;
+        );
+        set_HSL_button_color(mod_color_mem, ctrl_amp_mod.status, BUTTON_MAIN_OFFSET);
+      );
+      ui_drawAlignedText(x0, y0, w0, h0, 1., 0.5, "AMP");
+      x0 += w0 + gap;
+
+      h1 = h0;
+      w0 = slider_w; h0 -= g_button_border_size * 2.;
+      y0 = y + g_button_border_size;
+      x1 = x0 + g_button_border_size; y1 = y0 + g_button_border_size;
+      w1 = w0 - g_button_border_size * 2.;
+      rate_mode = get_LFO_rate_mode(idx);
+      !rate_mode ? (
+        rate_hz = get_LFO_hz_rate(idx);
+        sl_rate.v_xl = rate_hz;
+        rate_hz = hz_from_rate(rate_hz);
+        s = sprintf(#, rate_hz < 10. ? "%.3f Hz" : rate_hz < 100. ? "%.2f Hz" : "%.1f Hz", rate_hz);
+        ms = ms_from_hz(rate_hz);
+      ) : (
+        rate_sync = get_LFO_sync_rate(idx);
+        sl_rate.v_xl = rate_sync;
+        rate_mode == 1 ? (
+          s = sprintf(#, "%s", get_sync_string(rate_sync));
+          ms = ms_from_sync(rate_sync, CUR_TEMPO, 0);
+        ) : (
+          s = sprintf(#, "%s Bar", get_sync_string(rate_sync));
+          ms = ms_from_sync(rate_sync, CUR_TEMPO, 1);
+        );
+      );
+      sl_rate.ui_drawSlider(x0, y0, w0, h0, 1, color_mem, is_active, "");
+      sl_rate.l_clicked < 0? (
+        !rate_mode ? set_lfo_hz_rate(idx, .5, 1) : set_lfo_sync_rate(idx, 29, 1);
+        sl_rate.l_clicked = 0;
+        sliderchange(-1);
+      );
+      sl_rate.r_clicked ? (
+        next_lfo_rate_mode(idx, 1);
+        sl_rate.r_clicked = 0;
+        sliderchange(-1);
+      );
+      sl_rate.l_dragging ? (
+        rate_mode ? set_lfo_sync_rate_pct(idx, sl_rate.v_xl, 0) : set_lfo_hz_rate(idx, sl_rate.v_xl, 0);
+      );
+      sl_rate.l_dragged ? (
+        rate_mode ? set_lfo_sync_rate_pct(idx, sl_rate.v_xl, 1) : set_lfo_hz_rate(idx, sl_rate.v_xl, 1);
+        sl_rate.l_dragged = 0;
+        sliderchange(-1);
+      );
+      slider_w > 128. ? (
+        ui_drawAlignedText(x1, y0, w1, h0, .975, 0.5, s);
+        s_ms = ms > 10000 ? sprintf(#, "%.1f s", ms * 0.001)
+        : ms > 1000 ? sprintf(#, "%.2f s", ms * 0.001)
+            : ms > 100 ? sprintf(#, "%.1f ms", ms)
+              : ms > 10 ? sprintf(#, "%.2f ms", ms)
+                : sprintf(#, "%.3f ms", ms);
+        ui_drawAlignedText(x1, y0, w1, h0, 0.025, 0.5, s_ms);
+      ) : (
+        ui_drawAlignedText(x1, y0, w1, h0, .5, 0.5, s);
+      );
+
+      g_mod_route_idx != -1 ? (
+        ui_drawSliderModOverlay(
+          x1, y0, w1, h0,
+          0,
+          get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_LFO_RATE),
+          mod_color_mem,
+          !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_LFO_RATE),
+          sl_rate.v_xl,
+          ctrl_rate_mod.v_yl
+        );
+      );
+
+      y0 += h1;
+      phase = get_LFO_start_phase(idx);
+      sl_sphase.v_xl = phase;
+      sl_sphase.ui_drawSlider(x0, y0, w0, h0, 1, color_mem, is_active, sprintf(#, "%.1f%%", phase * 100.));
+      sl_sphase.l_clicked < 0 ? (
+        set_lfo_start_phase(idx, 0, 1);
+        sl_sphase.l_clicked = 0;
+        sliderchange(-1);
+      );
+      sl_sphase.l_dragging ? set_lfo_start_phase(idx, sl_sphase.v_xl, 0);
+      sl_sphase.l_dragged ? (
+        set_lfo_start_phase(idx, sl_sphase.v_xl, 1);
+        sl_sphase.l_dragged = 0;
+        sliderchange(-1);
+      );
+
+      g_mod_route_idx != -1 ? (
+        ui_drawSliderModOverlay(
+          x1, y0, w1, h0,
+          0,
+          get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_LFO_START_PHASE),
+          mod_color_mem,
+          !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_LFO_START_PHASE),
+          sl_sphase.v_xl,
+          ctrl_sphase_mod.v_yl
+        );
+      );
+
+      y0 += h1;
+      deform = get_LFO_deform(idx);
+      sl_deform.v_xl = deform;
+      sl_deform.ui_drawSlider(x0, y0, w0, h0, 3, color_mem, is_active, sprintf(#, "%.1f%%", deform * 100.));
+      sl_deform.l_clicked < 0 ? (
+        set_lfo_deform(idx, 0, 1);
+        sl_deform.l_clicked = 0;
+        sliderchange(-1);
+      );
+      sl_deform.l_dragging ? set_lfo_deform(idx, sl_deform.v_xl, 0);
+      sl_deform.l_dragged ? (
+        set_lfo_deform(idx, sl_deform.v_xl, 1);
+        sl_deform.l_dragged = 0;
+        sliderchange(-1);
+      );
+
+      g_mod_route_idx != -1 ? (
+        ui_drawSliderModOverlay(
+          x1, y0, w1, h0,
+          1,
+          get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_LFO_DEFORM),
+          mod_color_mem,
+          !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_LFO_DEFORM),
+          sl_deform.v_xl,
+          ctrl_deform_mod.v_yl
+        );
+      );
+
+      y0 += h1;
+      amp = get_LFO_amp(idx);
+      sl_amp.v_xl = amp;
+      sl_amp.ui_drawSlider(x0, y0, w0, h0, 1, color_mem, is_active, sprintf(#, "%.1f%%", amp * 100.));
+      sl_amp.l_clicked < 0 ? (
+        set_lfo_amp(idx, sl_amp.v_xl == 1. ? 0. : 1., 1);
+        sl_amp.l_clicked = 0;
+        sliderchange(-1);
+      );
+      sl_amp.l_dragging ? set_lfo_amp(idx, sl_amp.v_xl, 0);
+      sl_amp.l_dragged ? (
+        set_lfo_amp(idx, sl_amp.v_xl, 1);
+        sl_amp.l_dragged = 0;
+        sliderchange(-1);
+      );
+
+      g_mod_route_idx != -1 ? (
+        ui_drawSliderModOverlay(
+          x1, y0, w1, h0,
+          0,
+          get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_AMOUNT_OFFSET),
+          mod_color_mem,
+          !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_AMOUNT_OFFSET),
+          sl_amp.v_xl,
+          ctrl_amp_mod.v_yl
+        );
+      );
+
+      x0 += w0 + gap; y0 = y; w0 = mode_w;
+
+      mode_w ? (
+        trigger_mode = get_LFO_trigger_mode(idx);
+        tb_trigger_mode.draw_style = 1;
+        tb_trigger_mode.ui_drawTabSwitch(x0, y0, w0, h, color_mem, is_active, 1, 4, trigger_mode);
+        tb_trigger_mode.l_clicked ? (
+          set_lfo_trigger_mode(idx, tb_trigger_mode.hover_idx, 1);
+          sliderchange(-1);
+          tb_trigger_mode.l_clicked = 0;
+        );
+
+        h0 = (h - g_button_border_size * 2.) / 4.;
+        set_HSL_color(COLOR_HIGHLIGHT);
+        gfx_setfont(FONT_LFO_BUTTON);
+        ui_drawCenteredText(x0, y0, w0, h0, "Free");
+        y0 += h0;
+        ui_drawCenteredText(x0, y0, w0, h0, "Synced");
+        y0 += h0;
+        ui_drawCenteredText(x0, y0, w0, h0, "Bar Reset");
+        y0 += h0;
+        ui_drawCenteredText(x0, y0, w0, h0, "MIDI Reset");
+        x0 += w0 + gap; y0 = y;
+      );
+
+      w0 = end_w; h0 = h * .25;
+      shape = get_LFO_shape(idx);
+      tb_shape.draw_style = 1;
+      tb_shape.ui_drawTabSwitch(x0, y0, w0, h0, color_mem, is_active, 7, 1, shape);
+      tb_shape.l_clicked ? (
+        set_lfo_shape(idx, tb_shape.hover_idx, 1);
+        sliderchange(-1);
+        tb_shape.l_clicked = 0;
+      );
+
+      set_HSL_color(COLOR_HIGHLIGHT);
+      gfx_setfont(FONT_LFO_BUTTON);
+      w0 = (w0 - g_button_border_size * 2.) / 7.;
+      i = 0;
+      deform = get_LFO_deform(idx);
+      loop(7,
+        ui_drawLFOShapeIcon(x0 + g_button_border_size + w0 * i, y0, w0, h0, i, deform);
+        i += 1;
+      );
+
+      y0 += h0 + gap; h0 = h - h * .65 - gap * 2.;
+
+      bt_link.fill_type = 1;
+      bt_link.ui_drawToggleButton(
+        x0, y0, end_w, h0, color_mem,
+        g_mod_route_idx == idx,
+        g_mod_route_idx == idx ? "CREATE MODULATION ROUTING..." : "CREATE MODULATION ROUTING"
+      );
+      bt_link.l_clicked ? (
+        g_mod_route_idx = g_mod_route_idx == idx ? -1 : idx;
+        bt_link.l_clicked = 0;
+      );
+
+      h0 = h * .4;
+      y0 = y + h - h0;
+      kb_spread.v_l = get_LFO_spread(idx);
+      kb_spread.ui_drawKnob(x0+h0*.5, floor(y0+h0*.5), floor(h0*.5), 1, color_mem, is_active);
+      kb_spread.l_clicked < 0 ? (
+        set_lfo_spread(idx, 0., 1);
+        kb_spread.v_l = 0.;
+        kb_spread.l_clicked = 0;
+      );
+      kb_spread.l_dragging ? set_lfo_spread(idx, kb_spread.v_l, 0);
+      kb_spread.l_dragged ? (
+        set_lfo_spread(idx, kb_spread.v_l, 1);
+        kb_spread.l_dragged = 0;
+      );
+      kb_spread.wheel_scrolled ? (
+        adjust_lfo_spread(idx, kb_spread.wheel_scrolled * 0.1, 1);
+        kb_spread.wheel_scrolled = 0;
+      );
+      x0 += h0 + gap;
+      set_HSL_color(COLOR_HIGHLIGHT);
+      gfx_setfont(FONT_PARAM_TITLE);
+      ui_drawAlignedText(x0, y0, 48., h0*.5, 0., 0.5, "SPREAD");
+      gfx_measurestr("SPREAD", sw, sh);
+      gfx_setfont(FONT_PARAM_VALUE);
+      ui_drawAlignedText(x0, y0+h0*.5, 64., h0*.5, 0., 0.0, sprintf(#, "%.1f%%", get_LFO_spread(idx) * 100.));
+      x0 += sw + gap;
+
+      gfx_setfont(FONT_PARAM_TITLE);
+      gfx_measurestr("UNLINK", sw, sh);
+      w0 = max((x + w - x0 - gap - padding) * .5, sw * 1.125);
+      bt_unlink.fill_type = 1;
+      bt_unlink.ui_drawTriggerButton(x0, y0, w0, h0, COLOR_DANGER, 1, "UNLINK");
+      bt_unlink.l_clicked ? (
+        ui_showMenuAtMousePosition(sprintf(#, "Confirm unlinking all routes for LFO %d", idx + 1)) ? unlink_router_routes_with_src_lfo(idx);
+        bt_unlink.l_clicked = 0;
+      );
+      x0 += w0 + gap;
+
+      bt_delete.fill_type = 1;
+      bt_delete.ui_drawTriggerButton(x0, y0, w0, h0, COLOR_DANGER, 1, "DELETE");
+      bt_delete.l_clicked ? (
+        ui_showMenuAtMousePosition(sprintf(#, "CONFIRM DELETING LFO %d", idx + 1)) ? (
+          remove_lfo(idx);
+          g_mod_route_idx == idx ? g_mod_route_idx = -1;
+          this..selected_idx = -1;
+        );
+        bt_delete.l_clicked = 0;
+      );
+      total_w;
+    );
+
+  function ui_drawLFO(x, y, w, h, idx)
+    local(color_mem, padding, w0)
+    instance(selected_idx)
+    (
+      color_mem = get_band_color_mem(idx + TOTAL_FILTER_COUNT);
+      idx == selected_idx ? (
+        w0 = this.selected_lfo.ui_drawExpandedLFO(x, y, w, h, idx, color_mem);
+      ) : (
+        <?
+          i = 0;
+          loop(TOTAL_FILTER_COUNT,
+            printf("idx == %d ? w0 = this.lfo%d.ui_drawFoldedLFO(x, y, w, h, idx, color_mem);", i, i+1);
+            i += 1;
+          );
+        ?>
+      );
+      w0;
+    );
+
+  function ui_drawLFOs(x, y, w, h)
+    local(i, open_i, count, x0, w0, h0, status, color_mem)
+    instance(selected_idx, bt_add)
+    (
+      set_HSL_color(COLOR_HIGHLIGHT);
+      gfx_rect(x, y, w, h);
+      border = ceil(2. * g_scaling);
+      y += border; w -= border; h -= border + border;
+
+      set_HSL_color(COLOR_SCREEN);
+      gfx_rect(x, y, w, h);
+      x0 = x;
+
+      w >= 800. || selected_idx == -1 ? (
+        i = count = 0;
+        open_i = -1;
+        loop(TOTAL_LFO_COUNT,
+          (x0 + 24.) < (x + w) ? (
+            is_LFO_initialized(i) ? (
+              count += 1;
+              w0 = this.ui_drawLFO(x0, y, w, h, i);
+              x0 += w0;
+            ) : ( open_i == -1 ? open_i = i; );
+          );
+          i += 1;
+        );
+        count < TOTAL_LFO_COUNT ? (
+          w0 = 20. * fontscaling;
+          gfx_setfont(FONT_ADD_FILTER);
+          status = bt_add.ui_parseButtonState(x0, y, w0, h, BUTTON_STATUS_NORMAL);
+          color_mem = get_band_color_mem(open_i + TOTAL_FILTER_COUNT);
+          set_HSL_button_color(color_mem, status, BUTTON_MAIN_OFFSET);
+          bt_add.ui_drawButtonBorder(x0, y, w0, h);
+          status == BUTTON_STATUS_NORMAL ? set_HSL_color(COLOR_BLACK) : set_HSL_button_color(color_mem, status, BUTTON_BG_OFFSET);
+          bt_add.ui_drawButtonFill(x0, y, w0, h);
+          set_HSL_color(COLOR_HIGHLIGHT);
+          bt_add.ui_drawButtonText(x0, y, w0, h, "+");
+          bt_add.l_clicked ? (
+            add_lfo(open_i);
+            selected_idx = open_i;
+            bt_add.l_clicked = 0;
+          );
+        );
+      ) : (
+        is_LFO_initialized(selected_idx) ? this.ui_drawLFO(x0, y, w, h, selected_idx) : selected_idx = -1;
+      );
+    );
+
+  function ui_drawSCs(x, y, w, h)
+    local(
+      i, open_i, count, color_mem, amp, is_active, is_cur_route_src,
+      mod_idx, columns, rows,
+      padding, gap, total_w, str_w, str_h, x0, y0, w0, h0, status,
+    )
+    instance(selected_idx, tb_sc, sl_amp, bt_link, bt_unlink, bt_delete)
+    (
+      color_mem = get_band_color_mem(selected_idx + TOTAL_FILTER_COUNT + TOTAL_LFO_COUNT);
+      mod_idx = selected_idx + TOTAL_LFO_COUNT;
+      is_cur_route_src = g_mod_route_idx == mod_idx;
+      gfx_setfont(FONT_PARAM_TITLE);
+      gfx_measurestr("SC8", str_w, str_h);
+      padding = 4. * g_scaling;
+      gap = 4. * h_scaling;
+      w0 = str_w + g_border_size * 2. + padding * 2.;
+      w > 468. ? (
+        columns = 2; rows = 4;
+        w0 *= 2.;
+      ) : (
+        columns = 1; rows = 8;
+      );
+      gfx_measurestr("ROUTING", str_w, str_h);
+      total_w = selected_idx >= 0 ? w0 + str_w + padding * 4. : w0;
+      set_HSL_color(COLOR_HIGHLIGHT);
+      x += w - total_w; w = total_w;
+      gfx_rect(x, y, w, h);
+      border = ceil(2. * g_scaling);
+      y += border; h -= border + border;
+
+      set_HSL_color(COLOR_SCREEN);
+      gfx_rect(x, y, w, h);
+
+      tb_sc.draw_style = 1;
+      x0 = x + w - w0;
+      tb_sc.ui_drawTabSwitch(x0, y, w0, h, color_mem, 1, columns, rows, selected_idx);
+      i = 0;
+      w0 /= columns; h0 = h / rows;
+      loop(TOTAL_SIDECHAIN_COUNT,
+        status = selected_idx == i ? BUTTON_STATUS_NORMAL : BUTTON_STATUS_DISABLED;
+        tb_sc.hover_idx == i ? (
+          status += tb_sc.l_click || tb_sc.r_click ? BUTTON_STATUS_PRESS : BUTTON_STATUS_HOVER;
+        );
+        set_HSL_button_color(color_mem, status, BUTTON_TEXT_OFFSET);
+        !is_SideChain_active(i) ? uix_darkenColor(!is_SideChain_initialized(i) ? .6 : .4);
+        ui_drawCenteredText(x0 + w0 * (i % columns), y + h0 * floor(i / columns), w0, h0, sprintf(#, "SC%d", i+1));
+        i += 1;
+      );
+      tb_sc.l_clicked ? (
+        selected_idx == tb_sc.hover_idx ? (
+          selected_idx = -1;
+          is_cur_route_src ? g_mod_route_idx = -1;
+        ) : (
+          selected_idx = tb_sc.hover_idx;
+        );
+        tb_sc.l_clicked = 0;
+      );
+      tb_sc.r_clicked ? (
+        toggle_SideChain_active(tb_sc.hover_idx);
+        set_dirty_for_router_routes_with_src_mod(tb_sc.hover_idx + TOTAL_LFO_COUNT);
+        tb_sc.r_clicked = 0;
+      );
+
+      selected_idx >= 0 ? (
+        x0 = x + padding; y0 = y; w0 *= columns; w0 = w - w0 - gap * 2.; h0 = (h - gap * 3.) * .25;
+        is_active = is_SideChain_active(selected_idx);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        !is_active ? uix_darkenColor(.5);
+        ui_drawCenteredText(x0, y0, w0, h0, "AMP");
+
+        amp = get_SideChain_amp(selected_idx);
+        y0 += h0;
+        sl_amp.v_xl = amp;
+        sl_amp.ui_drawSlider(x0, y0, w0, h0, 1, color_mem, is_active, sprintf(#, "%.1f%%", amp * 100.));
+        sl_amp.l_clicked < 0 ? (
+          set_SideChain_amp(selected_idx, 0.);
+          sl_amp.l_clicked = 0;
+          sliderchange(-1);
+        );
+        sl_amp.l_dragging ? set_SideChain_amp(selected_idx, sl_amp.v_xl);
+        sl_amp.l_dragged ? (
+          set_SideChain_amp(selected_idx, sl_amp.v_xl);
+          sl_amp.l_dragged = 0;
+          sliderchange(-1);
+        );
+        y0 += h0 + gap;
+
+        bt_link.fill_type = 1;
+        bt_link.ui_drawToggleButton(
+          x0, y0, w0, h0, color_mem,
+          is_cur_route_src,
+          is_cur_route_src ? "ROUTING" : "ROUTE"
+        );
+        bt_link.l_clicked ? (
+          g_mod_route_idx = is_cur_route_src ? -1 : mod_idx;
+          bt_link.l_clicked = 0;
+        );
+        y0 += h0 + gap;
+
+        bt_unlink.fill_type = 1;
+        bt_unlink.ui_drawTriggerButton(x0, y0, w0, h0, COLOR_DANGER, 1, "UNLINK");
+        bt_unlink.l_clicked ? (
+          ui_showMenuAtMousePosition(sprintf(#, "Confirm unlinking all routes for SideChain %d", selected_idx + 1)) ? (
+            unlink_router_routes_with_src_lfo(mod_idx);
+            set_SideChain_initialized(selected_idx, 0);
+          );
+          bt_unlink.l_clicked = 0;
+        );
+      );
+      total_w;
+    );
+
+  function ui_draw()
+    local(
+      y, left_w, right_w, gap, top_h, eq_h, panel_h,
+      filter_h, filter_selector_h, filter_info_h,
+      lfo_h, lfo_selector_h, lfo_info_h, sc_info_w,
+    )
+    global(gfx_w, gfx_h, g_scaling, w_scaling, h_scaling, fontscaling)
+    (
+      left_w = gfx_w;
+      top_h = 32. * fontscaling * !uix_is_very_compact();
+      gfx_w > 350. && gfx_h > 400. ? (
+        right_w = 0.;
+        left_w = gfx_w - right_w;
+        panel_h = max(192., gfx_h * .35);
+        eq_h = gfx_h - panel_h - top_h;
+        filter_h = panel_h * .5;
+        filter_selector_h = max(40. * h_scaling, 20.);
+        filter_info_h = max(56. * h_scaling, 48.);
+        lfo_h = ceil(panel_h - filter_selector_h - filter_info_h);
+        y = top_h + eq_h;
+        this.eq.ui_drawFilterSelectors(0., y, left_w, filter_selector_h);
+        y += filter_selector_h;
+        this.eq.ui_drawFilterInfo(0., y, left_w, filter_info_h);
+        y += filter_info_h;
+        gfx_w > 428. ? sc_info_w = this.sc.ui_drawSCs(0., y, left_w, lfo_h);
+        this.lfo.ui_drawLFOs(0., y, left_w - sc_info_w, lfo_h);
+      ) : (
+        eq_h = gfx_h - top_h;
+      );
+      top_h ? this.ui_drawHeader(0., 0., left_w, top_h);
+      this.eq.ui_drawEQ(0., top_h, left_w, eq_h);
+    );
+
+  calculate_all_SVF_biquads(TOTAL_FILTER_COUNT);
+  copy_param_from_all_svf_filter(TOTAL_FILTER_COUNT, SVF_INDICES_MEM_POS);
+  calculate_all_EQ_biquads(TOTAL_FILTER_COUNT);
+  ui_updateEQGainStep();
+  ui.ui_draw();

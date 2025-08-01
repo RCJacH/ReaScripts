@@ -1,0 +1,311 @@
+desc: RC Router
+
+@init
+
+router_offset_inc = 0;
+ROUTER_LFO_RATE = router_offset_inc; router_offset_inc += 1;
+ROUTER_LFO_START_PHASE = router_offset_inc; router_offset_inc += 1;
+ROUTER_LFO_DEFORM = router_offset_inc; router_offset_inc += 1;
+ROUTER_LFO_AMP = router_offset_inc; router_offset_inc += 1;
+ROUTER_LFO_PARAMS = router_offset_inc;
+
+ROUTER_FILTER_FREQ = router_offset_inc; router_offset_inc += 1;
+ROUTER_FILTER_BW = router_offset_inc; router_offset_inc += 1;
+ROUTER_FILTER_GAIN = router_offset_inc; router_offset_inc += 1;
+ROUTER_FILTER_PARAMS = router_offset_inc - ROUTER_LFO_PARAMS;
+
+router_offset_inc = 0;
+ROUTER_IS_BYPASSED_OFFSET = router_offset_inc; router_offset_inc += 1;
+ROUTER_IS_BIPOLAR_OFFSET = router_offset_inc; router_offset_inc += 1;
+ROUTER_SRC_IDX_OFFSET = router_offset_inc; router_offset_inc += 1;
+ROUTER_DEST_OFFSET = router_offset_inc; router_offset_inc += 1;
+ROUTER_AMOUNT_OFFSET = router_offset_inc; router_offset_inc += 1;
+ROUTER_IS_DIRTY_MEM_POS_OFFSET = router_offset_inc; router_offset_inc += 1;
+
+ROUTER_PAR_PER_ROUTE = router_offset_inc;
+
+ROUTER_INDICES_MEM_POS = 0;
+ROUTER_ACTIVE_INDICES_MEM_POS = 0;
+ROUTER_ROUTING_MEM_POS = 0;
+
+ROUTER_TOTAL_ROUTE_COUNT = 0;
+ROUTER_MEM_PER_LFO = 0;
+ROUTER_LFO_PARAMS_PER_LFO = 0;
+ROUTER_FILTER_PARAMS_PER_LFO = 0;
+ROUTER_LFO_PARAM_START_OFFSET = 0;
+ROUTER_FILTER_PARAM_START_OFFSET = 0;
+ROUTER_FILTER_ROUTE_COUNT = 0;
+ROUTER_TOTAL_ROUTING_MEM_COUNT = 0;
+
+g_router_active_route_count = 0;
+
+
+function is_router_offset_lfo(offset)
+  global(ROUTER_LFO_PARAMS)
+  (
+    offset < ROUTER_LFO_PARAMS;
+  );
+
+function init_router(lfo_count, lfo_params, filter_count, filter_params, modulator_count, does_reset, mem_inc*)
+  local(count, i, inc)
+  global(
+    ROUTER_INDICES_MEM_POS, ROUTER_ACTIVE_INDICES_MEM_POS, ROUTER_ROUTING_MEM_POS,
+    ROUTER_PAR_PER_ROUTE, ROUTER_TOTAL_ROUTE_COUNT, g_router_active_route_count,
+    ROUTER_MEM_PER_LFO, ROUTER_LFO_PARAMS_PER_LFO, ROUTER_FILTER_PARAMS_PER_LFO,
+    ROUTER_LFO_PARAM_START_OFFSET, ROUTER_FILTER_PARAM_START_OFFSET,
+    ROUTER_TOTAL_ROUTING_MEM_COUNT
+  )
+  (
+    ROUTER_LFO_PARAM_START_OFFSET = 0;
+    ROUTER_LFO_PARAMS_PER_LFO = lfo_count * lfo_params;
+    ROUTER_FILTER_PARAM_START_OFFSET = ROUTER_LFO_PARAMS_PER_LFO;
+    ROUTER_FILTER_PARAMS_PER_LFO = filter_count * filter_params;
+    ROUTER_MEM_PER_LFO = ROUTER_LFO_PARAMS_PER_LFO + ROUTER_FILTER_PARAMS_PER_LFO;
+    count = modulator_count * ROUTER_MEM_PER_LFO;
+    ROUTER_TOTAL_ROUTE_COUNT = count;
+    ROUTER_INDICES_MEM_POS = mem_inc;
+    mem_inc += count;
+    ROUTER_ACTIVE_INDICES_MEM_POS = mem_inc;
+    mem_inc += count;
+    ROUTER_ROUTING_MEM_POS = mem_inc;
+    i = inc = 0;
+    loop(count,
+      ROUTER_INDICES_MEM_POS[i] = mem_inc + inc;
+      inc += ROUTER_PAR_PER_ROUTE;
+      i += 1;
+    );
+    ROUTER_TOTAL_ROUTING_MEM_COUNT = inc;
+    does_reset ? memset(mem_inc, 0, inc);
+    g_router_active_route_count = 0;
+    mem_inc += inc;
+  );
+
+
+function get_router_mem_pos(idx)
+  global(ROUTER_INDICES_MEM_POS)
+  (
+    ROUTER_INDICES_MEM_POS[idx];
+  );
+
+
+
+function get_router_active_mem_pos(idx)
+  global(ROUTER_ACTIVE_INDICES_MEM_POS)
+  (
+    ROUTER_ACTIVE_INDICES_MEM_POS[idx];
+  );
+
+
+function get_router_routing_idx(src_mod_idx, target_idx, param_offset)
+  local(mem)
+  global(
+    ROUTER_MEM_PER_LFO, ROUTER_FILTER_PARAM_START_OFFSET,
+    ROUTER_LFO_PARAMS, ROUTER_FILTER_PARAMS
+  )
+  (
+    mem = src_mod_idx * ROUTER_MEM_PER_LFO;
+    param_offset >= ROUTER_LFO_PARAMS ? (
+      mem += (
+        ROUTER_FILTER_PARAM_START_OFFSET
+          + target_idx * ROUTER_FILTER_PARAMS
+            + param_offset - ROUTER_LFO_PARAMS
+        );
+    ) : (
+      mem += target_idx * ROUTER_LFO_PARAMS + param_offset;
+    );
+    mem;
+  );
+
+
+function set_router_route_bypassed(src_mod_idx, target_idx, param_offset, is_bypassed)
+  local(mem)
+  global(ROUTER_IS_BYPASSED_OFFSET, ROUTER_IS_DIRTY_MEM_POS_OFFSET)
+  (
+    mem = get_router_mem_pos(get_router_routing_idx(src_mod_idx, target_idx, param_offset));
+    mem[ROUTER_IS_BYPASSED_OFFSET] = is_bypassed;
+    mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET] ? mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET][] = 1;
+  );
+
+
+function toggle_router_route_bypassed(src_mod_idx, target_idx, param_offset)
+  local(mem)
+  global(ROUTER_IS_BYPASSED_OFFSET, ROUTER_IS_DIRTY_MEM_POS_OFFSET)
+  (
+    mem = get_router_mem_pos(get_router_routing_idx(src_mod_idx, target_idx, param_offset));
+    mem[ROUTER_IS_BYPASSED_OFFSET] = !mem[ROUTER_IS_BYPASSED_OFFSET];
+    mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET] ? mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET][] = 1;
+  );
+
+
+function get_router_route_bypassed(src_mod_idx, target_idx, param_offset)
+  local(mem)
+  global(ROUTER_IS_BYPASSED_OFFSET)
+  (
+    mem = get_router_mem_pos(get_router_routing_idx(src_mod_idx, target_idx, param_offset));
+    mem[ROUTER_IS_BYPASSED_OFFSET];
+  );
+
+
+function set_router_route_bipolar(src_mod_idx, target_idx, param_offset, is_bipolar)
+  local(mem)
+  global(ROUTER_IS_BIPOLAR_OFFSET)
+  (
+    mem = get_router_mem_pos(get_router_routing_idx(src_mod_idx, target_idx, param_offset));
+    mem[ROUTER_IS_BIPOLAR_OFFSET] = is_bipolar;
+  );
+
+
+function toggle_router_route_bipolar(src_mod_idx, target_idx, param_offset)
+  local(mem)
+  global(ROUTER_IS_BIPOLAR_OFFSET)
+  (
+    mem = get_router_mem_pos(get_router_routing_idx(src_mod_idx, target_idx, param_offset));
+    mem[ROUTER_IS_BIPOLAR_OFFSET] = !mem[ROUTER_IS_BIPOLAR_OFFSET];
+  );
+
+
+function get_router_route_bipolar(src_mod_idx, target_idx, param_offset)
+  local(mem)
+  global(ROUTER_IS_BIPOLAR_OFFSET)
+  (
+    mem = get_router_mem_pos(get_router_routing_idx(src_mod_idx, target_idx, param_offset));
+    mem[ROUTER_IS_BIPOLAR_OFFSET];
+  );
+
+
+function get_router_route_amount(src_mod_idx, target_idx, param_offset)
+  local(mem)
+  global(ROUTER_AMOUNT_OFFSET)
+  (
+    mem = get_router_mem_pos(get_router_routing_idx(src_mod_idx, target_idx, param_offset));
+    mem[ROUTER_AMOUNT_OFFSET];
+  );
+
+
+function adjust_router_lfo_param(src_mod_idx, target_lfo_idx, param_offset, param_mem, depth)
+  local(mem)
+  global(ROUTER_DEST_OFFSET, ROUTER_SRC_IDX_OFFSET, ROUTER_AMOUNT_OFFSET)
+  (
+    mem = get_router_mem_pos(get_router_routing_idx(src_mod_idx, target_lfo_idx, param_offset));
+    !mem[ROUTER_DEST_OFFSET] ? (
+      mem[ROUTER_DEST_OFFSET] = param_mem;
+      mem[ROUTER_SRC_IDX_OFFSET] = src_mod_idx;
+    );
+    mem[ROUTER_AMOUNT_OFFSET] = depth;
+  );
+
+
+function adjust_router_filter_param(src_mod_idx, target_filter_idx, param_offset, param_mem, depth)
+  local(mem)
+  global(
+    ROUTER_DEST_OFFSET, ROUTER_SRC_IDX_OFFSET, ROUTER_IS_DIRTY_MEM_POS_OFFSET, ROUTER_AMOUNT_OFFSET
+  )
+  (
+    mem = get_router_mem_pos(get_router_routing_idx(src_mod_idx, target_filter_idx, param_offset));
+    !mem[ROUTER_DEST_OFFSET] ? (
+      mem[ROUTER_DEST_OFFSET] = param_mem;
+      mem[ROUTER_SRC_IDX_OFFSET] = src_mod_idx;
+      mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET] = get_SVF_is_dirty_mem_pos(target_filter_idx);
+    );
+    mem[ROUTER_AMOUNT_OFFSET] = depth;
+  );
+
+
+function unlink_router_routes_with_src_lfo(src_mod_idx)
+  local(i, mem)
+  global(
+    ROUTER_TOTAL_ROUTE_COUNT, ROUTER_SRC_IDX_OFFSET,
+    ROUTER_AMOUNT_OFFSET, ROUTER_IS_DIRTY_MEM_POS_OFFSET
+  )
+  (
+    i = 0;
+    loop(ROUTER_TOTAL_ROUTE_COUNT,
+      mem = get_router_mem_pos(i);
+      mem[ROUTER_SRC_IDX_OFFSET] == src_mod_idx ? (
+        mem[ROUTER_AMOUNT_OFFSET] = 0;
+        mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET][] = 1;
+      );
+      i += 1;
+    )
+  );
+
+
+function set_dirty_for_router_routes_with_src_mod(src_mod_idx)
+  local(i, mem, is_dirty_mem)
+  global(g_router_active_route_count, ROUTER_IS_DIRTY_MEM_POS_OFFSET)
+  (
+    i = 0;
+    loop(g_router_active_route_count,
+      mem = get_router_active_mem_pos(i);
+      is_dirty_mem = mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET];
+      is_dirty_mem ? is_dirty_mem[] = 1;
+      i += 1;
+    );
+  );
+
+
+function router_update_active_routes(lfo_count)
+  local(i, j, mem, is_bypassed, mod_idx)
+  global(
+    ROUTER_ACTIVE_INDICES_MEM_POS, ROUTER_TOTAL_ROUTE_COUNT,
+    ROUTER_SRC_IDX_OFFSET,
+    ROUTER_IS_BYPASSED_OFFSET, ROUTER_AMOUNT_OFFSET,
+    g_router_active_route_count
+  )
+  (
+    i = j = 0;
+    memset(ROUTER_ACTIVE_INDICES_MEM_POS, 0, ROUTER_TOTAL_ROUTE_COUNT);
+    loop(ROUTER_TOTAL_ROUTE_COUNT,
+      mem = get_router_mem_pos(i);
+      mod_idx = mem[ROUTER_SRC_IDX_OFFSET];
+      is_bypassed = (
+        mem[ROUTER_IS_BYPASSED_OFFSET] ||
+          !mem[ROUTER_AMOUNT_OFFSET] ||
+            !(
+              (mod_idx < lfo_count && is_LFO_active(mod_idx)) ||
+                (mod_idx >= lfo_count && is_SideChain_active(mod_idx - lfo_count))
+            )
+        );
+      !is_bypassed ? (
+        ROUTER_ACTIVE_INDICES_MEM_POS[j] = mem;
+        j += 1;
+      );
+      i += 1;
+    );
+    g_router_active_route_count = j;
+  );
+
+
+function process_router(process_type, lfo_count)
+  local(i, mem, chan, v, src_idx, dest, amount, mod_mem, is_bipolar, is_dirty_mem)
+  global(
+    g_router_active_route_count,
+    ROUTER_IS_BYPASSED_OFFSET, ROUTER_SRC_IDX_OFFSET, ROUTER_DEST_OFFSET, ROUTER_AMOUNT_OFFSET,
+    ROUTER_IS_DIRTY_MEM_POS_OFFSET, ROUTER_IS_BIPOLAR_OFFSET,
+    LFO_IS_ACTIVE_OFFSET, LFO_V_OFFSET, SIDECHAIN_V_OFFSET
+  )
+  (
+    i = 0;
+    loop(g_router_active_route_count,
+      mem = get_router_active_mem_pos(i);
+      is_dirty_mem = mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET];
+      (!process_type && !is_dirty_mem) || // LFO
+        (process_type && is_dirty_mem) /* Filter */ ? (
+          src_idx = mem[ROUTER_SRC_IDX_OFFSET];
+          mod_mem = src_idx < lfo_count ? get_LFO_mem_pos(src_idx) + LFO_V_OFFSET
+            : get_SideChain_mem_pos(src_idx - lfo_count) + SIDECHAIN_V_OFFSET;
+          dest = mem[ROUTER_DEST_OFFSET];
+          amount = mem[ROUTER_AMOUNT_OFFSET];
+          is_bipolar = mem[ROUTER_IS_BIPOLAR_OFFSET];
+          chan = 0;
+          loop(2,
+            v = mod_mem[chan];
+            !is_bipolar ? v = (v + 1.) * .5;
+            dest[chan] += v * amount;
+            chan += 1;
+          );
+          is_dirty_mem ? is_dirty_mem[] = 1; // mark as update required
+        );
+      i += 1;
+    );
+  );

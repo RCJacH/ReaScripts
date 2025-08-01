@@ -1,0 +1,111 @@
+@init
+SIDECHAIN_STATE_OFFSET = 0;
+SIDECHAIN_AMP_OFFSET = 1;
+SIDECHAIN_V_OFFSET = 2;
+SIDECHAIN_TOTAL_PARAM_MEM = 4;
+
+SIDECHAIN_MEM_POS = 0;
+SIDECHAIN_PARAM_MEM_POS = 0;
+TOTAL_SIDECHAIN_PARAM_MEM_COUNT = 0;
+
+
+function init_SideChains(sc_count, does_reset, mem_inc*)
+  local(i, inc)
+  global(
+    SIDECHAIN_MEM_POS, SIDECHAIN_TOTAL_PARAM_MEM,
+    SIDECHAIN_PARAM_MEM_POS, TOTAL_SIDECHAIN_PARAM_MEM_COUNT
+  )
+  (
+    SIDECHAIN_MEM_POS = mem_inc;
+    mem_inc += sc_count;
+    SIDECHAIN_PARAM_MEM_POS = mem_inc;
+    i = inc = 0;
+    loop(sc_count,
+      SIDECHAIN_MEM_POS[i] = mem_inc + inc; inc += SIDECHAIN_TOTAL_PARAM_MEM;
+      i += 1;
+    );
+    does_reset ? memset(mem_inc, 0, inc);
+    TOTAL_SIDECHAIN_PARAM_MEM_COUNT = inc;
+    mem_inc += inc;
+  );
+
+
+function get_SideChain_mem_pos(idx)
+  global(SIDECHAIN_MEM_POS, SIDECHAIN_TOTAL_PARAM_MEM)
+  (
+    SIDECHAIN_MEM_POS[idx];
+  );
+
+
+function set_SideChain_initialized(idx, is_on)
+  local(mem)
+  global(SIDECHAIN_STATE_OFFSET)
+  (
+    mem = get_SideChain_mem_pos(idx);
+    is_on ? (
+      mem[SIDECHAIN_STATE_OFFSET] |= 1;
+    ) : (
+      mem[SIDECHAIN_STATE_OFFSET] = 0;
+    );
+  );
+
+
+function is_SideChain_initialized(idx)
+  global(SIDECHAIN_STATE_OFFSET)
+  (
+    get_SideChain_mem_pos(idx)[SIDECHAIN_STATE_OFFSET]&1;
+  );
+
+
+function set_SideChain_active(idx, is_active)
+  local(mem)
+  global(SIDECHAIN_STATE_OFFSET)
+  (
+    mem = get_SideChain_mem_pos(idx);
+    is_active ? (
+      mem[SIDECHAIN_STATE_OFFSET] = 3;
+    ) : (
+      mem[SIDECHAIN_STATE_OFFSET] &= $~1;
+    );
+  );
+
+
+function is_SideChain_active(idx)
+  instance(start_mem_pos)
+  global(SIDECHAIN_STATE_OFFSET)
+  (
+    get_SideChain_mem_pos(idx)[SIDECHAIN_STATE_OFFSET]&2;
+  );
+
+
+function toggle_SideChain_active(idx)
+  global()
+  (
+    set_SideChain_active(idx, !is_SideChain_active(idx));
+  );
+
+
+function get_SideChain_amp(idx)
+  global(SIDECHAIN_AMP_OFFSET)
+  (
+    get_SideChain_mem_pos(idx)[SIDECHAIN_AMP_OFFSET];
+  );
+
+
+function set_SideChain_amp(idx, v)
+  (
+    get_SideChain_mem_pos(idx)[SIDECHAIN_AMP_OFFSET] = v;
+  );
+
+
+function process_all_SideChains(sc_count)
+  local(i, mem, amp)
+  (
+    i = 0;
+    loop(sc_count,
+      mem = get_SideChain_mem_pos(i);
+      amp = is_SideChain_active(i) ? mem[SIDECHAIN_AMP_OFFSET] : 0.;
+      mem[SIDECHAIN_V_OFFSET] = mem[SIDECHAIN_V_OFFSET + 1] = spl(2+i) * amp;
+      i += 1;
+    );
+  );
