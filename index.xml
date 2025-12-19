@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="46b9ffb71124c72a35bcf76c79ed36e98043e435" name="RCJacH Scripts">
+<index version="1" commit="36c3532ea23e300050d3ec8eaa38b0643cde86af" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -441,6 +441,21 @@ Potential Addition:
         <source file="dependencies/router.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/dependencies/router.jsfx-inc</source>
         <source file="dependencies/sidechain.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/dependencies/sidechain.jsfx-inc</source>
         <source file="dependencies/svf_filter.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/46b9ffb71124c72a35bcf76c79ed36e98043e435/JSFX/Audio/RCModEQ/dependencies/svf_filter.jsfx-inc</source>
+      </version>
+      <version name="1.1.0" author="RCJacH" time="2025-12-19T13:53:07Z">
+        <changelog><![CDATA[* v1.1.0 (2025-12-14)
+  + Add Morph Parameter to filters
+  * Fix double click to add filter
+  * Fix Invert button position
+* v1.0.0 (2025-08-01)
+  + Initial Release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/RCModEQ.jsfx</source>
+        <source file="dependencies/eq_node.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/dependencies/eq_node.jsfx-inc</source>
+        <source file="dependencies/hsl_colors.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/dependencies/hsl_colors.jsfx-inc</source>
+        <source file="dependencies/lfo.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/dependencies/lfo.jsfx-inc</source>
+        <source file="dependencies/router.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/dependencies/router.jsfx-inc</source>
+        <source file="dependencies/sidechain.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/dependencies/sidechain.jsfx-inc</source>
+        <source file="dependencies/svf_filter.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/dependencies/svf_filter.jsfx-inc</source>
       </version>
     </reapack>
   </category>
