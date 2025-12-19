@@ -35,11 +35,13 @@ svf_offset_inc = 0;
 SVF_STATE_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_IS_DIRTY_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_TYPE_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_TYPE2_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_CHANNEL_MODE_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_SPREAD_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_FREQUENCY_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_BANDWIDTH_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_GAIN_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_MORPH_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 
 SVF_MOD_OFFSET = svf_offset_inc;
 SVF_FREQUENCY_MOD_OFFSET = svf_offset_inc;
@@ -51,6 +53,9 @@ SVF_BANDWIDTH_MOD_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_GAIN_MOD_OFFSET = svf_offset_inc;
 SVF_GAIN_MOD_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_GAIN_MOD_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_MORPH_MOD_OFFSET = svf_offset_inc;
+SVF_MORPH_MOD_L_OFFSET = svf_offset_inc; svf_offset_inc += 1;
+SVF_MORPH_MOD_R_OFFSET = svf_offset_inc; svf_offset_inc += 1;
 SVF_MOD_MEM_SIZE = svf_offset_inc - SVF_MOD_OFFSET;
 
 SVF_TOTAL_PARAM_MEM = svf_offset_inc;
@@ -127,22 +132,13 @@ function _svf_get_Q(static_oct, mod_pct)
   );
 
 
-function store_SVF_biquad_to_mem(type, dB, R, g, Ks, Kp, coef_mem)
-  local(spread, g2, A, a0, a1, a2, b0, b1, b2)
+function get_SVF_biquad_bs(type, dB, R, g, g2, Ks, Kp, a0, a1, a2, coef_mem)
+  local(b0, b1, b2)
   global(
     SVF_SHAPE_LP, SVF_SHAPE_BP, SVF_SHAPE_HP, SVF_SHAPE_UBP, SVF_SHAPE_NOTCH,
     SVF_SHAPE_LS, SVF_SHAPE_HS, SVF_SHAPE_AP, SVF_SHAPE_PEAK
   )
   (
-    //-----------------------------------------------
-    // Denominator (common to every SVF-based shape)
-    //-----------------------------------------------
-    g2 = g*g;
-    a0 = 1 + 2*R*g + g2;
-    a1 = 2 * (g2 - 1);
-    a2 = 1 - 2*R*g + g2;
-    A = 10^(dB / 40);
-
     //-----------------------------------------------
     // Numerator – choose by filter type
     //-----------------------------------------------
@@ -174,7 +170,7 @@ function store_SVF_biquad_to_mem(type, dB, R, g, Ks, Kp, coef_mem)
     type == SVF_SHAPE_HS ? ( // High-shelf
       b0 = a0 + Ks;
       b1 = a1-2*Ks;
-      b2 = a2 + ks;
+      b2 = a2 + Ks;
     ) :
     type == SVF_SHAPE_NOTCH ? ( // Notch
       b0 = 1 + g2;
@@ -193,6 +189,31 @@ function store_SVF_biquad_to_mem(type, dB, R, g, Ks, Kp, coef_mem)
     ) :
     ( // Fallback for unknown type
       b0 = b1 = b2 = 0;
+    );
+
+    coef_mem[2] = b0; coef_mem[3] = b1; coef_mem[4] = b2;
+  );
+
+
+function store_SVF_biquad_to_mem(type, type2, morph, dB, R, g, Ks, Kp, coef_mem)
+  local(spread, g2, a0, a1, a2, b0, b1, b2)
+  global()
+  (
+    //-----------------------------------------------
+    // Denominator (common to every SVF-based shape)
+    //-----------------------------------------------
+    g2 = g*g;
+    a0 = 1 + 2*R*g + g2;
+    a1 = 2 * (g2 - 1);
+    a2 = 1 - 2*R*g + g2;
+
+    get_SVF_biquad_bs(morph == 1. ? type2 : type, dB, R, g, g2, Ks, Kp, a0, a1, a2, coef_mem);
+    b0 = coef_mem[2]; b1 = coef_mem[3]; b2 = coef_mem[4];
+    morph && morph < 1. && type != type2 ? (
+      get_SVF_biquad_bs(type2, dB, R, g, g2, Ks, Kp, a0, a1, a2, coef_mem);
+      b0 = b0 + morph * (coef_mem[2] - b0);
+      b1 = b1 + morph * (coef_mem[3] - b1);
+      b2 = b2 + morph * (coef_mem[4] - b2);
     );
 
     //-----------------------------------------------
@@ -418,6 +439,23 @@ function get_SVF_type(idx)
     get_SVF_mem_pos(idx)[SVF_TYPE_OFFSET];
   );
 
+function set_SVF_type_2(idx, v)
+  local(mem)
+  global(SVF_TYPE2_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    v != mem[SVF_TYPE2_OFFSET] ? (
+      mem[SVF_TYPE2_OFFSET] = v;
+      set_SVF_dirty(idx, 1);
+    );
+  );
+
+function get_SVF_type_2(idx)
+  global(SVF_TYPE2_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_TYPE2_OFFSET];
+  );
+
 function set_SVF_spread(idx, v)
   local(mem)
   global(SVF_SPREAD_OFFSET)
@@ -530,23 +568,53 @@ function adjust_SVF_gain(idx, v)
     mem[SVF_GAIN_OFFSET];
   );
 
-function set_SVF_param(idx, channel_mode, type, spread, freq, bandwidth, gain)
+function set_SVF_morph(idx, v)
+  local(mem)
+  global(SVF_MORPH_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    v != mem[SVF_MORPH_OFFSET] ? (
+      mem[SVF_MORPH_OFFSET] = v;
+      set_SVF_dirty(idx, 1);
+    );
+  );
+
+function get_SVF_morph(idx)
+  global(SVF_MORPH_OFFSET)
+  (
+    get_SVF_mem_pos(idx)[SVF_MORPH_OFFSET];
+  );
+
+function adjust_SVF_morph(idx, v)
+  local(mem)
+  global(SVF_MORPH_OFFSET)
+  (
+    mem = get_SVF_mem_pos(idx);
+    mem[SVF_MORPH_OFFSET] += v;
+    mem[SVF_MORPH_OFFSET] = clamp(mem[SVF_MORPH_OFFSET], 0., 1.);
+    set_SVF_dirty(idx, 1);
+    mem[SVF_MORPH_OFFSET];
+  );
+
+function set_SVF_param(idx, channel_mode, type, type2, spread, freq, bandwidth, gain, morph)
   global()
   (
     set_SVF_channel_mode(idx, channel_mode);
     set_SVF_type(idx, type);
+    set_SVF_type_2(idx, type2);
     set_SVF_spread(idx, spread);
     set_SVF_freq(idx, freq);
     set_SVF_bandwidth(idx, bandwidth);
     set_SVF_gain(idx, gain);
+    set_SVF_morph(idx, morph);
   );
 
-function on_SVF_slider_change(idx, active, channel_mode, type, spread, freq, bandwidth, gain)
+function on_SVF_slider_change(idx, active, channel_mode, type, type2, spread, freq, bandwidth, gain, morph)
   global()
   (
     set_SVF_active(idx, active);
     active ? (
-      set_SVF_param(idx, channel_mode, type, spread, freq, bandwidth, gain);
+      set_SVF_param(idx, channel_mode, type, type2, spread, freq, bandwidth, gain, morph);
     );
   );
 
@@ -600,15 +668,18 @@ function reset_all_SVF_modulations(filter_count)
 function process_SVF(idx, s0*, s1*)
   local(
     is_mid_side, is_two_channels, channel, channel_count, i,
-    s, type,
+    s, type, type2, morph,
     mem, z1_A, z2_A, R, g, Ks, Kp,
-    HP, BP, LP, UBP, LoShelf, HiShelf, Notch, AP, Peak
+    HP, BP, LP, UBP, LoShelf, HiShelf, Notch, AP, Peak,
+    x, y
   )
   instance(a, b)
   global(
-    SVF_CHANNEL_MODE_OFFSET, SVF_TYPE_OFFSET, SVF_SPREAD_OFFSET,
+    SVF_CHANNEL_MODE_OFFSET, SVF_TYPE_OFFSET, SVF_TYPE2_OFFSET,
+    SVF_SPREAD_OFFSET,
     SVF_Z1_A_L_OFFSET, SVF_Z2_A_L_OFFSET, SVF_R_L_OFFSET, SVF_G_L_OFFSET,
     SVF_KS_L_OFFSET, SVF_KP_L_OFFSET,
+    SVF_MORPH_MOD_L_OFFSET,
     SVF_SHAPE_LP, SVF_SHAPE_BP, SVF_SHAPE_HP, SVF_SHAPE_UBP, SVF_SHAPE_AP,
     SVF_SHAPE_LS, SVF_SHAPE_HS, SVF_SHAPE_NOTCH, SVF_SHAPE_PEAK
   )
@@ -620,6 +691,7 @@ function process_SVF(idx, s0*, s1*)
     channel = max(0, channel - 1);
     is_mid_side ? encodeMS(s0, s1, a, b) : (a = s0; b = s1;);
     type = mem[SVF_TYPE_OFFSET];
+    type2 = mem[SVF_TYPE2_OFFSET];
     i = channel;
     loop(channel_count,
       s = i ? b : a;
@@ -629,6 +701,7 @@ function process_SVF(idx, s0*, s1*)
       g = mem[SVF_G_L_OFFSET + i];
       Ks = mem[SVF_KS_L_OFFSET + i];
       Kp = mem[SVF_KP_L_OFFSET + i];
+      morph = clamp(get_SVF_morph(idx) + mem[SVF_MORPH_MOD_L_OFFSET + i], 0., 1.);
       HP = (s - (2. * R + g) * z1_A - z2_A) / (1. + (2. * R * g) + g * g);
       BP = HP * g + z1_A;
       LP = BP * g + z2_A;
@@ -638,7 +711,7 @@ function process_SVF(idx, s0*, s1*)
       Notch = s - UBP;
       AP = s - (4. * R * BP);
       Peak = s + BP * Kp;
-      s = type == SVF_SHAPE_LP ? ( LP; ) :
+      x = type == SVF_SHAPE_LP ? ( LP; ) :
         type == SVF_SHAPE_BP ? ( BP; ) :
           type == SVF_SHAPE_HP ? ( HP; ) :
             type == SVF_SHAPE_UBP ? ( UBP; ) :
@@ -648,6 +721,17 @@ function process_SVF(idx, s0*, s1*)
                     type == SVF_SHAPE_AP ? ( AP; ) :
                       type == SVF_SHAPE_PEAK ? ( Peak; ) :
                         0.;
+      y = type2 == SVF_SHAPE_LP ? ( LP; ) :
+        type2 == SVF_SHAPE_BP ? ( BP; ) :
+          type2 == SVF_SHAPE_HP ? ( HP; ) :
+            type2 == SVF_SHAPE_UBP ? ( UBP; ) :
+              type2 == SVF_SHAPE_LS ? ( LoShelf; ) :
+                type2 == SVF_SHAPE_HS ? ( HiShelf; ) :
+                  type2 == SVF_SHAPE_NOTCH ? ( Notch; ) :
+                    type2 == SVF_SHAPE_AP ? ( AP; ) :
+                      type2 == SVF_SHAPE_PEAK ? ( Peak; ) :
+                        0.;
+      s = y * morph + x * (1. - morph);
 
       mem[SVF_Z1_A_L_OFFSET + i] = g * HP + BP;
       mem[SVF_Z2_A_L_OFFSET + i] = g * BP + LP;
@@ -676,10 +760,11 @@ function process_all_SVFs(filter_count, s0*, s1*)
   );
 
 function calculate_all_SVF_biquads(filter_count)
-  local(i, mem, coef_mem, chan, spread, type, dB, R, g, Ks, Kp)
+  local(i, mem, coef_mem, chan, spread, type, type2, morph, morph_ch, dB, R, g, Ks, Kp)
   global(
     SVF_IS_ACTIVE_OFFSET,
-    SVF_TYPE_OFFSET, SVF_SPREAD_OFFSET, SVF_DECIBEL_L_OFFSET,
+    SVF_TYPE_OFFSET, SVF_TYPE2_OFFSET, SVF_MORPH_OFFSET, SVF_MORPH_MOD_OFFSET,
+    SVF_SPREAD_OFFSET, SVF_DECIBEL_L_OFFSET,
     SVF_R_L_OFFSET, SVF_G_L_OFFSET, SVF_KS_L_OFFSET, SVF_KP_L_OFFSET,
   )
   (
@@ -689,7 +774,9 @@ function calculate_all_SVF_biquads(filter_count)
       is_SVF_active(i) ? (
         coef_mem = get_SVF_coef_mem_pos(i);
         type = mem[SVF_TYPE_OFFSET];
+        type2 = mem[SVF_TYPE2_OFFSET];
         spread = mem[SVF_SPREAD_OFFSET];
+        morph = mem[SVF_MORPH_OFFSET];
         chan = 0;
         loop(2,
           dB = mem[SVF_DECIBEL_L_OFFSET + chan];
@@ -697,7 +784,8 @@ function calculate_all_SVF_biquads(filter_count)
           g = mem[SVF_G_L_OFFSET + chan];
           Ks = mem[SVF_KS_L_OFFSET + chan];
           Kp = mem[SVF_KP_L_OFFSET + chan];
-          store_SVF_biquad_to_mem(type, dB, R, g, Ks, Kp, coef_mem + chan * 5);
+          morph_ch = clamp(morph + mem[SVF_MORPH_MOD_OFFSET + chan], 0., 1.);
+          store_SVF_biquad_to_mem(type, type2, morph_ch, dB, R, g, Ks, Kp, coef_mem + chan * 5);
           chan += 1;
         );
       );

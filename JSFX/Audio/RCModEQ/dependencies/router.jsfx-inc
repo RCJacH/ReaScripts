@@ -12,6 +12,7 @@ ROUTER_LFO_PARAMS = router_offset_inc;
 ROUTER_FILTER_FREQ = router_offset_inc; router_offset_inc += 1;
 ROUTER_FILTER_BW = router_offset_inc; router_offset_inc += 1;
 ROUTER_FILTER_GAIN = router_offset_inc; router_offset_inc += 1;
+ROUTER_FILTER_MORPH = router_offset_inc; router_offset_inc += 1;
 ROUTER_FILTER_PARAMS = router_offset_inc - ROUTER_LFO_PARAMS;
 
 router_offset_inc = 0;

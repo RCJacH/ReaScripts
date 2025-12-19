@@ -7,11 +7,13 @@ eq_offset_inc = 0;
 EQ_STATE_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_IS_DIRTY_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_TYPE_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_TYPE2_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_CHANNEL_MODE_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_SPREAD_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_FREQUENCY_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_BANDWIDTH_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_GAIN_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_MORPH_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 
 EQ_TOTAL_PARAM_MEM = eq_offset_inc;
 
@@ -31,6 +33,9 @@ EQ_KS_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_KS_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_KP_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 EQ_KP_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_MORPH_MOD_OFFSET = eq_offset_inc;
+EQ_MORPH_MOD_L_OFFSET = eq_offset_inc; eq_offset_inc += 1;
+EQ_MORPH_MOD_R_OFFSET = eq_offset_inc; eq_offset_inc += 1;
 
 EQ_TOTAL_MEM = eq_offset_inc;
 EQ_TOTAL_RUNNING_VAR_MEM = EQ_TOTAL_MEM - EQ_TOTAL_PARAM_MEM;
@@ -262,10 +267,11 @@ function copy_param_from_all_svf_filter(filter_count, filter_mem_pos)
   );
 
 function calculate_all_EQ_biquads(filter_count)
-  local(i, chan, mem, coef_mem, type, spread, dB, R, g, Ks, Kp, channel)
+  local(i, chan, mem, coef_mem, type, type2, spread, dB, R, g, Ks, Kp, channel, morph, morph_ch)
   global(
     EQ_INDICES_MEM_POS, EQ_COEF_MEM_POS,
-    EQ_TYPE_OFFSET, EQ_SPREAD_OFFSET, EQ_DECIBEL_L_OFFSET,
+    EQ_TYPE_OFFSET, EQ_TYPE2_OFFSET, EQ_MORPH_OFFSET, EQ_MORPH_MOD_OFFSET,
+    EQ_SPREAD_OFFSET, EQ_DECIBEL_L_OFFSET,
     EQ_R_L_OFFSET, EQ_G_L_OFFSET, EQ_KS_L_OFFSET, EQ_KP_L_OFFSET
   )
   (
@@ -275,6 +281,8 @@ function calculate_all_EQ_biquads(filter_count)
       is_EQ_active(i) ? (
         coef_mem = EQ_COEF_MEM_POS[i];
         type = mem[EQ_TYPE_OFFSET];
+        type2 = mem[EQ_TYPE2_OFFSET];
+        morph = mem[EQ_MORPH_OFFSET];
         spread = mem[EQ_SPREAD_OFFSET];
         chan = 0;
         loop(2,
@@ -284,7 +292,8 @@ function calculate_all_EQ_biquads(filter_count)
           g = mem[EQ_G_L_OFFSET + channel];
           Ks = mem[EQ_KS_L_OFFSET + channel];
           Kp = mem[EQ_KP_L_OFFSET + channel];
-          store_SVF_biquad_to_mem(type, dB, R, g, Ks, Kp, coef_mem + chan * 5);
+          morph_ch = clamp(morph + mem[EQ_MORPH_MOD_OFFSET + chan], 0., 1.);
+          store_SVF_biquad_to_mem(type, type2, morph_ch, dB, R, g, Ks, Kp, coef_mem + chan * 5);
           chan += 1;
         );
       );

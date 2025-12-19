@@ -3,7 +3,7 @@ JSFX Name: RCModEQ
 Author: RCJacH
 Release Date: Aug 2025
 Link: https://github.com/RCJacH/ReaScripts
-Version: 1.0.0
+Version: 1.1.0
 Provides:
   dependencies/*
 Reference:
@@ -16,6 +16,10 @@ About:
   It lets you stack up to eight filters and drive their parameters with
   up to eight shape-selectable and deformable LFOs.
 Changelog:
+  * v1.1.0 (2025-12-14)
+    + Add Morph Parameter to filters
+    * Fix double click to add filter
+    * Fix Invert button position
   * v1.0.0 (2025-08-01)
     + Initial Release
 */
@@ -24,6 +28,7 @@ Changelog:
 
 desc: RCModEQ
 <?
+  CURRENT_VERSION = 1.1;
   TOTAL_FILTER_COUNT = 8;
   TOTAL_LFO_COUNT = 8;
   TOTAL_SIDECHAIN_COUNT = 8;
@@ -40,6 +45,8 @@ desc: RCModEQ
     printf("slider%d:f%d_active=0<0,1,1>%sFilter %d On/Off\n", sl_idx, idx, hide, idx); sl_idx += 1;
     printf("slider%d:f%d_channel=0<0,2,1{Stereo,Left,Right,Mid/Side,Mid,Side}>%sFilter %d Channel\n", sl_idx, idx, hide, idx); sl_idx += 1;
     printf("slider%d:f%d_type=0<0,8,1{Low Pass,Band Pass,High Pass,Notch,Unity-gain Band Pass,High Shelf,Low Shelf,Peak,All Pass}>%sFilter %d Shape\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:f%d_type2=0<0,8,1{Low Pass,Band Pass,High Pass,Notch,Unity-gain Band Pass,High Shelf,Low Shelf,Peak,All Pass}>%sFilter %d Shape 2\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    printf("slider%d:f%d_morph=0<0,1,.01>%sFilter %d Shape Morph\n", sl_idx, idx, hide, idx); sl_idx += 1;
     printf("slider%d:f%d_freq=1000.<20.,20000.,.1:log=1000.>%sFilter %d Cutoff\n", sl_idx, idx, hide, idx); sl_idx += 1;
     printf("slider%d:f%d_bandwidth=2.<.01,4.,.01>%sFilter %d Bandwidth (Octave)\n", sl_idx, idx, hide, idx); sl_idx += 1;
     printf("slider%d:f%d_gain=0<-32.,32.,0.1>%sFilter %d Gain (dB)\n", sl_idx, idx, hide, idx); sl_idx += 1;
@@ -316,6 +323,43 @@ out_pin:Right Output
     ?>
   );
 
+  /*
+  * Notify Reaper that filter type 2 has been touched
+  */
+  function notify_touched_filter_type2(idx, type, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_FILTER_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("f%i_type2 = type;\n", i);
+        printf("sliderchange(f%i_type2);\n", i);
+        printf("slider_automate(f%i_type2, end);\n", i);
+        printf(")%s\n", i == TOTAL_FILTER_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
+  * Notify Reaper that filter type morph has been touched
+  */
+  function notify_touched_filter_morph(idx, morph, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_FILTER_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("f%i_morph = morph;\n", i);
+        printf("sliderchange(f%i_morph);\n", i);
+        printf("slider_automate(f%i_morph, end);\n", i);
+        printf(")%s\n", i == TOTAL_FILTER_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  /*
   /*
   * Notify Reaper that filter spread has been touched
   */
@@ -596,6 +640,13 @@ out_pin:Right Output
       notify_touched_filter_type(idx, type, is_end);
     );
 
+  function set_filter_type_2(idx, type, is_end)
+    global()
+    (
+      set_SVF_type_2(idx, type);
+      notify_touched_filter_type(idx, type, is_end);
+    );
+
   function set_filter_spread(idx, spread, is_end)
     global()
     (
@@ -654,6 +705,21 @@ out_pin:Right Output
       notify_touched_filter_gain(idx, dB, is_end);
     );
 
+  function set_filter_morph(idx, morph, is_end)
+    global()
+    (
+      set_SVF_morph(idx, morph);
+      notify_touched_filter_morph(idx, morph, is_end);
+    );
+
+  function adjust_filter_morph(idx, dB_delta, is_end)
+    local(dB)
+    global()
+    (
+      dB = adjust_SVF_morph(idx, dB_delta);
+      notify_touched_filter_morph(idx, dB, is_end);
+    );
+
   function add_filter(idx, Hz, dB)
     local(shape)
     global(
@@ -665,15 +731,17 @@ out_pin:Right Output
           Hz > 16000. ? SVF_SHAPE_LP :
             Hz > 8000. ? SVF_SHAPE_HS :
               SVF_SHAPE_PEAK;
-      on_SVF_slider_change(idx, 1, 0, shape, 0., Hz_to_pct(Hz), 2., dB);
+      on_SVF_slider_change(idx, 1, 0, shape, 0, 0., Hz_to_pct(Hz), 2., dB, 0.);
       set_EQ_active(idx, 1);
       notify_touched_filter_active(idx, 1, 1);
       notify_touched_filter_channel_mode(idx, 0, 1);
       notify_touched_filter_type(idx, shape, 1);
+      notify_touched_filter_type2(idx, 0, 1);
       notify_touched_filter_spread(idx, 0, 1);
       notify_touched_filter_frequency(idx, Hz, 1);
       notify_touched_filter_bandwidth(idx, 2., 1);
       notify_touched_filter_gain(idx, dB, 1);
+      notify_touched_filter_morph(idx, 0., 1);
       sliderchange(-1);
     );
 
@@ -868,9 +936,33 @@ out_pin:Right Output
   );
 
 @serialize
+  function migrate_state_to_add_morph()
+    local(cur_sl_idx, shift_count, i)
+    (
+      shift_count = 2 * TOTAL_FILTER_COUNT;
+      cur_sl_idx = sl_idx - 1;
+      loop(TOTAL_LFO_COUNT * 10,
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1;
+      );
+      loop(TOTAL_FILTER_COUNT,
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_spread
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_gain
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_bandwidth
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_freq
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); shift_count -= 1; cur_sl_idx - 1; // f_morph
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); shift_count -= 1; cur_sl_idx - 1; // f_type2
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_type
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_channel
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_active
+      );
+      sliderchange(-1);
+      slider_automate(-1, 1);
+    );
+
   file_avail(handle) >= 0 ? (
     // Read mode
     file_var(0, version);
+    version == 1 ? migrate_state_to_add_morph();
     file_var(0, is_initialized);
     file_var(0, g_cur_gain_range);
     file_var(0, g_cur_gain_step);
@@ -880,9 +972,9 @@ out_pin:Right Output
   ) : (
     // Write mode
     // TODO: The version number should reflect the current script version
-    version = 1;
+    version = CURRENT_VERSION;
 
-    file_var(0, verison);
+    file_var(0, version);
     file_var(0, is_initialized);
     file_var(0, g_cur_gain_range);
     file_var(0, g_cur_gain_step);
@@ -896,7 +988,7 @@ out_pin:Right Output
   <?
     i = 1;
     loop(TOTAL_FILTER_COUNT,
-      printf("on_SVF_slider_change(%d, f%d_active, f%d_channel, f%d_type, f%d_spread, Hz_to_pct(f%d_freq), f%d_bandwidth, f%d_gain);\n", i-1, i,i,i,i,i,i,i);
+      printf("on_SVF_slider_change(%d, f%d_active, f%d_channel, f%d_type, f%d_type2, f%d_spread, Hz_to_pct(f%d_freq), f%d_bandwidth, f%d_gain, f%d_morph);\n", i-1, i,i,i,i,i,i,i,i,i);
       i += 1;
     );
   ?>
@@ -1845,8 +1937,10 @@ out_pin:Right Output
         x1 -= limit_w + gap;
         gfx_setfont(FONT_SECTION_TITLE);
         set_HSL_color(COLOR_HIGHLIGHT);
-        !limit_output ? uix_darkenColor(.5);
         bt_limiter.ui_parseButtonState(x1, y, limit_w, h, BUTTON_STATUS_NORMAL);
+        !limit_output ? (
+          uix_darkenColor(bt_limiter.l_click ? .3 : bt_limiter.in_section ? .4 : .5);
+        );
         ui_drawCenteredText(x1, y, limit_w, h, #LIMITER_TITLE);
         bt_limiter.l_clicked ? (
           limit_output = !limit_output;
@@ -2218,7 +2312,7 @@ out_pin:Right Output
     );
 
   function ui_createEQContextMenu(idx)
-    local(is_active, shape, channel_mode)
+    local(is_active, shape, shape2, channel_mode)
     global(
       SVF_SHAPE_LP, SVF_SHAPE_BP, SVF_SHAPE_HP, SVF_SHAPE_NOTCH,
       SVF_SHAPE_UBP, SVF_SHAPE_HS, SVF_SHAPE_LS, SVF_SHAPE_PEAK,
@@ -2227,6 +2321,7 @@ out_pin:Right Output
     (
       is_active = is_SVF_active(idx);
       shape = get_SVF_type(idx);
+      shape2 = get_SVF_type_2(idx);
       channel_mode = get_SVF_channel_mode(idx);
       #menu = "";
       #menu = sprintf(#,
@@ -2242,6 +2337,18 @@ out_pin:Right Output
       shape == SVF_SHAPE_LS ? #menu += "!"; #menu += "Low Shelf|";
       shape == SVF_SHAPE_PEAK ? #menu += "!"; #menu += "Peak|";
       shape == SVF_SHAPE_AP ? #menu += "!"; #menu += "All Pass|";
+
+      #menu += "|>Filter Type Alt|";
+
+      shape2 == SVF_SHAPE_LP ? #menu += "!"; #menu += "Low Pass|";
+      shape2 == SVF_SHAPE_BP ? #menu += "!"; #menu += "Band Pass|";
+      shape2 == SVF_SHAPE_HP ? #menu += "!"; #menu += "High Pass|";
+      shape2 == SVF_SHAPE_NOTCH ? #menu += "!"; #menu += "Notch|";
+      shape2 == SVF_SHAPE_UBP ? #menu += "!"; #menu += "Unity-gain Band Pass|";
+      shape2 == SVF_SHAPE_HS ? #menu += "!"; #menu += "High Shelf|";
+      shape2 == SVF_SHAPE_LS ? #menu += "!"; #menu += "Low Shelf|";
+      shape2 == SVF_SHAPE_PEAK ? #menu += "!"; #menu += "Peak|";
+      shape2 == SVF_SHAPE_AP ? #menu += "!"; #menu += "<All Pass|";
 
       #menu += "|>Stereo Placement|";
       channel_mode == 0 ? #menu += "!"; #menu += "Stereo||";
@@ -2262,7 +2369,8 @@ out_pin:Right Output
     global(
       SVF_TOTAL_PARAM_MEM, SVF_STATE_OFFSET, SVF_CHANNEL_MODE_OFFSET,
       SVF_TYPE_OFFSET, SVF_SPREAD_OFFSET,
-      SVF_FREQUENCY_OFFSET, SVF_BANDWIDTH_OFFSET, SVF_GAIN_OFFSET
+      SVF_FREQUENCY_OFFSET, SVF_BANDWIDTH_OFFSET, SVF_GAIN_OFFSET,
+      TOTAL_FILTER_COUNT
     )
     (
       ret = ui_createEQContextMenu(idx);
@@ -2274,20 +2382,24 @@ out_pin:Right Output
         v = ret - 2;
         set_SVF_type(idx, v);
         notify_touched_filter_type(idx, v, 1);
-      ) : ret >= 11 && ret <= 16 ? ( // Filter Channel
+      ) : ret >= 11 && ret <= 19 ? (
         v = ret - 11;
+        set_SVF_type_2(idx, v);
+        notify_touched_filter_type2(idx, v, 1);
+      ) : ret >= 20 && ret <= 25 ? ( // Filter Channel
+        v = ret - 20;
         set_SVF_channel_mode(idx, v);
         notify_touched_filter_channel_mode(idx, v, 1);
-      ) : ret == 17 ? ( // Invert Gain
+      ) : ret == 26 ? ( // Invert Gain
         v = -get_SVF_gain(idx);
         set_SVF_gain(idx, v);
         notify_touched_filter_gain(idx, v, 1);
-      ) : ret == 18 ? ( // Zero Gain
+      ) : ret == 27 ? ( // Zero Gain
         v = 0.;
         set_SVF_gain(idx, v);
         notify_touched_filter_gain(idx, v, 1);
-      ) : ret == 19 ? ( // Duplicate
-        v = get_free_slot();
+      ) : ret == 28 ? ( // Duplicate
+        v = get_free_slot(TOTAL_FILTER_COUNT);
         v > -1 ? (
           mem = get_SVF_mem_pos(v);
           memcpy(
@@ -2305,7 +2417,7 @@ out_pin:Right Output
           notify_touched_filter_gain(v, mem[SVF_GAIN_OFFSET], 1);
           sliderchange(-1);
         );
-      ) : ret == 20 ? remove_filter(idx);
+      ) : ret == 29 ? remove_filter(idx);
       ret ? sliderchange(-1);
     );
 
@@ -2319,7 +2431,7 @@ out_pin:Right Output
     )
     global(
       EQ_MIN_FREQ, EQ_MAX_FREQ, SVF_MIN_FREQ, SVF_MAX_FREQ,
-      g_cur_gain_range
+      g_cur_gain_range, TOTAL_FILTER_COUNT
     )
     (
       this.ui_parseEQControlState(x, y, w, h, x0, y0, w0, h0);
@@ -2365,7 +2477,7 @@ out_pin:Right Output
       l_clicked < 0 ? ( // double click
         idx = -l_clicked - 2;
         idx == -1 ? (
-          idx = get_free_slot();
+          idx = get_free_slot(TOTAL_FILTER_COUNT);
           idx > -1 ? (
             Hz = pct_To_Hz(pos_x, EQ_MIN_FREQ, EQ_MAX_FREQ);
             Hz = clamp(Hz, SVF_MIN_FREQ, SVF_MAX_FREQ);
@@ -2783,12 +2895,128 @@ out_pin:Right Output
       x - gap;
     );
 
+  function ui_drawFilterShape2Selectors(x, y, w, h, idx, is_active, color_mem)
+    local(i, type, padding, gap, item_w, ratio)
+    instance(in_section, l_click, l_clicked, hover_idx)
+    global(g_scaling, COLOR_HIGHLIGHT)
+    (
+      type = get_SVF_type_2(idx);
+      padding = ceil(4. * g_scaling);
+      ratio = w / h;
+      item_w = h;
+      ratio > 36. || in_section || l_click ? (
+        gap = 2. * g_scaling;
+        w = h * 9 + gap * 8;
+        this.ui_drawTabSwitch(x, y, w, h, color_mem, is_active, 9, 1, type);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        i = 0;
+        y += padding; h -= padding + padding;
+        loop(9,
+          ui_drawEQNodeIcon(x + padding, y, h, h, i);
+          x += item_w + gap;
+          i += 1;
+        );
+        l_clicked ? (
+          set_filter_type_2(idx, hover_idx, 1);
+          l_clicked = 0;
+        );
+      ) : (
+        this.ui_drawTabSwitch(x, y, item_w, h, color_mem, is_active, 1, 1, 0);
+        set_HSL_color(COLOR_HIGHLIGHT);
+        y += padding; h -= padding + padding;
+        ui_drawEQNodeIcon(x + padding, y, h, h, type);
+        x += item_w + gap;
+      );
+      x - gap;
+    );
+
+  function ui_drawMorph(x, y, w, h, idx, color_mem)
+    local(x0, y0, h0, sw, sh, morph, mod_color_mem)
+    instance(sl_morph, ctrl_morph_mod)
+    global(
+      COLOR_HIGHLIGHT, FONT_PARAM_TITLE, FONT_PARAM_VALUE,
+      ROUTER_FILTER_MORPH, SVF_MORPH_MOD_OFFSET, BUTTON_MAIN_OFFSET,
+      g_mod_route_idx
+    )
+    (
+      x0 = x;
+      h0 = h * .5;
+      y0 = y + h0;
+      gfx_setfont(FONT_PARAM_TITLE);
+      gfx_measurestr("MORPH", sw, sh);
+      set_HSL_color(COLOR_HIGHLIGHT);
+      morph = get_SVF_morph(idx);
+
+      g_mod_route_idx != -1 ? (
+        mod_color_mem = get_lfo_band_color_mem(g_mod_route_idx);
+        ctrl_morph_mod.v_yl = get_router_route_amount(g_mod_route_idx, idx, ROUTER_FILTER_MORPH);
+        ctrl_morph_mod.ui_parseSliderState(x0, y, sw, h0, 1+4, 1);
+        ctrl_morph_mod.l_dragging ? (
+          adjust_router_filter_param(
+            g_mod_route_idx, idx, ROUTER_FILTER_MORPH,
+            get_SVF_mem_pos(idx) + SVF_MORPH_MOD_OFFSET, ctrl_morph_mod.v_yl
+          );
+          sliderchange(-1);
+        );
+        ctrl_morph_mod.l_clicked < 0 ? (
+          adjust_router_filter_param(
+            g_mod_route_idx, idx, ROUTER_FILTER_MORPH,
+            get_SVF_mem_pos(idx) + SVF_MORPH_MOD_OFFSET, 0.
+          );
+          sliderchange(-1);
+          ctrl_morph_mod.l_clicked = 0;
+        );
+        ctrl_morph_mod.r_clicked ? (
+          ui_handleMODContextMenu(
+            idx, ROUTER_FILTER_MORPH, get_SVF_mem_pos(idx) + SVF_MORPH_MOD_OFFSET
+          );
+          ctrl_morph_mod.r_clicked = 0;
+        );
+        set_HSL_button_color(mod_color_mem, ctrl_morph_mod.status, BUTTON_MAIN_OFFSET);
+      );
+
+      ui_drawAlignedText(x0, y, 48., h0, 0., 0.5, "MORPH");
+
+      sl_morph.v_xl = morph;
+      sl_morph.ui_drawSlider(x, y0, sw, h0, 1, color_mem, 1, sprintf(#, "%d%%", morph * 100.));
+      sl_morph.l_clicked < 0 ? (
+        set_filter_morph(idx, 0., 1);
+        sl_morph.l_clicked = 0;
+        sliderchange(-1);
+      );
+      sl_morph.l_dragging ? set_filter_morph(idx, sl_morph.v_xl, 0);
+      sl_morph.l_dragged ? (
+        set_filter_morph(idx, sl_morph.v_xl, 1);
+        sl_morph.l_dragged = 0;
+        sliderchange(-1);
+      );
+      sl_morph.wheel_scrolled ? (
+        adjust_filter_morph(idx, sl_morph.wheel_scrolled * 0.1, 1);
+        sl_morph.wheel_scrolled = 0;
+      );
+
+      g_mod_route_idx != -1 ? (
+        ui_drawSliderModOverlay(
+          x0, y0, sw, floor(h0),
+          0,
+          get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_FILTER_MORPH),
+          mod_color_mem,
+          !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_FILTER_MORPH),
+          sl_morph.v_xl,
+          ctrl_morph_mod.v_yl
+        );
+      );
+
+      x0 += sw;
+      x0;
+    );
+
   function ui_drawFilterInfo(x, y, w, h)
     local(
-      x0, sw, sh,
+      x0, w0, sw, sh,
       border, h_padding, v_padding, gap,
       idx, i, mem, color_mem, is_active,
-      spread, freq, bw, gain,
+      spread, freq, bw, gain, morph,
       mod_color_mem
     )
     instance(
@@ -2840,14 +3068,21 @@ out_pin:Right Output
           );
           x0 += h + gap;
         );
-        w > 512. ? (
+        w > 512. * h_scaling ? (
           x0 = this.channels.ui_drawFilterChannelSelectors(x0, y, w, h, idx, is_active, color_mem);
           x0 += gap;
-          x0 = this.shapes.ui_drawFilterShapeSelectors(x0, y, w, h, idx, is_active, color_mem);
+          morph = get_SVF_morph(idx);
+          x0 = this.shapes.ui_drawFilterShapeSelectors(x0, y, w, h, idx, is_active && morph != 1., color_mem);
+          w > 600. * h_scaling? (
+            x0 += gap * 0.5;
+            x0 = this.morph.ui_drawMorph(x0, y, w, h, idx, color_mem);
+            x0 += gap * 0.5;
+            x0 = this.shapes2.ui_drawFilterShape2Selectors(x0, y, w, h, idx, is_active && morph, color_mem);
+          );
           x0 += gap;
         );
 
-        w > 500. ? (
+        w > 500. * h_scaling ? (
           kb_spread.v_l = get_SVF_spread(selected_idx);
           kb_spread.ui_drawKnob(x0+h*.5, floor(y+h*.5), floor(h*.5), 1, color_mem, 1);
           kb_spread.l_clicked < 0 ? (
@@ -3075,29 +3310,32 @@ out_pin:Right Output
           set_HSL_button_color(mod_color_mem, ctrl_gain_mod.status, BUTTON_MAIN_OFFSET);
         );
 
-        ui_drawAlignedText(x0, y, 64., h*.5, 0., 0.5, "GAIN");
+        ui_drawAlignedText(x0, y, 48., h*.5, 0., 0.5, "GAIN");
         gfx_measurestr("GAIN", sw, sh);
         gain = get_SVF_gain(selected_idx);
         gfx_setfont(FONT_PARAM_VALUE);
         set_HSL_color(COLOR_HIGHLIGHT);
-        ui_drawAlignedText(x0, y+h*.5, 64., h*.5, 0., 0.5, sprintf(#, "%.2f dB", gain));
-        x0 += 64. * g_scaling + gap;
+        ui_drawAlignedText(x0, y+h*.5, 48., h*.5, 0., 0.5, sprintf(#, "%.2f dB", gain));
+        x0 += 48. * h_scaling;
 
-        x0 + h * 4.2 < x + w ? (
+        w0 = h * 2.;
+        x0 + w0 * 2. < x + w ? (
           bt_invert.fill_type = 1;
           gfx_setfont(FONT_PARAM_TITLE);
-          bt_invert.ui_drawTriggerButton(x0, y, h * 2., h, color_mem, 1, "INVERT");
+          bt_invert.ui_drawTriggerButton(x + w - w0 * 2. - gap, y, w0, h, color_mem, 1, "INVERT");
           bt_invert.l_clicked ? (
             set_filter_gain(selected_idx, -get_SVF_gain(selected_idx), 1);
             bt_invert.l_clicked = 0;
           );
-          x0 += h * 2. + gap;
+          x0 += w0;
         );
 
-        x0 + h * 2 <= x + w ? (
+        w0 = h * 2.;
+        x0 + w0 <= x + w ? (
+          x0 += gap;
           bt_delete.fill_type = 1;
           gfx_setfont(FONT_PARAM_TITLE);
-          bt_delete.ui_drawTriggerButton(x + w - h * 2., y, h * 2., h, COLOR_DANGER, 1, "DELETE");
+          bt_delete.ui_drawTriggerButton(x + w - h * 2., y, w0, h, COLOR_DANGER, 1, "DELETE");
           bt_delete.l_clicked ? (
             ui_showMenuAtMousePosition(sprintf(#, "CONFIRM DELETING FILTER %d", idx + 1)) ? remove_filter(selected_idx);
             bt_delete.l_clicked = 0;
