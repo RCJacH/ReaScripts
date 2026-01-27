@@ -3,7 +3,7 @@ JSFX Name: RCModEQ
 Author: RCJacH
 Release Date: Aug 2025
 Link: https://github.com/RCJacH/ReaScripts
-Version: 1.2.0
+Version: 1.2.1
 Provides:
   dependencies/*
 Reference:
@@ -16,6 +16,9 @@ About:
   It lets you stack up to eight filters and drive their parameters with
   up to eight shape-selectable and deformable LFOs.
 Changelog:
+  * v1.2.1 (2026-01-28)
+    + Fix sc rms converted value not updated when srate changes
+    * Fix 1.1 migration function
   * v1.2.0 (2026-01-27)
     + Add Threshold and RMS to Sidechain
     * Fix bandwidth being modulated instead of gain
@@ -110,6 +113,7 @@ out_pin:Right Output
     printf("MIN_GAIN_DECIBEL = %f;\n", MIN_GAIN_DECIBEL);
     printf("MAX_GAIN_DECIBEL = %f;\n", MAX_GAIN_DECIBEL);
     printf("LIMITER_RANGE = %f;\n", LIMITER_RANGE);
+    printf("TOTAL_SLIDERS = %d;\n", sl_idx-1);
   ?>
 
   TAU = 2. * $pi;
@@ -1021,27 +1025,43 @@ out_pin:Right Output
   init_rate != srate ? (
     init_rate = srate;
     set_all_SVFs_dirty(TOTAL_FILTER_COUNT);
+    update_all_SideChains_RMS(TOTAL_SIDECHAIN_COUNT);
   );
 
 @serialize
   function migrate_state_to_add_morph()
-    local(cur_sl_idx, shift_count, i)
+    local(cur_sl_idx, shift_count, i, j, mem, dest)
     (
+      i = 0;
+      loop(ROUTER_TOTAL_ROUTE_COUNT,
+        mem = get_router_active_mem_pos(i);
+        dest = mem[ROUTER_DEST_OFFSET];
+        j = 0;
+        loop(TOTAL_FILTER_COUNT,
+          dest >= SVF_FILTERS_MEM_POS + j * SVF_TOTAL_MEM + 3 ? dest += 1;
+          dest >= SVF_FILTERS_MEM_POS + j * SVF_TOTAL_MEM + 9 ? dest += 1;
+          dest >= SVF_FILTERS_MEM_POS + j * SVF_TOTAL_MEM + 20 ? dest += 2;
+          j += 1;
+        );
+        mem[ROUTER_DEST_OFFSET] = dest;
+        i += 1;
+      );
+
       shift_count = 2 * TOTAL_FILTER_COUNT;
-      cur_sl_idx = sl_idx - 1;
+      cur_sl_idx = TOTAL_SLIDERS;
       loop(TOTAL_LFO_COUNT * 10,
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1;
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1;
       );
       loop(TOTAL_FILTER_COUNT,
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_spread
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_gain
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_bandwidth
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_freq
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); shift_count -= 1; cur_sl_idx - 1; // f_morph
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); shift_count -= 1; cur_sl_idx - 1; // f_type2
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_type
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_channel
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx - 1; // f_active
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_spread
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_gain
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_bandwidth
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_freq
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); shift_count -= 1; cur_sl_idx -= 1; // f_morph
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); shift_count -= 1; cur_sl_idx -= 1; // f_type2
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_type
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_channel
+        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_active
       );
       sliderchange(-1);
       slider_automate(-1, 1);
@@ -1050,13 +1070,12 @@ out_pin:Right Output
   file_avail(handle) >= 0 ? (
     // Read mode
     file_var(0, version);
-    version == 1 ? migrate_state_to_add_morph();
+    version < 1.1 ? migrate_state_to_add_morph();
     file_var(0, is_initialized);
     file_var(0, g_cur_gain_range);
     file_var(0, g_cur_gain_step);
     file_mem(0, ROUTER_INDICES_MEM_POS, ROUTER_TOTAL_ROUTE_COUNT);
     file_mem(0, ROUTER_ROUTING_MEM_POS, ROUTER_TOTAL_ROUTING_MEM_COUNT);
-    file_mem(0, SIDECHAIN_PARAM_MEM_POS, TOTAL_SIDECHAIN_PARAM_MEM_COUNT);
   ) : (
     // Write mode
     // TODO: The version number should reflect the current script version
@@ -1068,7 +1087,6 @@ out_pin:Right Output
     file_var(0, g_cur_gain_step);
     file_mem(0, ROUTER_INDICES_MEM_POS, ROUTER_TOTAL_ROUTE_COUNT);
     file_mem(0, ROUTER_ROUTING_MEM_POS, ROUTER_TOTAL_ROUTING_MEM_COUNT);
-    file_mem(0, SIDECHAIN_PARAM_MEM_POS, TOTAL_SIDECHAIN_PARAM_MEM_COUNT);
   );
 
 

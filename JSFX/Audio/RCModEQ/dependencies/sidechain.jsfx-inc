@@ -141,6 +141,17 @@ function on_SideChain_slider_change(idx, active, thres, rms)
   );
 
 
+function update_all_SideChains_RMS(sc_count)
+  local(i)
+  global()
+  (
+    i = 0;
+    loop(sc_count,
+      set_SideChain_rms(i, get_SideChain_rms(i));
+      i += 1;
+    );
+  );
+
 function process_all_SideChains(sc_count)
   local(i, mem, active, setting, thr, v, o, x, x2, runave, a)
 (
