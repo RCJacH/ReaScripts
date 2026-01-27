@@ -3,7 +3,7 @@ JSFX Name: RCModEQ
 Author: RCJacH
 Release Date: Aug 2025
 Link: https://github.com/RCJacH/ReaScripts
-Version: 1.1.0
+Version: 1.2.0
 Provides:
   dependencies/*
 Reference:
@@ -16,6 +16,11 @@ About:
   It lets you stack up to eight filters and drive their parameters with
   up to eight shape-selectable and deformable LFOs.
 Changelog:
+  * v1.2.0 (2026-01-27)
+    + Add Threshold and RMS to Sidechain
+    * Fix bandwidth being modulated instead of gain
+    * Fix lfo spread
+    * Fix BandPass and Unity-gain BandPass icons being swapped
   * v1.1.0 (2025-12-14)
     + Add Morph Parameter to filters
     * Fix double click to add filter
@@ -28,7 +33,7 @@ Changelog:
 
 desc: RCModEQ
 <?
-  CURRENT_VERSION = 1.1;
+  CURRENT_VERSION = 1.2;
   TOTAL_FILTER_COUNT = 8;
   TOTAL_LFO_COUNT = 8;
   TOTAL_SIDECHAIN_COUNT = 8;
@@ -66,6 +71,13 @@ desc: RCModEQ
     printf("slider%d:lfo%d_deform=0<-1,1,0.0001>%sLFO %d Deform\n", sl_idx, idx, hide, idx); sl_idx += 1;
     printf("slider%d:lfo%d_amp=0<0,1,0.0001>%sLFO %d Amplitude\n", sl_idx, idx, hide, idx); sl_idx += 1;
     printf("slider%d:lfo%d_spread=0<-1, 1>%sLFO %d Spread\n", sl_idx, idx, hide, idx); sl_idx += 1;
+    idx += 1;
+  );
+  idx = 1;
+  loop(TOTAL_SIDECHAIN_COUNT,
+    printf("slider%d:sc%d_active=0<0,1,1>-SideChain %d On/Off\n", sl_idx, idx, idx); sl_idx += 1;
+    printf("slider%d:sc%d_thres=0<-90,0,0.1:log=-20.>-SideChain %d Threshold\n", sl_idx, idx, idx); sl_idx += 1;
+    printf("slider%d:sc%d_rms=0<0,500,0.1:log=50.>-SideChain %d RMS\n", sl_idx, idx, idx); sl_idx += 1;
     idx += 1;
   );
 ?>
@@ -612,6 +624,51 @@ out_pin:Right Output
     ?>
   );
 
+  function notify_touched_sidechain_active(idx, active, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_SIDECHAIN_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("sc%i_active = active;\n", i);
+        printf("sliderchange(sc%i_active);\n", i);
+        printf("slider_automate(sc%i_active, end);\n", i);
+        printf(")%s\n", i == TOTAL_SIDECHAIN_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  function notify_touched_sidechain_threshold(idx, threshold, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_SIDECHAIN_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("sc%i_thres = threshold;\n", i);
+        printf("sliderchange(sc%i_thres);\n", i);
+        printf("slider_automate(sc%i_thres, end);\n", i);
+        printf(")%s\n", i == TOTAL_SIDECHAIN_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
+  function notify_touched_sidechain_rms(idx, rms, end) (
+    // Notify Reaper that a parameter change has happened
+    <?
+      i = 1;
+      loop(TOTAL_SIDECHAIN_COUNT,
+        printf("idx == %d ? (\n", i-1);
+        printf("sc%i_rms = rms;\n", i);
+        printf("sliderchange(sc%i_rms);\n", i);
+        printf("slider_automate(sc%i_rms, end);\n", i);
+        printf(")%s\n", i == TOTAL_SIDECHAIN_COUNT ? ";" : " :");
+        i += 1;
+      );
+    ?>
+  );
+
   function set_filter_active(idx, is_active)
     global()
     (
@@ -856,6 +913,37 @@ out_pin:Right Output
       notify_touched_lfo_spread(idx, spread, is_end);
     );
 
+  function set_sidechain_active(idx, is_active)
+    global(TOTAL_LFO_COUNT)
+    (
+      set_SideChain_active(idx, is_active);
+      notify_touched_sidechain_active(idx, is_active, 1);
+      set_dirty_for_router_routes_with_src_mod(idx + TOTAL_LFO_COUNT);
+      sliderchange(-1);
+    );
+
+  function toggle_sidechain_active(idx)
+    local(is_active)
+    global()
+    (
+      is_active = !is_SideChain_active(idx);
+      set_sidechain_active(idx, is_active);
+    );
+
+  function set_sidechain_threshold(idx, threshold, is_end)
+    global()
+    (
+      set_SideChain_thres(idx, threshold);
+      notify_touched_sidechain_threshold(idx, threshold, is_end);
+    );
+
+  function set_sidechain_rms(idx, rms, is_end)
+    global()
+    (
+      set_SideChain_rms(idx, rms);
+      notify_touched_sidechain_rms(idx, rms, is_end);
+    );
+
   function set_makeup_gain(gain_dB, is_end)
     global(makeup_gain_db, makeup_gain_linear)
     (
@@ -999,6 +1087,13 @@ out_pin:Right Output
         lfo%d_shape, lfo%d_spread, lfo%d_hz_rate, lfo%d_sync_rate, lfo%d_start_phase, lfo%d_deform, lfo%d_amp
         );\n", i-1,i,i,i,i,i,i,i,i,i,i
       );
+      i += 1;
+    );
+  ?>
+  <?
+    i = 1;
+    loop(TOTAL_LFO_COUNT,
+      printf("on_SideChain_slider_change(%d, sc%d_active, sc%d_thres, sc%d_rms);\n", i-1,i,i,i);
       i += 1;
     );
   ?>
@@ -1742,6 +1837,14 @@ out_pin:Right Output
           r_dragging ? r_dragged = 1;
           r_dragging = r_click = 0;
         );
+        r_dragging ? (
+          mouse_cap&1 && !l_dragging? (
+            l_click = 1;
+          ) : l_click ? (
+            l_clicked = 1;
+            l_click = 0;
+          ); // Reset dragging on left click
+        );
         !(l_dragging || r_dragging) ? in_section = 0;
       );
 
@@ -1782,34 +1885,40 @@ out_pin:Right Output
         );
       );
       r_dragging ? (
-        mouse_cap&4 ? ( // Holding Ctrl/Command assigns value based on mouse position
-          v_xr = (mouse_x - x) / w;
-          v_yr = (y - mouse_y) / h;
-          type&16 ? v_xr = v_xr * 2. - 1.;
-          type&32 ? v_yr = v_yr * 2. - 1.;
-        ) : ( // otherwise change value relatively
-          dx = (mouse_x - prev_x) / w; dy = (mouse_y - prev_y) / h;
-          d_ratio = mouse_cap&8 ? .01 : .1; // Holding shift finetunes
-          v_xr += dx * d_ratio;
-          v_yr -= dy * d_ratio;
-        );
-        mouse_cap&16 ? ( // Holding alt/opt changes value on one axis only
-          abs(mouse_x - omp_xr) > abs(mouse_y - omp_yr) ? (
-            v_yr = ov_yr;
-          ) : (
-            v_xr = ov_xr;
+        l_clicked ? (
+          v_xr = ov_xr; v_yr = ov_yr;
+          r_dragged = r_dragging;
+          r_dragging = r_click = l_click = r_clicked = l_clicked = in_section = 0;
+        ) : (
+          mouse_cap&4 ? ( // Holding Ctrl/Command assigns value based on mouse position
+            v_xr = (mouse_x - x) / w;
+            v_yr = (y - mouse_y) / h;
+            type&16 ? v_xr = v_xr * 2. - 1.;
+            type&32 ? v_yr = v_yr * 2. - 1.;
+          ) : ( // otherwise change value relatively
+            dx = (mouse_x - prev_x) / w; dy = (mouse_y - prev_y) / h;
+            d_ratio = mouse_cap&8 ? .01 : .1; // Holding shift finetunes
+            v_xr += dx * d_ratio;
+            v_yr -= dy * d_ratio;
           );
+          mouse_cap&16 ? ( // Holding alt/opt changes value on one axis only
+            abs(mouse_x - omp_xr) > abs(mouse_y - omp_yr) ? (
+              v_yr = ov_yr;
+            ) : (
+              v_xr = ov_xr;
+            );
+          );
+          v_xr = clamp(v_xr, type&16?-1.:0., 1.);
+          v_yr = clamp(v_yr, type&32?-1.:0., 1.);
         );
-        v_xr = clamp(v_xr, type&16?-1.:0., 1.);
-        v_yr = clamp(v_yr, type&32?-1.:0., 1.);
       );
       prev_x = mouse_x; prev_y = mouse_y;
       status;
     );
 
   function ui_drawSlider(x, y, w, h, type, color_mem_pos, is_active, s)
-    local(mw, x0, y0, w0, h0)
-    instance(status, v_xl)
+    local(mw, x0, y0, w0, h0, v)
+    instance(status, v_xl, v_xr)
     global(
       g_button_border_size,
       BUTTON_BORDER_OFFSET, BUTTON_BG_OFFSET, BUTTON_MAIN_OFFSET,
@@ -1825,11 +1934,12 @@ out_pin:Right Output
       set_HSL_button_color(color_mem_pos, status, BUTTON_BG_OFFSET);
       gfx_rect(x0, y0, w0, h0);
       set_HSL_button_color(color_mem_pos, status, BUTTON_MAIN_OFFSET);
+      v = type&8 ? v_xr : v_xl;
       type&2 ? (
         mw = w0 * .5;
-        w0 = mw * abs(v_xl); x0 = v_xl < 0? x0 + mw - w0 : x0 + mw;
+        w0 = mw * abs(v); x0 = v < 0? x0 + mw - w0 : x0 + mw;
         gfx_rect(x0, y0, w0, h0);
-      ) : gfx_rect(x0, y0, w0 * v_xl, h0);
+      ) : gfx_rect(x0, y0, w0 * v, h0);
       set_HSL_button_color(color_mem_pos, status, BUTTON_TEXT_OFFSET);
       ui_drawButtonText(x, y, w, h, s);
     );
@@ -3289,21 +3399,21 @@ out_pin:Right Output
           ctrl_gain_mod.l_dragging ? (
             adjust_router_filter_param(
               g_mod_route_idx, idx, ROUTER_FILTER_GAIN,
-              get_SVF_mem_pos(idx) + SVF_BANDWIDTH_MOD_OFFSET, ctrl_gain_mod.v_yl
+              get_SVF_mem_pos(idx) + SVF_GAIN_MOD_OFFSET, ctrl_gain_mod.v_yl
             );
             sliderchange(-1);
           );
           ctrl_gain_mod.l_clicked < 0 ? (
             adjust_router_filter_param(
               g_mod_route_idx, idx, ROUTER_FILTER_GAIN,
-              get_SVF_mem_pos(idx) + SVF_BANDWIDTH_MOD_OFFSET, 0.
+              get_SVF_mem_pos(idx) + SVF_GAIN_MOD_OFFSET, 0.
             );
             sliderchange(-1);
             ctrl_gain_mod.l_clicked = 0;
           );
           ctrl_gain_mod.r_clicked ? (
             ui_handleMODContextMenu(
-              idx, ROUTER_FILTER_GAIN, get_SVF_mem_pos(idx) + SVF_BANDWIDTH_MOD_OFFSET
+              idx, ROUTER_FILTER_GAIN, get_SVF_mem_pos(idx) + SVF_GAIN_MOD_OFFSET
             );
             ctrl_gain_mod.r_clicked = 0;
           );
@@ -3927,11 +4037,13 @@ out_pin:Right Output
 
   function ui_drawSCs(x, y, w, h)
     local(
-      i, open_i, count, color_mem, amp, is_active, is_cur_route_src,
+      i, open_i, count, color_mem, is_active, is_cur_route_src,
+      thres, rms, is_show_thres, is_show_rms, is_cycle_rms, tm_diff
       mod_idx, columns, rows,
       padding, gap, total_w, str_w, str_h, x0, y0, w0, h0, status,
+      v
     )
-    instance(selected_idx, tb_sc, sl_amp, bt_link, bt_unlink, bt_delete)
+    instance(selected_idx, tb_sc, sl_amp, bt_link, bt_unlink, bt_delete, rmb_time, prev_time)
     (
       color_mem = get_band_color_mem(selected_idx + TOTAL_FILTER_COUNT + TOTAL_LFO_COUNT);
       mod_idx = selected_idx + TOTAL_LFO_COUNT;
@@ -3983,7 +4095,7 @@ out_pin:Right Output
         tb_sc.l_clicked = 0;
       );
       tb_sc.r_clicked ? (
-        toggle_SideChain_active(tb_sc.hover_idx);
+        toggle_sidechain_active(tb_sc.hover_idx);
         set_dirty_for_router_routes_with_src_mod(tb_sc.hover_idx + TOTAL_LFO_COUNT);
         tb_sc.r_clicked = 0;
       );
@@ -3991,23 +4103,58 @@ out_pin:Right Output
       selected_idx >= 0 ? (
         x0 = x + padding; y0 = y; w0 *= columns; w0 = w - w0 - gap * 2.; h0 = (h - gap * 3.) * .25;
         is_active = is_SideChain_active(selected_idx);
+        is_show_thres = sl_amp.l_click || sl_amp.l_dragging;
+        is_show_rms = sl_amp.r_click || sl_amp.r_dragging;
+        !(sl_amp.in_section || is_show_thres || is_show_rms) ? (
+          rmb_time += time_precise() - prev_time;
+          rmb_time = rmb_time - floor(rmb_time / 10.) * 10.;
+        );
+        prev_time = time_precise();
+        is_cycle_rms = rmb_time > 5.;
         set_HSL_color(COLOR_HIGHLIGHT);
         !is_active ? uix_darkenColor(.5);
-        ui_drawCenteredText(x0, y0, w0, h0, "AMP");
+        ui_drawCenteredText(x0, y0, w0, h0, is_show_rms ? "RMS" : is_show_thres ? "THRES" : is_cycle_rms ? "RMS: RMB" : "TH: LMB");
 
-        amp = get_SideChain_amp(selected_idx);
         y0 += h0;
-        sl_amp.v_xl = amp;
-        sl_amp.ui_drawSlider(x0, y0, w0, h0, 1, color_mem, is_active, sprintf(#, "%.1f%%", amp * 100.));
+        thres = get_SideChain_thres(selected_idx);
+        rms = get_SideChain_rms(selected_idx);
+        sl_amp.v_xl = (1. - sqrt(abs(thres) / 90));
+        sl_amp.v_xr = pow(log(rms + 1.) / log(501), 1. / 0.661);
+        is_show_rms || (!is_show_thres && is_cycle_rms && !sl_amp.in_section) ? (
+          sl_amp.ui_drawSlider(
+            x0, y0, w0, h0, 12, color_mem, is_active,
+            sprintf(#, rms < 100. ? "%.1f ms" : "%.0f ms", rms)
+          );
+        ) : (
+          sl_amp.ui_drawSlider(
+            x0, y0, w0, h0, 1, color_mem, is_active,
+            sprintf(#, "%.1f dB", thres)
+          );
+        );
+
         sl_amp.l_clicked < 0 ? (
-          set_SideChain_amp(selected_idx, 0.);
+          set_sidechain_threshold(selected_idx, 0., 0);
           sl_amp.l_clicked = 0;
           sliderchange(-1);
         );
-        sl_amp.l_dragging ? set_SideChain_amp(selected_idx, sl_amp.v_xl);
+        v = -90 * pow(1. - sl_amp.v_xl, 2.);
+        sl_amp.l_dragging ? set_sidechain_threshold(selected_idx, v, 0);
         sl_amp.l_dragged ? (
-          set_SideChain_amp(selected_idx, sl_amp.v_xl);
+          set_sidechain_threshold(selected_idx, v, 1);
           sl_amp.l_dragged = 0;
+          sliderchange(-1);
+        );
+
+        sl_amp.r_clicked < 0 ? (
+          set_sidechain_rms(selected_idx, 0.0, 0);
+          sl_amp.r_clicked = 0;
+          sliderchange(-1);
+        );
+        v = pow(501., pow(sl_amp.v_xr, 0.661)) - 1;
+        sl_amp.r_dragging ? set_sidechain_rms(selected_idx, v, 0);
+        sl_amp.r_dragged ? (
+          set_sidechain_rms(selected_idx, v, 1);
+          sl_amp.r_dragged = 0;
           sliderchange(-1);
         );
         y0 += h0 + gap;

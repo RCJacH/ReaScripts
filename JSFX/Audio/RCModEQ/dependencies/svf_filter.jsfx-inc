@@ -816,10 +816,10 @@ function get_SVF_filter_shape(shape, t)
   )
   (
     shape == SVF_SHAPE_LP ? min(1., 2. - 2. * t) :
-    shape == SVF_SHAPE_BP ? clamp(3. * abs(mod_phase(t + .5) * 2 - 1.) - 2., 0., 1.):
+    shape == SVF_SHAPE_BP ? clamp(1.5 * abs(mod_phase(t + .5) * 2 - 1.) - .9, 0., 1.) :
     shape == SVF_SHAPE_HP ? min(1., 2. * t) :
-    shape == SVF_SHAPE_UBP ? clamp(1.5 * abs(mod_phase(t + .5) * 2 - 1.) - .9, 0., 1.) :
     shape == SVF_SHAPE_LS ? clamp(2. - 3. * t, 0., 1.) :
+    shape == SVF_SHAPE_UBP ? clamp(3. * abs(mod_phase(t + .5) * 2 - 1.) - 2., 0., 1.):
     shape == SVF_SHAPE_HS ? clamp(3. * t - 1., 0., 1.) :
     shape == SVF_SHAPE_NOTCH ? max(0, 1. - 1.2 * pow(sin($pi * t), 4.)) :
     shape == SVF_SHAPE_PEAK ? sin(t * $pi) :

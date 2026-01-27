@@ -44,8 +44,8 @@ LFO_PREV_RND_OFFSET = lfo_offset_inc;
 LFO_PREV_RND_L_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
 LFO_PREV_RND_R_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
 LFO_CUR_RND_OFFSET = lfo_offset_inc;
-LFO_CUR_RND_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
-LFO_CUR_RND_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_CUR_RND_L_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
+LFO_CUR_RND_R_OFFSET = lfo_offset_inc; lfo_offset_inc += 1;
 LFO_MIDI_TRIG_OFFSET = lfo_offset_inc; lfo_offset_inc += 1; // set to offset in @block on Note-On
 
 LFO_TOTAL_MEM = lfo_offset_inc;
@@ -355,7 +355,7 @@ function set_LFO_spread(idx, v)
     delta ? (
       /* L phase gets −delta, R phase +delta */
       mem[LFO_PHASE_L_OFFSET] = mod_phase(mem[LFO_PHASE_L_OFFSET] - delta);
-      mem[LFO_PHASE_R_OFFSET + 1] = mod_phase(mem[LFO_PHASE_R_OFFSET + 1] + delta);
+      mem[LFO_PHASE_R_OFFSET] = mod_phase(mem[LFO_PHASE_R_OFFSET] + delta);
       mem[LFO_SPREAD_OFFSET] = v;
     );
   );

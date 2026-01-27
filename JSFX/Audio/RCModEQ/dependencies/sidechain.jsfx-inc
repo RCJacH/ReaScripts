@@ -1,8 +1,14 @@
 @init
 SIDECHAIN_STATE_OFFSET = 0;
-SIDECHAIN_AMP_OFFSET = 1;
-SIDECHAIN_V_OFFSET = 2;
-SIDECHAIN_TOTAL_PARAM_MEM = 4;
+SIDECHAIN_THRES_OFFSET = 1;
+SIDECHAIN_THRES_CONVERTED_OFFSET = 2;
+SIDECHAIN_RMS_OFFSET = 3;
+SIDECHAIN_RMS_CONVERTED_OFFSET = 4;
+SIDECHAIN_RMS_RUNAVE_OFFSET = 5;
+SIDECHAIN_V_OFFSET = 6;
+SIDECHAIN_V_L_OFFSET = 6;
+SIDECHAIN_V_R_OFFSET = 7;
+SIDECHAIN_TOTAL_PARAM_MEM = 8;
 
 SIDECHAIN_MEM_POS = 0;
 SIDECHAIN_PARAM_MEM_POS = 0;
@@ -85,27 +91,79 @@ function toggle_SideChain_active(idx)
   );
 
 
-function get_SideChain_amp(idx)
-  global(SIDECHAIN_AMP_OFFSET)
+function get_SideChain_thres(idx)
+  global(SIDECHAIN_THRES_OFFSET)
   (
-    get_SideChain_mem_pos(idx)[SIDECHAIN_AMP_OFFSET];
+    get_SideChain_mem_pos(idx)[SIDECHAIN_THRES_OFFSET];
   );
 
 
-function set_SideChain_amp(idx, v)
+function set_SideChain_thres(idx, v)
+  local(mem, v)
+  global(SIDECHAIN_THRES_OFFSET, SIDECHAIN_THRES_CONVERTED_OFFSET)
   (
-    get_SideChain_mem_pos(idx)[SIDECHAIN_AMP_OFFSET] = v;
+    mem = get_SideChain_mem_pos(idx);
+    mem[SIDECHAIN_THRES_OFFSET] = v;
+    mem[SIDECHAIN_THRES_CONVERTED_OFFSET] = dB_to_A(v);
+  );
+
+
+function get_SideChain_rms(idx)
+  global(SIDECHAIN_RMS_OFFSET)
+  (
+    get_SideChain_mem_pos(idx)[SIDECHAIN_RMS_OFFSET];
+  );
+
+
+function set_SideChain_rms(idx, v)
+  local(mem, v)
+  global(SIDECHAIN_RMS_OFFSET, SIDECHAIN_RMS_CONVERTED_OFFSET, srate)
+  (
+    mem = get_SideChain_mem_pos(idx);
+    mem[SIDECHAIN_RMS_OFFSET] = v;
+    mem[SIDECHAIN_RMS_CONVERTED_OFFSET] = exp(-1/(max(v * 0.001, 0.00004) * srate));
+  );
+
+
+function set_SideChain_param(idx, thres, rms)
+  global()
+  (
+    set_SideChain_thres(idx, thres);
+    set_SideChain_rms(idx, rms);
+  );
+
+
+function on_SideChain_slider_change(idx, active, thres, rms)
+  global()
+  (
+    set_SideChain_active(idx, active);
+    set_SideChain_param(idx, thres, rms);
   );
 
 
 function process_all_SideChains(sc_count)
-  local(i, mem, amp)
-  (
-    i = 0;
-    loop(sc_count,
-      mem = get_SideChain_mem_pos(i);
-      amp = is_SideChain_active(i) ? mem[SIDECHAIN_AMP_OFFSET] : 0.;
-      mem[SIDECHAIN_V_OFFSET] = mem[SIDECHAIN_V_OFFSET + 1] = spl(2+i) * amp;
-      i += 1;
+  local(i, mem, active, setting, thr, v, o, x, x2, runave, a)
+(
+  i = 0;
+  loop(sc_count,
+    mem = get_SideChain_mem_pos(i);
+    active = is_SideChain_active(i);
+
+    active ? (
+      x = spl(2+i);
+      x2 = x * x;
+      a = mem[SIDECHAIN_RMS_CONVERTED_OFFSET];
+      runave = mem[SIDECHAIN_RMS_RUNAVE_OFFSET];
+      runave = x2 + a * (runave - x2);
+      runave < 0.00000001 ? runave = 0;
+      mem[SIDECHAIN_RMS_RUNAVE_OFFSET] = runave;
+
+      thr = mem[SIDECHAIN_THRES_CONVERTED_OFFSET];
+      o = max(0, sqrt(runave) - thr);
+      v = o / max(0.000001, (1 - thr));
+      v = min(1, max(0, v));
+      mem[SIDECHAIN_V_OFFSET] = mem[SIDECHAIN_V_OFFSET + 1] = 2. * v - 1.;
     );
+    i += 1;
   );
+);

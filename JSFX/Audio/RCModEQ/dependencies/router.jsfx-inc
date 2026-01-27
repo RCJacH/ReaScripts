@@ -233,13 +233,15 @@ function unlink_router_routes_with_src_lfo(src_mod_idx)
 
 function set_dirty_for_router_routes_with_src_mod(src_mod_idx)
   local(i, mem, is_dirty_mem)
-  global(g_router_active_route_count, ROUTER_IS_DIRTY_MEM_POS_OFFSET)
+  global(g_router_active_route_count, ROUTER_SRC_IDX_OFFSET, ROUTER_IS_DIRTY_MEM_POS_OFFSET)
   (
     i = 0;
     loop(g_router_active_route_count,
       mem = get_router_active_mem_pos(i);
-      is_dirty_mem = mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET];
-      is_dirty_mem ? is_dirty_mem[] = 1;
+      mem[ROUTER_SRC_IDX_OFFSET] == src_mod_idx ? (
+        is_dirty_mem = mem[ROUTER_IS_DIRTY_MEM_POS_OFFSET];
+        is_dirty_mem ? is_dirty_mem[] = 1;
+      );
       i += 1;
     );
   );
