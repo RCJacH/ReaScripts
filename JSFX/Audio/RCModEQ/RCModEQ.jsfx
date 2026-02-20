@@ -3,7 +3,7 @@ JSFX Name: RCModEQ
 Author: RCJacH
 Release Date: Aug 2025
 Link: https://github.com/RCJacH/ReaScripts
-Version: 1.2.1
+Version: 1.2.2
 Provides:
   dependencies/*
 Reference:
@@ -16,6 +16,10 @@ About:
   It lets you stack up to eight filters and drive their parameters with
   up to eight shape-selectable and deformable LFOs.
 Changelog:
+  * v1.2.2 (2026-02-21)
+    * Fix LFO amp offset with unipolar routing
+    * Fix LFO bar reset
+    * Fix MIDI note on not parsed
   * v1.2.1 (2026-01-28)
     + Fix sc rms converted value not updated when srate changes
     * Fix 1.1 migration function
@@ -705,7 +709,7 @@ out_pin:Right Output
     global()
     (
       set_SVF_type_2(idx, type);
-      notify_touched_filter_type(idx, type, is_end);
+      notify_touched_filter_type2(idx, type, is_end);
     );
 
   function set_filter_spread(idx, spread, is_end)
@@ -1122,7 +1126,7 @@ out_pin:Right Output
   CUR_TEMPO = tempo;
   router_update_active_routes(TOTAL_LFO_COUNT);
   while (midirecv(offset, msg1, msg2, msg3)) (
-    status = $xF0;
+    status = msg1 & $xF0;
     (status == STATUS_NOTE_ON && msg3) ? maybe_parse_all_LFO_midi_reset(TOTAL_LFO_COUNT, offset);
   );
 
@@ -3869,9 +3873,9 @@ out_pin:Right Output
         ui_drawSliderModOverlay(
           x1, y0, w1, h0,
           0,
-          get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_AMOUNT_OFFSET),
+          get_router_route_bipolar(g_mod_route_idx, idx, ROUTER_LFO_AMP),
           mod_color_mem,
-          !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_AMOUNT_OFFSET),
+          !get_router_route_bypassed(g_mod_route_idx, idx, ROUTER_LFO_AMP),
           sl_amp.v_xl,
           ctrl_amp_mod.v_yl
         );

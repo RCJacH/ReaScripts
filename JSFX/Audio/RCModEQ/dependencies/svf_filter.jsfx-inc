@@ -115,7 +115,7 @@ function BW_to_Q(bw_oct)
   global()
   (
     // alpha  =  (ln 2 / 2) · BW
-    alpha      = 0.5 * log(2) * BW_oct;
+    alpha      = 0.5 * log(2) * bw_oct;
     // sinh(alpha) = ½ (e^α – e^–α) – rolled out to avoid a sinh()
     sinh_alpha = 0.5 * ( exp(alpha) - exp(-alpha) );
     // Guard against BW_oct = 0 → sinh_alpha = 0
@@ -124,7 +124,7 @@ function BW_to_Q(bw_oct)
 
 function _svf_get_Q(static_oct, mod_pct)
   local(norm_static, norm_combined)
-  global(SVF_MIN_BW, SVF_MIN_BW, SVF_MAX_BW)
+  global(SVF_MIN_BW, SVF_MAX_BW)
   (
     norm_combined  = static_oct + mod_pct * 4.;
     norm_combined  = clamp(norm_combined, SVF_MIN_BW, SVF_MAX_BW);

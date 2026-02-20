@@ -280,12 +280,13 @@ function router_update_active_routes(lfo_count)
 
 
 function process_router(process_type, lfo_count)
-  local(i, mem, chan, v, src_idx, dest, amount, mod_mem, is_bipolar, is_dirty_mem)
+  local(i, mem, chan, v, src_idx, dest, amount, mod_mem, is_bipolar, is_dirty_mem, lfo_mem, amp)
   global(
     g_router_active_route_count,
     ROUTER_IS_BYPASSED_OFFSET, ROUTER_SRC_IDX_OFFSET, ROUTER_DEST_OFFSET, ROUTER_AMOUNT_OFFSET,
     ROUTER_IS_DIRTY_MEM_POS_OFFSET, ROUTER_IS_BIPOLAR_OFFSET,
-    LFO_IS_ACTIVE_OFFSET, LFO_V_OFFSET, SIDECHAIN_V_OFFSET
+    LFO_IS_ACTIVE_OFFSET, LFO_V_OFFSET, SIDECHAIN_V_OFFSET,
+    LFO_AMP_OFFSET, LFO_AMP_MOD_OFFSET
   )
   (
     i = 0;
@@ -297,6 +298,7 @@ function process_router(process_type, lfo_count)
           src_idx = mem[ROUTER_SRC_IDX_OFFSET];
           mod_mem = src_idx < lfo_count ? get_LFO_mem_pos(src_idx) + LFO_V_OFFSET
             : get_SideChain_mem_pos(src_idx - lfo_count) + SIDECHAIN_V_OFFSET;
+          lfo_mem = src_idx < lfo_count ? get_LFO_mem_pos(src_idx) : 0;
           dest = mem[ROUTER_DEST_OFFSET];
           amount = mem[ROUTER_AMOUNT_OFFSET];
           is_bipolar = mem[ROUTER_IS_BIPOLAR_OFFSET];
@@ -304,6 +306,11 @@ function process_router(process_type, lfo_count)
           loop(2,
             v = mod_mem[chan];
             !is_bipolar ? v = (v + 1.) * .5;
+            src_idx < lfo_count ? (
+              amp = lfo_mem[LFO_AMP_OFFSET] + lfo_mem[LFO_AMP_MOD_OFFSET + chan];
+              amp = max(0., min(1., amp));
+              v *= amp;
+            );
             dest[chan] += v * amount;
             chan += 1;
           );

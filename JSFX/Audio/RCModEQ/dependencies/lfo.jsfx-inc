@@ -72,10 +72,11 @@ LFO_RATE_MODE_BAR = 2;
 LFO_SYNC_TIME_LOOKUP_TABLE = 0;
 LFO_SYNC_TIME_LOOKUP_TABLE_COUNT = 0;
 
-prev_ts_change_play_position = 0;
 prev_play_state = play_state & 1;
 prev_ts_num     = ts_num;
 prev_ts_denom   = ts_denom;
+prev_bar_phase  = beat_position - floor(beat_position / max(0.000000001, (4. * ts_num / ts_denom))) * max(0.000000001, (4. * ts_num / ts_denom));
+prev_beat_position = beat_position;
 
 // ───────────── HELPERS ─────────────
 function round(x) global() ( floor(x + .5); );
@@ -557,13 +558,18 @@ function _get_lfo_inc(rate, rate_mode)
   );
 
 function maybe_parse_LFO_midi_reset(idx, offset)
-  local(mem)
-  global(LFO_TRIGGER_MODE_OFFSET, LFO_TRIGGER_MODE_MIDI_RESET)
+  local(mem, trigger_offset)
+  global(LFO_TRIGGER_MODE_OFFSET, LFO_TRIGGER_MODE_MIDI_RESET, LFO_MIDI_TRIG_OFFSET)
   (
     mem = get_LFO_mem_pos(idx);
-    mem[LFO_TRIGGER_MODE_OFFSET] = (
-      mem[LFO_TRIGGER_MODE_OFFSET] == LFO_TRIGGER_MODE_MIDI_RESET ?
-        offset : 0;
+    mem[LFO_TRIGGER_MODE_OFFSET] == LFO_TRIGGER_MODE_MIDI_RESET ? (
+      // +1 so an event at sample offset 0 triggers on the first @sample frame.
+      trigger_offset = offset + 1;
+      mem[LFO_MIDI_TRIG_OFFSET] = (
+        mem[LFO_MIDI_TRIG_OFFSET] ?
+          min(mem[LFO_MIDI_TRIG_OFFSET], trigger_offset)
+        : trigger_offset
+      );
     );
   );
 
@@ -587,14 +593,13 @@ function maybe_parse_all_LFO_midi_reset(lfo_count, offset)
       • keep its own book-keeping data.
 ------------------------------------------------------------------------*/
 function maybe_reset_LFO_phase(idx)
-  local(mem, trig, reset, beats, beatsPerBarQN, bar_idx)
+  local(mem, trig, reset, beatsPerBarQN, bar_phase, delta_beats)
   global(
-        tempo, play_state, play_position, ts_num, ts_denom,
-        prev_ts_change_play_position,
+        tempo, play_state, beat_position, ts_num, ts_denom,
 
-        prev_play_state, prev_ts_num, prev_ts_denom,
+        prev_play_state, prev_ts_num, prev_ts_denom, prev_bar_phase, prev_beat_position,
 
-        LFO_TRIGGER_MODE_OFFSET, LFO_PREV_BAR_OFFSET,
+        LFO_TRIGGER_MODE_OFFSET,
         LFO_MIDI_TRIG_OFFSET,
 
         LFO_TRIGGER_MODE_FREERUN,
@@ -616,11 +621,17 @@ function maybe_reset_LFO_phase(idx)
       /*──────────────── 2. BAR_RESET (new bar or meter change) ──*/
       (trig == LFO_TRIGGER_MODE_BAR_RESET) ?
       (
-        (ts_num != prev_ts_num) || (ts_denom != prev_ts_denom) ||
-          (play_position < prev_ts_change_play_position) ?
-            prev_ts_change_play_position = floor(play_position);
-        beats = play_position - prev_ts_change_play_position;
-        reset = (beats % ts_num) == 0;
+        beatsPerBarQN = max(0.000000001, qn_time_to_full_measure());
+        delta_beats = beat_position - prev_beat_position;
+        bar_phase = beat_position - floor(beat_position / beatsPerBarQN) * beatsPerBarQN;
+        reset = (
+          bar_phase < prev_bar_phase
+            || delta_beats < 0
+            || delta_beats > beatsPerBarQN
+            || ts_num != prev_ts_num
+            || ts_denom != prev_ts_denom
+            || (play_state&1 && !prev_play_state)
+        );
       );
 
       /*──────────────── 3. MIDI_RESET (count down) ───────────*/
@@ -647,7 +658,7 @@ function process_LFO(idx)
     LFO_RATE_MODE_OFFSET, LFO_HZ_RATE_OFFSET, LFO_SYNC_RATE_OFFSET,
     LFO_RATE_MOD_OFFSET, LFO_SHAPE_OFFSET,
     LFO_START_PHASE_OFFSET, LFO_START_PHASE_MOD_OFFSET,
-    LFO_DEFORM_OFFSET, LFO_DEFORM_MOD_OFFSET, LFO_AMP_OFFSET, LFO_AMP_MOD_OFFSET,
+    LFO_DEFORM_OFFSET, LFO_DEFORM_MOD_OFFSET,
     LFO_V_OFFSET, LFO_PHASE_OFFSET, LFO_PREV_RND_OFFSET, LFO_CUR_RND_OFFSET
   )
   (
@@ -679,9 +690,7 @@ function process_LFO(idx)
       );
 
       out = _get_amp_from_shape_and_phase(shape, deform, spread_phase, prev_rnd, cur_rnd);
-      amp = mem[LFO_AMP_OFFSET] + mem[LFO_AMP_MOD_OFFSET + chan];
-      amp = clamp(amp, 0., 1.);
-      mem[LFO_V_OFFSET + chan] = out * amp;
+      mem[LFO_V_OFFSET + chan] = out;
       mem[LFO_PHASE_OFFSET + chan] = phase;
       mem[LFO_PREV_RND_OFFSET + chan] = prev_rnd;
       mem[LFO_CUR_RND_OFFSET + chan] = cur_rnd;
@@ -690,8 +699,8 @@ function process_LFO(idx)
   );
 
 function process_all_LFOs(lfo_count)
-  local(i)
-  global(play_state, ts_num, ts_denom, prev_play_state, prev_ts_num, prev_ts_denom)
+  local(i, beatsPerBarQN)
+  global(play_state, beat_position, ts_num, ts_denom, prev_play_state, prev_ts_num, prev_ts_denom, prev_bar_phase, prev_beat_position)
   (
     i = 0;
     loop(lfo_count,
@@ -701,6 +710,9 @@ function process_all_LFOs(lfo_count)
       );
       i += 1;
     );
+    beatsPerBarQN = max(0.000000001, qn_time_to_full_measure());
+    prev_bar_phase = beat_position - floor(beat_position / beatsPerBarQN) * beatsPerBarQN;
+    prev_beat_position = beat_position;
     prev_play_state = play_state & 1;
     prev_ts_num     = ts_num;
     prev_ts_denom   = ts_denom;
