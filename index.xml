@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="1fee74e894dcfd58678e5db07dad6741d29cbbf6" name="RCJacH Scripts">
+<index version="1" commit="c3277388cff6eecd050e33d8d5608cecc5b4064d" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -499,6 +499,33 @@ Potential Addition:
         <source file="dependencies/router.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/1fee74e894dcfd58678e5db07dad6741d29cbbf6/JSFX/Audio/RCModEQ/dependencies/router.jsfx-inc</source>
         <source file="dependencies/sidechain.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/1fee74e894dcfd58678e5db07dad6741d29cbbf6/JSFX/Audio/RCModEQ/dependencies/sidechain.jsfx-inc</source>
         <source file="dependencies/svf_filter.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/1fee74e894dcfd58678e5db07dad6741d29cbbf6/JSFX/Audio/RCModEQ/dependencies/svf_filter.jsfx-inc</source>
+      </version>
+      <version name="1.2.2" author="RCJacH" time="2026-02-20T18:21:21Z">
+        <changelog><![CDATA[* v1.2.2 (2026-02-21)
+  * Fix LFO amp offset with unipolar routing
+  * Fix LFO bar reset
+  * Fix MIDI note on not parsed
+* v1.2.1 (2026-01-28)
+  + Fix sc rms converted value not updated when srate changes
+  * Fix 1.1 migration function
+* v1.2.0 (2026-01-27)
+  + Add Threshold and RMS to Sidechain
+  * Fix bandwidth being modulated instead of gain
+  * Fix lfo spread
+  * Fix BandPass and Unity-gain BandPass icons being swapped
+* v1.1.0 (2025-12-14)
+  + Add Morph Parameter to filters
+  * Fix double click to add filter
+  * Fix Invert button position
+* v1.0.0 (2025-08-01)
+  + Initial Release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/RCModEQ.jsfx</source>
+        <source file="dependencies/eq_node.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/dependencies/eq_node.jsfx-inc</source>
+        <source file="dependencies/hsl_colors.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/dependencies/hsl_colors.jsfx-inc</source>
+        <source file="dependencies/lfo.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/dependencies/lfo.jsfx-inc</source>
+        <source file="dependencies/router.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/dependencies/router.jsfx-inc</source>
+        <source file="dependencies/sidechain.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/dependencies/sidechain.jsfx-inc</source>
+        <source file="dependencies/svf_filter.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/dependencies/svf_filter.jsfx-inc</source>
       </version>
     </reapack>
   </category>
