@@ -3,7 +3,7 @@ JSFX Name: RCModEQ
 Author: RCJacH
 Release Date: Aug 2025
 Link: https://github.com/RCJacH/ReaScripts
-Version: 1.2.2
+Version: 1.2.3
 Provides:
   dependencies/*
 Reference:
@@ -16,6 +16,8 @@ About:
   It lets you stack up to eight filters and drive their parameters with
   up to eight shape-selectable and deformable LFOs.
 Changelog:
+  * v1.2.3 (2026-02-21)
+    * Remove version migration function since it doesn't work well
   * v1.2.2 (2026-02-21)
     * Fix LFO amp offset with unipolar routing
     * Fix LFO bar reset
@@ -1033,48 +1035,9 @@ out_pin:Right Output
   );
 
 @serialize
-  function migrate_state_to_add_morph()
-    local(cur_sl_idx, shift_count, i, j, mem, dest)
-    (
-      i = 0;
-      loop(ROUTER_TOTAL_ROUTE_COUNT,
-        mem = get_router_active_mem_pos(i);
-        dest = mem[ROUTER_DEST_OFFSET];
-        j = 0;
-        loop(TOTAL_FILTER_COUNT,
-          dest >= SVF_FILTERS_MEM_POS + j * SVF_TOTAL_MEM + 3 ? dest += 1;
-          dest >= SVF_FILTERS_MEM_POS + j * SVF_TOTAL_MEM + 9 ? dest += 1;
-          dest >= SVF_FILTERS_MEM_POS + j * SVF_TOTAL_MEM + 20 ? dest += 2;
-          j += 1;
-        );
-        mem[ROUTER_DEST_OFFSET] = dest;
-        i += 1;
-      );
-
-      shift_count = 2 * TOTAL_FILTER_COUNT;
-      cur_sl_idx = TOTAL_SLIDERS;
-      loop(TOTAL_LFO_COUNT * 10,
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1;
-      );
-      loop(TOTAL_FILTER_COUNT,
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_spread
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_gain
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_bandwidth
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_freq
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); shift_count -= 1; cur_sl_idx -= 1; // f_morph
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); shift_count -= 1; cur_sl_idx -= 1; // f_type2
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_type
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_channel
-        slider(cur_sl_idx) = slider(cur_sl_idx - shift_count); cur_sl_idx -= 1; // f_active
-      );
-      sliderchange(-1);
-      slider_automate(-1, 1);
-    );
-
   file_avail(handle) >= 0 ? (
     // Read mode
     file_var(0, version);
-    version < 1.1 ? migrate_state_to_add_morph();
     file_var(0, is_initialized);
     file_var(0, g_cur_gain_range);
     file_var(0, g_cur_gain_step);
