@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="3375add95a53b83d5cf615246de821e79b1f4129" name="RCJacH Scripts">
+<index version="1" commit="d5a49260216c8b07b19a7aab8835ff792796a514" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -633,13 +633,13 @@ Potential Addition:
     </reapack>
     <reapack name="RC MIDI Channel Router.jsfx" type="effect" desc="RC MIDI Channel Router">
       <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 Description\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Description\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 RC MIDI Channel Router is a MIDI plugin to send each Note-On/Note-Off/CC event to assigned Channel(s) accordingly.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs32 How to Use\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 How to Use\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Use Left Mouse Button to work with MIDI channel assignments; Use Right Mouse Button to work with MIDI Bus.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab Select channel using channel select buttons number 1-16.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab Press (and drag) Note button below to toggle note send state. Green means note will be send to selected Channel upon receiving input. Red means not send.\par}
@@ -671,6 +671,11 @@ Potential Addition:
         <changelog><![CDATA[* Fix some settings not saved in serialize
 * Fix wrong reaction of some controls in cc mode ]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/c125c8631582da951cde899075c286bbf8af1bbe/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
+      </version>
+      <version name="1.1.4" author="RCJacH" time="2026-05-28T19:35:32Z">
+        <changelog><![CDATA[* Fix wrong MIDI bus assignment when using right mouse button in CC mode
+* Fix sliders not updating when clicking on GUI in CC mode]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/d5a49260216c8b07b19a7aab8835ff792796a514/JSFX/MIDI/RC%20MIDI%20Channel%20Router.jsfx</source>
       </version>
     </reapack>
     <reapack name="RC MIDI Circular Note Generator.jsfx" type="effect" desc="RC MIDI Circular Note Generator">
