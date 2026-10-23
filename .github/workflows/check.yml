@@ -2,17 +2,19 @@ name: check
 on: [push, pull_request]
 jobs:
   reapack-index:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
     - name: Fetch repository
-      uses: actions/checkout@v2
-    - name: Install Pandoc
-      run:  sudo apt-get install -yy pandoc
+      uses: actions/checkout@v4
+    - name: Install dependencies
+      run: |-
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pandoc pkg-config libgit2-dev libssl-dev
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: '3.0'
+        ruby-version: 3.2
     - name: Install reapack-index
-      run:  gem install reapack-index
+      run:  gem install reapack-index --pre
     - name: Validate packages
       run:  reapack-index --check

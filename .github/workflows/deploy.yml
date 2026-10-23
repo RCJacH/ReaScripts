@@ -1,27 +1,31 @@
 name: deploy
 on:
-  push:
-    branches: [master]
+  workflow_run:
+    workflows: ["check"]
+    types: [completed]
 jobs:
-  reapack-index:
-    runs-on: ubuntu-latest
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
     steps:
     - name: Fetch repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Configure git
       run: |-
-        git config user.name  'ReaTeam Bot'
-        git config user.email 'reateam-bot@cfillion.ca'
-    - name: Install Pandoc
-      run:  sudo apt-get install -yy pandoc
+        git config user.name  'RCJacH'
+        git config user.email 'RCJacH@outlook.com'
+    - name: Install dependencies
+      run: |-
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pandoc pkg-config libgit2-dev libssl-dev
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: '3.0'
+        ruby-version: 3.2
     - name: Install reapack-index
-      run:  gem install reapack-index
+      run:  gem install reapack-index --pre
     - name: Update index.xml
       run:  reapack-index --commit
     - name: Push changes
