@@ -1,0 +1,113 @@
+// Audio-only, bounded legato trajectory. Engine fret requests retain their
+// existing q/v mapping, passive energy cap, preparation budget and bank fade.
+@init
+function mb_motion_ptr(index)
+global(MB_MOTION_WORDS, MB_MOTIONS)
+( MB_MOTIONS+index*MB_MOTION_WORDS; );
+
+function mb_motion_base(index)
+global(MB_MO_ACTIVE, MB_MO_CURRENT, MB_O_FRET_ANCHOR)
+(
+  mb_motion_ptr(index)[MB_MO_ACTIVE] ? mb_motion_ptr(index)[MB_MO_CURRENT] :
+    mb_owner_ptr(index)[MB_O_FRET_ANCHOR];
+);
+
+function mb_motion_fret_target(index)
+local(owner, total, target)
+global(MB_O_MIDI_SLIDE, MB_O_SLIDE_CLIPPED, fret_count_current)
+(
+  owner=mb_owner_ptr(index);
+  total=mb_motion_base(index)+owner[MB_O_MIDI_SLIDE];
+  target=mb_clamp(total, 0, fret_count_current);
+  owner[MB_O_SLIDE_CLIPPED]=abs(total-target)>0.000000001;
+  mb_engine_fret_position(mb_rack_string(index), target);
+);
+
+function mb_motion_begin(index, from_fret, to_fret, duration)
+local(m, slide)
+(
+  m=mb_motion_ptr(index);
+  memset(m, 0, MB_MOTION_WORDS);
+  m[MB_MO_START]=m[MB_MO_CURRENT]=from_fret;
+  m[MB_MO_TARGET]=to_fret;
+  m[MB_MO_TOTAL]=max(1, floor(duration));
+  m[MB_MO_ACTIVE]=abs(to_fret-from_fret)>0.000000001;
+  m[MB_MO_ACTIVE] ? MB_ARTICULATION[MB_A_RUNNING]=1;
+  slide=mb_owner_ptr(index)[MB_O_MIDI_SLIDE];
+  mb_friction_begin(index*MB_STRING_WORDS, from_fret+slide, to_fret+slide, duration, 1);
+  (index*MB_STRING_WORDS+MB_FRICTION)[MB_FR_CHANNEL]=mb_owner_ptr(index)[MB_O_SOURCE_CHANNEL];
+  (index*MB_STRING_WORDS+MB_FRICTION)[MB_FR_SLIDE_TOKEN]=mb_owner_ptr(index)[MB_O_SERIAL];
+);
+
+// Stop at the committed span. Discard queued travel; let an in-flight bank
+// fade finish normally, preserving its q/v, output continuity and release policy.
+function mb_motion_stop(index)
+local(st, m, owner, l, f, active)
+(
+  st=mb_rack_string(index); m=mb_motion_ptr(index); owner=mb_owner_ptr(index);
+  l=st+MB_LIVE; f=st+MB_FRICTION;
+  active=m[MB_MO_ACTIVE] || f[MB_FR_RUN] || (f[MB_FR_SLIDE_TOKEN]>0 &&
+    (l[MB_L_JOB] || abs(l[MB_L_FRET_TARGET]-l[MB_L_FRET])>0.000000001));
+  active ? (
+    m[MB_MO_ACTIVE]=0;
+    m[MB_MO_START]=m[MB_MO_CURRENT]=m[MB_MO_TARGET]=l[MB_L_FRET]-owner[MB_O_MIDI_SLIDE];
+    owner[MB_O_FRET_ANCHOR]=m[MB_MO_CURRENT];
+    l[MB_L_JOB]=l[MB_L_GESTURE_REQUEST]=0;
+    l[MB_L_FRET_TARGET]=l[MB_L_FRET];
+  );
+  mb_friction_stop(st);
+  active;
+);
+
+// Called only after FIFO/generation checks identify the released current owner.
+// Releasing the destination stops its hand group; releasing a peer stops that
+// string alone. Mapped-channel gestures have independent serials.
+function mb_motion_note_off(index, token)
+local(i, f, changed)
+global(MB_FRICTION, MB_FR_SLIDE_TOKEN, MB_MAX_STRINGS)
+(
+  f=mb_rack_string(index)+MB_FRICTION; changed=0;
+  f[MB_FR_SLIDE_TOKEN]==token && token>0 ? (
+    i=0; loop(MB_MAX_STRINGS,
+      (mb_rack_string(i)+MB_FRICTION)[MB_FR_SLIDE_TOKEN]==token ? changed=max(changed, mb_motion_stop(i));
+      i+=1;
+    );
+  ) : changed=mb_motion_stop(index);
+  changed ? mb_hand_follow(-1);
+);
+
+function mb_motion_tick()
+local(i, m, step, progress, target, changed, running, st)
+(
+  MB_ARTICULATION[MB_A_RUNNING] ? (
+    i=0;
+    changed=running=0;
+    step=max(MB_CONTROL_INTERVAL, ceil(MB_MOTION_INTERVAL_MS*0.001*srate));
+    loop(MB_MAX_STRINGS,
+      m=mb_motion_ptr(i);
+      m[MB_MO_ACTIVE] ? (
+        m[MB_MO_ELAPSED]+=1;
+        m[MB_MO_CLOCK]-=1;
+        m[MB_MO_CLOCK]<=0 || m[MB_MO_ELAPSED]>=m[MB_MO_TOTAL] ? (
+          // One segment of lookahead lets the 5-ms bank fade follow immediately.
+          // Slow preparation coalesces requests; it never restarts a matrix job.
+          progress=min(1, (m[MB_MO_ELAPSED]+step-1)/m[MB_MO_TOTAL]);
+          m[MB_MO_CURRENT]=m[MB_MO_START]+(m[MB_MO_TARGET]-m[MB_MO_START])*progress;
+          m[MB_MO_CLOCK]=step;
+          m[MB_MO_ELAPSED]>=m[MB_MO_TOTAL] ? m[MB_MO_ACTIVE]=0;
+          st=mb_rack_string(i);
+          target=mb_motion_fret_target(i);
+          abs(target-(st+MB_LIVE)[MB_L_FRET_TARGET])>0.000000001 ? (
+            mb_engine_fret_transition(st, target, step);
+            m[MB_MO_REQUESTS]+=1;
+            changed=1;
+          );
+        );
+        running=max(running, m[MB_MO_ACTIVE]);
+      );
+      i+=1;
+    );
+    MB_ARTICULATION[MB_A_RUNNING]=running;
+    changed ? mb_hand_follow(-1);
+  );
+);

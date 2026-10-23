@@ -1,0 +1,124 @@
+// Finite, compliant pick coupling. The renderer supplies current/free-next
+// contact displacement; a scalar discrete-gradient solve closes the feedback.
+@init
+function mb_pick_cancel(st)
+global(MB_PICK, MB_PK_LEFT, MB_PK_FORCE, MB_PK_STORED, MB_PK_LOSS)
+(
+  (st+MB_PICK)[MB_PK_LEFT]=0;
+  (st+MB_PICK)[MB_PK_LOSS]+=(st+MB_PICK)[MB_PK_STORED];
+  (st+MB_PICK)[MB_PK_FORCE]=(st+MB_PICK)[MB_PK_STORED]=0;
+);
+
+// Harmonic touch removes the same force components as the string projection.
+function mb_pick_project(st, partial)
+local(b, i, compliance)
+global(MB_PICK, MB_PK_LEFT, MB_PK_COUNT, MB_PK_PHI, MB_PK_Q, MB_PK_I, MB_PK_COMPLIANCE)
+(
+  b=st+MB_PICK;
+  b[MB_PK_LEFT]>0 ? (
+    compliance=i=0;
+    loop(b[MB_PK_COUNT],
+      (i+1)%partial ? b[MB_PK_PHI+i]=b[MB_PK_Q+i]=b[MB_PK_I+i]=0;
+      compliance+=b[MB_PK_PHI+i]*b[MB_PK_Q+i]; i+=1;
+    );
+    b[MB_PK_COMPLIANCE]=max(0,compliance);
+  );
+);
+
+// A coefficient/span edit discards the remaining pick spring, never the string.
+// Cached exact constant-force responses are valid only for the captured bank.
+// Post-onset Ghost/harmonic/bend preparation may finish before the first sample;
+// refresh that initial response without restarting an already moving actuator.
+function mb_pick_refresh(st)
+local(b, i, ptr, phi, alpha, omega, aq, av, compliance, last)
+(
+  b=st+MB_PICK; compliance=i=0;
+  loop(b[MB_PK_COUNT],
+    ptr=b[MB_PK_BANK]+i*MB_MODE_STRIDE;
+    phi=b[MB_PK_PHI+i]; alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
+    aq=phi*(1-ptr[MB_M_ROT_R]-alpha/omega*ptr[MB_M_ROT_I])/
+      (b[MB_PK_MASS]*(omega*omega+alpha*alpha));
+    av=phi*ptr[MB_M_ROT_I]/(b[MB_PK_MASS]*omega);
+    b[MB_PK_Q+i]=aq; b[MB_PK_I+i]=-(av+alpha*aq)/omega;
+    compliance+=phi*aq; i+=1;
+  );
+  b[MB_PK_COMPLIANCE]=max(0,compliance);
+  ptr=b[MB_PK_BANK]; last=ptr+max(0,b[MB_PK_COUNT]-1)*MB_MODE_STRIDE;
+  b[MB_PK_OMEGA]=ptr[MB_M_OMEGA]; b[MB_PK_ALPHA]=ptr[MB_M_ALPHA];
+  b[MB_PK_LAST_OMEGA]=last[MB_M_OMEGA]; b[MB_PK_LAST_ALPHA]=last[MB_M_ALPHA];
+);
+
+function mb_pick_active(st, base)
+local(b, last, owner)
+(
+  b=st+MB_PICK;
+  b[MB_PK_LEFT]>0 && base==st[MB_S_ACTIVE] ? (
+    last=base+(b[MB_PK_COUNT]-1)*MB_MODE_STRIDE;
+    owner=MB_OWNERS+floor(st/MB_STRING_WORDS)*MB_OWNER_WORDS;
+    base!=b[MB_PK_BANK] || st[MB_S_COUNT]!=b[MB_PK_COUNT] ||
+      (st[MB_S_MUTE]<1 && (st+MB_LIVE)[MB_L_GHOST_DAMP]<=0) ||
+      (owner[MB_O_SERIAL]>0 && !owner[MB_O_KEY_DOWN]) ||
+      (st+MB_GEOMETRY)[MB_G_LENGTH]!=b[MB_PK_LENGTH] ? mb_pick_cancel(st) : (
+      base[MB_M_OMEGA]!=b[MB_PK_OMEGA] || base[MB_M_ALPHA]!=b[MB_PK_ALPHA] ||
+        last[MB_M_OMEGA]!=b[MB_PK_LAST_OMEGA] || last[MB_M_ALPHA]!=b[MB_PK_LAST_ALPHA] ? (
+        b[MB_PK_STEPS]<=0 ? mb_pick_refresh(st) : mb_pick_cancel(st);
+      );
+    );
+    b[MB_PK_LEFT]>0;
+  ) : 0;
+);
+
+// Exact damped modal response to a constant force over one sample. For a
+// moving spring endpoint d and contact displacement y, use midpoint extension
+// and the work-conjugate secant velocity (y1-y0)/dt. The positive denominator
+// avoids explicit stiff-spring instability. Decreasing release gain removes
+// stored spring energy; it does not inject a separate release impulse.
+function mb_pick_step(st, y0, free_y1, contact)
+local(b, age, t, anchor, travel, gain, k, c, a, force, y1, relative,
+      old_energy, new_energy, work, i, ptr, dq, di, phi, cx, cv)
+(
+  (st+MB_PICK_FRICTION)[MB_PF_LEAD]>0 ? mb_pick_friction_touch(st) : (
+  b=st+MB_PICK; age=b[MB_PK_TOTAL]-b[MB_PK_LEFT];
+  !b[MB_PK_STEPS] ? b[MB_PK_ORIGIN]=b[MB_PK_ANCHOR]=y0;
+  t=min(1,(age+1)/b[MB_PK_PULL]);
+  anchor=b[MB_PK_ORIGIN]+b[MB_PK_DEPTH]*(t*t*(3-2*t));
+  travel=anchor-b[MB_PK_ANCHOR];
+  gain=age<b[MB_PK_ESCAPE_START] ? 1 :
+    0.5+0.5*cos($pi*min(1,(age-b[MB_PK_ESCAPE_START]+1)/b[MB_PK_RELEASE]));
+  k=b[MB_PK_K]*gain; c=b[MB_PK_C]*gain; a=b[MB_PK_COMPLIANCE];
+  force=(k*(0.5*(anchor+b[MB_PK_ANCHOR])-0.5*(y0+free_y1))+
+    c*srate*(travel-free_y1+y0))/(1+(0.5*k+c*srate)*a);
+  y1=free_y1+a*force; relative=travel-y1+y0;
+  old_energy=0.5*k*(b[MB_PK_ANCHOR]-y0)^2;
+  new_energy=0.5*k*(anchor-y1)^2;
+  work=force*travel;
+  b[MB_PK_WORK]+=work;
+  b[MB_PK_LOSS]+=max(0,b[MB_PK_STORED]-old_energy)+c*srate*relative*relative;
+  b[MB_PK_STORED]=new_energy;
+  b[MB_PK_ANCHOR]=anchor; b[MB_PK_FORCE]=force;
+  b[MB_PK_MAX_FORCE]=max(b[MB_PK_MAX_FORCE],abs(force));
+  cx=cv=i=0;
+  loop(b[MB_PK_COUNT],
+    ptr=b[MB_PK_BANK]+i*MB_MODE_STRIDE;
+    dq=force*b[MB_PK_Q+i]; di=force*b[MB_PK_I+i];
+    ptr[MB_M_R]+=dq; ptr[MB_M_I]+=di;
+    contact ? (
+      phi=(contact+MB_FP_PHI)[i]; cx+=phi*dq;
+      cv+=phi*(-ptr[MB_M_ALPHA]*dq-ptr[MB_M_OMEGA]*di);
+    );
+    i+=1;
+  );
+  contact ? (contact[MB_FP_Q]+=cx; contact[MB_FP_V]+=cv;) :
+    mb_contact_ptr(st,b[MB_PK_BANK])[MB_FP_READY]=0;
+  // A physical input can reopen contact and the stretch/vibrato envelope.
+  mb_contact_ptr(st,b[MB_PK_BANK])[MB_FP_SLEEP]=0;
+  work>0 ? (
+    mb_vibrato_work(st);
+    a=st+MB_TENSION+(b[MB_PK_BANK]!=st+MB_BANK_A)*MB_AT_WORDS;
+    a[MB_AT_AMOUNT]>0 ? a[MB_AT_WORK_PENDING]=1;
+  );
+  pick_drag_current>0 ? mb_pick_friction_contact(st,travel,force,gain);
+  b[MB_PK_STEPS]+=1; b[MB_PK_LEFT]-=1;
+  b[MB_PK_LEFT]<=0 ? (b[MB_PK_LOSS]+=b[MB_PK_STORED]; b[MB_PK_STORED]=b[MB_PK_FORCE]=0;);
+  );
+);

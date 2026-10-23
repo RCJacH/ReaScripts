@@ -1,0 +1,535 @@
+// Pickup-equivalent movement noise. No transverse-mode or fret-buzz writes.
+@init
+function mb_friction_request()
+(
+  friction_amount_request=mb_clamp(p_slide_noise_amount*0.01, 0, 1);
+  friction_texture_request=mb_clamp(p_slide_noise_texture*0.01, 0, 1);
+  friction_response_request=max(p_slide_noise_speed_response, 0.25);
+  friction_scale_request=mb_clamp(p_scale_length, 600, 1000)*0.001;
+  friction_rate_request=mb_clamp(p_slide_noise_reference_rate, 20, 6000)/250;
+  friction_track_request=mb_clamp(p_slide_noise_spectrum_tracking*0.01, 0, 2);
+  friction_fine_request=mb_clamp(p_slide_noise_fine_ratio, 1, 8);
+  friction_hp_request=1-exp(-2*$pi*mb_clamp(p_slide_noise_highpass, 20, 0.45*srate)/srate);
+  friction_lp_request=mb_clamp(p_slide_noise_lowpass, 100, 0.45*srate);
+);
+
+function mb_friction_apply(st)
+local(f, cfg, immediate, changed, i)
+(
+  f=st+MB_FRICTION; immediate=!f[MB_FR_RUN] && f[MB_FR_TAIL]<=0;
+  abs(f[MB_FR_AMOUNT_TARGET]-friction_amount_request)>0.000000000001 ? (
+    f[MB_FR_AMOUNT_LEFT]=max(1, ceil(0.005*srate));
+    f[MB_FR_AMOUNT_STEP]=(friction_amount_request-f[MB_FR_AMOUNT])/f[MB_FR_AMOUNT_LEFT];
+    f[MB_FR_CLOCK]=0;
+  );
+  changed=f[MB_FR_TEXTURE_TARGET]!=friction_texture_request || f[MB_FR_RESPONSE_TARGET]!=friction_response_request ||
+    f[MB_FR_GAIN1_TARGET]!=pickup_gain1_request || f[MB_FR_GAIN2_TARGET]!=pickup_gain2_request*pickup_polarity_request ||
+    f[MB_FR_ENABLE1_TARGET]!=circuit_en1_request || f[MB_FR_ENABLE2_TARGET]!=circuit_en2_request ||
+    f[MB_FR_MIX_TARGET]!=pickup_mix_request || f[MB_FR_SIMPLE_TARGET]!=(p_electronics_model==1) ||
+    f[MB_FR_RATE_TARGET]!=friction_rate_request || f[MB_FR_TRACK_TARGET]!=friction_track_request ||
+    f[MB_FR_FINE_TARGET]!=friction_fine_request || abs(f[MB_FR_HP_TARGET]-friction_hp_request)>0.000000000000001 ||
+    abs(f[MB_FR_LP_TARGET]-friction_lp_request)>0.000000000000001;
+  changed ? (f[MB_FR_CONTROL_LEFT]=max(1, ceil(0.005*srate)); f[MB_FR_CLOCK]=0;);
+  f[MB_FR_AMOUNT_TARGET]=friction_amount_request;
+  f[MB_FR_TEXTURE_TARGET]=friction_texture_request;
+  f[MB_FR_RESPONSE_TARGET]=friction_response_request;
+  f[MB_FR_GAIN1_TARGET]=pickup_gain1_request;
+  f[MB_FR_GAIN2_TARGET]=pickup_gain2_request*pickup_polarity_request;
+  f[MB_FR_ENABLE1_TARGET]=circuit_en1_request; f[MB_FR_ENABLE2_TARGET]=circuit_en2_request;
+  f[MB_FR_MIX_TARGET]=pickup_mix_request; f[MB_FR_SIMPLE_TARGET]=p_electronics_model==1;
+  f[MB_FR_RATE_TARGET]=friction_rate_request; f[MB_FR_TRACK_TARGET]=friction_track_request;
+  f[MB_FR_FINE_TARGET]=friction_fine_request;
+  f[MB_FR_HP_TARGET]=friction_hp_request; f[MB_FR_LP_TARGET]=friction_lp_request;
+  immediate ? (
+    f[MB_FR_AMOUNT]=f[MB_FR_AMOUNT_TARGET]; f[MB_FR_TEXTURE]=f[MB_FR_TEXTURE_TARGET];
+    f[MB_FR_AMOUNT_LEFT]=0;
+    f[MB_FR_RESPONSE]=f[MB_FR_RESPONSE_TARGET];
+    f[MB_FR_GAIN1]=f[MB_FR_GAIN1_TARGET]; f[MB_FR_GAIN2]=f[MB_FR_GAIN2_TARGET];
+    f[MB_FR_ENABLE1]=f[MB_FR_ENABLE1_TARGET]; f[MB_FR_ENABLE2]=f[MB_FR_ENABLE2_TARGET];
+    f[MB_FR_MIX]=f[MB_FR_MIX_TARGET]; f[MB_FR_SIMPLE]=f[MB_FR_SIMPLE_TARGET];
+    f[MB_FR_CONTROL_LEFT]=0;
+    i=MB_FR_RATE; loop(5, f[i]=f[i+1]; i+=2;);
+    f[MB_FR_MIX_GAIN]=(1-f[MB_FR_MIX])*f[MB_FR_GAIN1]+f[MB_FR_MIX]*f[MB_FR_GAIN2];
+  );
+  !f[MB_FR_INITIALIZED] || f[MB_FR_RESONANCE]!=p_resonance || f[MB_FR_Q]!=p_q ? (
+    cfg=f+MB_FR_CONFIG; memset(cfg, 0, MB_CONFIG_WORDS);
+    cfg[MB_C_ELECTRICAL]=1; cfg[MB_C_RESONANCE]=p_resonance; cfg[MB_C_Q]=p_q;
+    mb_electronics_configure(f+MB_FR_ELECTRONICS-MB_ELECTRONICS, cfg);
+    f[MB_FR_RESONANCE]=p_resonance; f[MB_FR_Q]=p_q;
+  );
+  f[MB_FR_INITIALIZED]=1;
+);
+
+// Park-Miller step with exact integer products below 2^53. Spatial stream;
+// never reset at ordinary notes/fret crossings.
+function mb_friction_random(f, offset)
+local(value)
+global()
+(
+  value=f[offset]*16807;
+  value-=floor(value/2147483647)*2147483647;
+  f[offset]=value;
+  value*(2/2147483647)-1;
+);
+
+function mb_friction_position(scale, fret)
+global(fret_count_current)
+( scale*(1-2^(-mb_clamp(fret, 0, fret_count_current)/12)); );
+
+// Reposition is silent: ordinary placement/HOPO/lift is not a sliding gesture.
+// Existing shaping states get only their short settling tail.
+function mb_friction_stop(st)
+local(f)
+global(MB_FRICTION, MB_FR_RUN, MB_FR_CURSOR, MB_FR_SEGMENT, MB_FR_DX, MB_FR_V,
+       MB_FR_LEVEL, MB_FR_SLIDE_TOKEN, MB_FR_RATE_LEFT, MB_FR_SPEED, MB_FR_CTRL_UNTIL, MB_FR_CTRL_READY,
+       MB_FR_SOURCE, MB_FR_TEXTURE_SPEED, MB_FR_LEGATO_BLEND)
+(
+  f=st+MB_FRICTION;
+  f[MB_FR_RUN]=f[MB_FR_CURSOR]=f[MB_FR_SEGMENT]=f[MB_FR_DX]=f[MB_FR_V]=f[MB_FR_LEVEL]=0;
+  f[MB_FR_SLIDE_TOKEN]=0;
+  f[MB_FR_RATE_LEFT]=0;
+  f[MB_FR_SPEED]=f[MB_FR_TEXTURE_SPEED]=f[MB_FR_CTRL_UNTIL]=0;
+  f[MB_FR_LEGATO_BLEND]=0;
+  // A stopped controller gesture needs a fresh baseline. In particular, a
+  // panic followed by wheel-center must not infer a new finger return slide.
+  f[MB_FR_CTRL_READY]=f[MB_FR_SOURCE]==2 ? -1 : 0;
+);
+
+function mb_friction_clear(st)
+local(f, rng, grain)
+global(MB_FRICTION, MB_FRICTION_WORDS, MB_FR_RNG, MB_FR_GRAIN_RNG)
+(
+  f=st+MB_FRICTION; rng=f[MB_FR_RNG]; grain=f[MB_FR_GRAIN_RNG];
+  memset(f, 0, MB_FRICTION_WORDS);
+  f[MB_FR_RNG]=rng; f[MB_FR_GRAIN_RNG]=grain;
+);
+
+// Rolling four-interval signed speed. Known trajectories supply their next
+// interval endpoint/time; MIDI packets supply their actual target/time.
+// Coalesce same-sample packets. The first isolated jump has no measured speed;
+// seed a conservative 20-ms interval, replaced as actual intervals fill the window.
+function mb_friction_measure_speed(f, start, target, known_samples)
+local(now, elapsed, travel, slot, measured, rejected)
+(
+  now=instrument_sample_clock+known_samples;
+  rejected=f[MB_FR_CTRL_READY]<0;
+  f[MB_FR_CTRL_READY]<=0 ? (
+    memset(f+MB_FR_CTRL_HISTORY, 0, 15);
+    travel=target-start;
+    elapsed=known_samples>0 ? known_samples : max(ceil(0.020*srate), f[MB_FR_TOTAL]);
+    f[MB_FR_CTRL_READY]=1;
+  ) : (
+    travel=target-f[MB_FR_CTRL_LAST_X]; elapsed=now-f[MB_FR_CTRL_LAST_TIME];
+    elapsed>0.080*srate ? (
+      memset(f+MB_FR_CTRL_HISTORY, 0, 12);
+    );
+  );
+  // A controller teleport is not measured hand motion. Discard only a large,
+  // implausibly fast jump relative to the preceding motion; retain its target
+  // as the next baseline. Pitch/fret routing is deliberately unaffected.
+  measured=abs(travel)*srate/max(1, elapsed);
+  rejected=rejected || (known_samples==0 && abs(travel)>0.04 &&
+    measured>max(6, 4*abs(f[MB_FR_CTRL_TARGET])));
+  rejected ? (
+    memset(f+MB_FR_CTRL_HISTORY, 0, 12);
+  ) : elapsed>0 ? (
+    slot=f+MB_FR_CTRL_HISTORY+2*f[MB_FR_CTRL_HEAD];
+    f[MB_FR_CTRL_SUM_X]+=travel-slot[0]; f[MB_FR_CTRL_SUM_T]+=elapsed-slot[1];
+    slot[0]=travel; slot[1]=elapsed;
+    f[MB_FR_CTRL_HEAD]=(f[MB_FR_CTRL_HEAD]+1)&3;
+    f[MB_FR_CTRL_COUNT]=min(4, f[MB_FR_CTRL_COUNT]+1);
+  ) : (
+    slot=f+MB_FR_CTRL_HISTORY+2*((f[MB_FR_CTRL_HEAD]+3)&3);
+    slot[0]+=travel; f[MB_FR_CTRL_SUM_X]+=travel;
+  );
+  f[MB_FR_CTRL_LAST_X]=target; f[MB_FR_CTRL_LAST_TIME]=now;
+  f[MB_FR_CTRL_TARGET]=f[MB_FR_CTRL_SUM_X]*srate/max(1, f[MB_FR_CTRL_SUM_T]);
+  // Bridge normal packet gaps briefly; stationary input always expires.
+  f[MB_FR_CTRL_UNTIL]=now+mb_clamp(1.5*f[MB_FR_CTRL_SUM_T]/max(1, f[MB_FR_CTRL_COUNT]),
+                                0.010*srate, 0.025*srate);
+  !rejected;
+);
+
+// Explicit slide only. Source: 1=legato trajectory, 2=Slide controller,
+// 3=direct audio-thread audition/API. No note owner or nonzero vibration needed.
+function mb_friction_begin(st, from_fret, to_fret, samples, source)
+local(f, cfg, index, kind, gauge, scale, continuing, target, accepted, moving)
+(
+  f=st+MB_FRICTION; index=floor(st/MB_STRING_WORDS);
+  index>=0 && index<MB_MAX_STRINGS && (MB_RACK_SLOTS+index*MB_RACK_SLOT_WORDS)[MB_RS_ENABLED] ? (
+    mb_performance_friction_normal(st);
+    !f[MB_FR_INITIALIZED] ? mb_friction_apply(st);
+    cfg=st+MB_CONFIG;
+    (st+MB_LIVE)[MB_L_HAS_CONFIG] ? (
+      scale=cfg[MB_C_SCALE]*0.001;
+      kind=cfg[MB_C_WINDING]+MB_WINDING_ROUND;
+      gauge=cfg[MB_C_GAUGE]>0 ? cfg[MB_C_GAUGE] : mb_ref_gauge(cfg[MB_C_REFERENCE]);
+    ) : (
+      scale=friction_scale_request; kind=mb_winding_current(index); gauge=mb_gauge_current(index);
+    );
+    continuing=f[MB_FR_CURSOR] && abs(scale-f[MB_FR_SCALE])<0.000000000001;
+    continuing ?
+      from_fret=-12*log(max(0.25, 1-f[MB_FR_X]/scale))/log(2);
+    moving=f[MB_FR_RUN] && f[MB_FR_SOURCE]==1;
+    source!=f[MB_FR_SOURCE] ? (
+      f[MB_FR_CTRL_READY]=0; f[MB_FR_TEXTURE_SPEED]=f[MB_FR_SPEED];
+      f[MB_FR_LEGATO_BLEND]=0;
+    );
+    f[MB_FR_SOURCE]=source;
+    f[MB_FR_SCALE]=scale; f[MB_FR_FROM]=mb_clamp(from_fret, 0, fret_count_current);
+    f[MB_FR_TO]=mb_clamp(to_fret, 0, fret_count_current); f[MB_FR_TOTAL]=max(1, ceil(samples));
+    f[MB_FR_AGE]=f[MB_FR_SEGMENT]=f[MB_FR_CLOCK]=0;
+    f[MB_FR_X]=mb_friction_position(scale, f[MB_FR_FROM]); f[MB_FR_CURSOR]=1;
+    target=mb_friction_position(scale, f[MB_FR_TO]);
+    f[MB_FR_START_X]=f[MB_FR_X]; f[MB_FR_END_X]=target;
+    accepted=1;
+    source==2 ? accepted=mb_friction_measure_speed(f, f[MB_FR_X], target, 0) : f[MB_FR_CTRL_READY]=0;
+    f[MB_FR_STARTUP_LEFT]=source==3 ? MB_FRICTION_INTERVAL : 0;
+    f[MB_FR_RATE_TIME]=instrument_sample_clock-MB_FRICTION_FAST_INTERVAL;
+    // Estimated wrap spacing, not a measurement of a manufacturer's string.
+    f[MB_FR_DENSITY]=1/mb_clamp(0.0004*sqrt(gauge/105), 0.00008, 0.0008);
+    f[MB_FR_KIND]=kind;
+    f[MB_FR_SURFACE]=kind==MB_WINDING_ROUND ? 1 : kind==MB_WINDING_FLAT ? 0.22 :
+      kind==MB_WINDING_TAPE ? 0.07 : 0;
+    f[MB_FR_RNG]<=0 ? (
+      f[MB_FR_RNG]=17111+104729*(index+1); f[MB_FR_GRAIN_RNG]=77237+130363*(index+1);
+    );
+    source==1 ? (
+      // Inferred hand movement: brief acceleration/deceleration and a small,
+      // nonperiodic variation over the gesture. No gaps or amplitude patches.
+      f[MB_FR_CURVE1]=MB_FRICTION_LEGATO_VARIATION*mb_friction_random(f, MB_FR_RNG);
+      f[MB_FR_CURVE2]=MB_FRICTION_LEGATO_VARIATION*mb_friction_random(f, MB_FR_RNG);
+      f[MB_FR_ACCEL]=moving && (target-f[MB_FR_X])*f[MB_FR_SPEED]>0 ? 0 :
+        min(MB_FRICTION_LEGATO_RAMP, f[MB_FR_TOTAL]*0.25);
+      f[MB_FR_DECEL]=min(MB_FRICTION_LEGATO_RAMP, f[MB_FR_TOTAL]*0.25);
+    );
+    !accepted ? (
+      // Silent reposition, with the existing filter/speed tail fading out.
+      f[MB_FR_X]=f[MB_FR_START_X]=target;
+      f[MB_FR_TAIL]=MB_FRICTION_SETTLE;
+    );
+    f[MB_FR_PHASE]=f[MB_FR_X]*f[MB_FR_DENSITY];
+    !continuing ? (f[MB_FR_READ1]=f[MB_FR_PHASE]; f[MB_FR_READ2]=f[MB_FR_PHASE]*f[MB_FR_FINE];);
+    f[MB_FR_RUN]=accepted && abs(f[MB_FR_TO]-f[MB_FR_FROM])>0.000000001;
+    source==3 ? (f[MB_FR_CHANNEL]=-1; f[MB_FR_SLIDE_TOKEN]=0;);
+    f[MB_FR_RUN] ? (MB_RACK_SLOTS+index*MB_RACK_SLOT_WORDS)[MB_RS_BUSY]=1;
+    f[MB_FR_RUN];
+  ) : 0;
+);
+
+// Integral of a smoothstep velocity ramp, normalized to preserve both physical
+// endpoints and duration. The polynomial warp has positive derivative throughout.
+function mb_friction_legato_position(f, elapsed)
+local(rise, fall, area, progress, u)
+global(MB_FR_ACCEL, MB_FR_DECEL, MB_FR_TOTAL, MB_FR_CURVE1, MB_FR_CURVE2, MB_FR_START_X, MB_FR_END_X)
+(
+  rise=f[MB_FR_ACCEL]; fall=f[MB_FR_DECEL];
+  area=f[MB_FR_TOTAL]-0.5*(rise+fall);
+  elapsed<rise ? (
+    u=elapsed/rise; progress=rise*u*u*u*(1-0.5*u);
+  ) : elapsed>f[MB_FR_TOTAL]-fall ? (
+    u=(f[MB_FR_TOTAL]-elapsed)/fall;
+    progress=area-fall*u*u*u*(1-0.5*u);
+  ) : progress=elapsed-0.5*rise;
+  progress=mb_clamp(progress/area, 0, 1);
+  progress+=progress*(1-progress)*(f[MB_FR_CURVE1]+f[MB_FR_CURVE2]*(2*progress-1));
+  f[MB_FR_START_X]+(f[MB_FR_END_X]-f[MB_FR_START_X])*progress;
+);
+
+// Geometry updates every 5 ms, or 1 ms during the short Legato end ramps.
+function mb_friction_motion(f)
+local(step, progress, target, raw)
+(
+  raw=0;
+  f[MB_FR_RUN] ? (
+    f[MB_FR_SEGMENT]<=0 ? (
+      step=min(MB_FRICTION_INTERVAL, f[MB_FR_TOTAL]-f[MB_FR_AGE]);
+      f[MB_FR_SOURCE]==1 && (f[MB_FR_AGE]<f[MB_FR_ACCEL] ||
+        f[MB_FR_AGE]+step>f[MB_FR_TOTAL]-f[MB_FR_DECEL]) ?
+          step=min(step, MB_FRICTION_FAST_INTERVAL);
+      progress=(f[MB_FR_AGE]+step)/f[MB_FR_TOTAL];
+      target=f[MB_FR_SOURCE]==1 ?
+        mb_friction_legato_position(f, f[MB_FR_AGE]+step) :
+        mb_friction_position(f[MB_FR_SCALE], f[MB_FR_FROM]+(f[MB_FR_TO]-f[MB_FR_FROM])*progress);
+      f[MB_FR_DX]=(target-f[MB_FR_X])/step; f[MB_FR_SEGMENT]=step;
+      f[MB_FR_SOURCE]==1 ? (
+        // The trajectory is known: use local travel directly, without adding
+        // a four-packet measurement delay to its short physical acceleration.
+        f[MB_FR_CTRL_TARGET]=f[MB_FR_DX]*srate; f[MB_FR_CLOCK]=0;
+      ) : f[MB_FR_SOURCE]!=2 ? (
+        mb_friction_measure_speed(f, f[MB_FR_X], target, step);
+        f[MB_FR_CLOCK]=0;
+      );
+    );
+    f[MB_FR_X]+=f[MB_FR_DX]; raw=f[MB_FR_DX]*srate;
+    f[MB_FR_TRAVEL]+=abs(f[MB_FR_DX]);
+    f[MB_FR_SEGMENT]-=1; f[MB_FR_AGE]+=1;
+    f[MB_FR_TAIL]=MB_FRICTION_SETTLE;
+    f[MB_FR_AGE]>=f[MB_FR_TOTAL] ? f[MB_FR_RUN]=0;
+  );
+  f[MB_FR_V]+=(raw-f[MB_FR_V])*MB_FRICTION_V_SMOOTH;
+  f[MB_FR_PHASE]=f[MB_FR_X]*f[MB_FR_DENSITY];
+  raw;
+);
+
+// Both sources use recent local physical travel; no whole-slide speed hold.
+// The short slew supplies startup acceleration and continuous reversals.
+function mb_friction_speed(f)
+local(target)
+(
+  target=f[MB_FR_SOURCE]==2 ?
+    (instrument_sample_clock<f[MB_FR_CTRL_UNTIL] ? f[MB_FR_CTRL_TARGET] : 0) :
+    (f[MB_FR_RUN] ? f[MB_FR_CTRL_TARGET] : 0);
+  f[MB_FR_SPEED]+=(target-f[MB_FR_SPEED])*MB_FRICTION_SPEED_SMOOTH;
+  // Both texture clocks follow the same local movement estimate. A short
+  // response exposes their low-to-high rise after the squeak threshold opens.
+  // Preserve this follower across retargets; no note-keyed pitch envelope.
+  f[MB_FR_SOURCE]==1 ? f[MB_FR_TEXTURE_SPEED]+=
+    (f[MB_FR_SPEED]-f[MB_FR_TEXTURE_SPEED])*MB_FRICTION_LEGATO_TEXTURE_SMOOTH;
+  abs(target-f[MB_FR_SPEED])<0.000000001 ? f[MB_FR_SPEED]=target;
+  f[MB_FR_STARTUP_LEFT]>0 ? (
+    f[MB_FR_STARTUP_LEFT]-=1;
+    f[MB_FR_STARTUP_LEFT]<=0 && f[MB_FR_SOURCE]!=2 ? (
+      f[MB_FR_SPEED]=target; f[MB_FR_CLOCK]=0;
+    );
+  );
+);
+
+function mb_friction_rates(f)
+local(velocity, increment, factor, rate, coarse, fine, limit, elapsed, allowance, width, difference)
+(
+  velocity=f[MB_FR_SOURCE]==1 ? f[MB_FR_TEXTURE_SPEED] : f[MB_FR_SPEED];
+  increment=velocity/srate; factor=f[MB_FR_RATE];
+  f[MB_FR_SOURCE]==1 ? factor*=MB_FRICTION_LEGATO_TEXTURE_RATE;
+  abs(increment)>0.000000000000001 && f[MB_FR_TRACK]!=1 ?
+    factor*=max(0.000000001, abs(velocity)/0.1)^(f[MB_FR_TRACK]-1);
+  rate=abs(increment)*f[MB_FR_DENSITY]*factor;
+  // Smoothly coarse-grain unresolved ridges; no event loop or aliasing freely.
+  coarse=increment*f[MB_FR_DENSITY]*factor/(1+rate/0.16);
+  fine=increment*f[MB_FR_DENSITY]*factor*f[MB_FR_FINE]/(1+rate*f[MB_FR_FINE]/0.16);
+  f[MB_FR_RATE_RAW]=fine;
+  f[MB_FR_SOURCE]==1 ? (
+    // Bound frequency slew in Hz/second, after the nonlinear bandwidth map.
+    // This keeps the audible rise even instead of rushing then flattening.
+    elapsed=max(1, instrument_sample_clock-f[MB_FR_RATE_TIME]);
+    limit=MB_FRICTION_LEGATO_RATE_SLEW*elapsed/(srate*srate);
+    // A differentiable handoff avoids two audible rise sections at the band
+    // boundary. Soft saturation also removes the hard ramp/catch-up corner.
+    width=0.1*MB_FRICTION_LEGATO_SLEW_START/srate;
+    allowance=MB_FRICTION_LEGATO_SLEW_START/srate-abs(f[MB_FR_STEP2_TARGET]);
+    allowance=allowance<=-width ? 0 : allowance>=width ? allowance :
+      (allowance+width)*(allowance+width)/(4*width);
+    limit+=allowance;
+    difference=fine-f[MB_FR_STEP2_TARGET];
+    fine=f[MB_FR_STEP2_TARGET]+difference*limit/max(0.000000000000000001,
+      sqrt(limit*limit+difference*difference));
+    // Recover the common winding drive: the scrape must follow the same ramp.
+    rate=fine/(f[MB_FR_FINE]*max(0.000000001, 1-abs(fine)/0.16));
+    coarse=rate/(1+abs(rate)/0.16);
+  );
+  f[MB_FR_RATE_TIME]=instrument_sample_clock;
+  abs(coarse-f[MB_FR_STEP1_TARGET])>0.000000000000001 ||
+  abs(fine-f[MB_FR_STEP2_TARGET])>0.000000000000001 ? (
+    f[MB_FR_STEP1_TARGET]=coarse; f[MB_FR_STEP2_TARGET]=fine;
+    f[MB_FR_RATE_LEFT]=MB_FRICTION_FAST_INTERVAL;
+    f[MB_FR_STEP1_DELTA]=(coarse-f[MB_FR_STEP1])/MB_FRICTION_FAST_INTERVAL;
+    f[MB_FR_STEP2_DELTA]=(fine-f[MB_FR_STEP2])/MB_FRICTION_FAST_INTERVAL;
+  );
+);
+
+function mb_friction_clock(f)
+global(MB_FR_RATE_LEFT, MB_FR_STEP1, MB_FR_STEP2, MB_FR_STEP1_DELTA, MB_FR_STEP2_DELTA,
+       MB_FR_STEP1_TARGET, MB_FR_STEP2_TARGET, MB_FR_READ1, MB_FR_READ2)
+(
+  f[MB_FR_RATE_LEFT]>0 ? (
+    f[MB_FR_STEP1]+=f[MB_FR_STEP1_DELTA]; f[MB_FR_STEP2]+=f[MB_FR_STEP2_DELTA];
+    f[MB_FR_RATE_LEFT]-=1;
+    f[MB_FR_RATE_LEFT]<=0 ? (
+      f[MB_FR_STEP1]=f[MB_FR_STEP1_TARGET]; f[MB_FR_STEP2]=f[MB_FR_STEP2_TARGET];
+    );
+  );
+  f[MB_FR_READ1]+=f[MB_FR_STEP1]; f[MB_FR_READ2]+=f[MB_FR_STEP2];
+);
+
+// Catmull-Rom random surface. Its continuous spatial derivative supplies motion,
+// rather than modulating a white-noise carrier. Coefficients change only at cells;
+// a skipped interval costs four PRNG steps at most, never a winding-event loop.
+function mb_friction_surface_prepare(f, s, cell, rng)
+local(ym, y0, y1, yp)
+(
+  s[MB_FS_READY] && cell==s[MB_FS_CELL]+1 ? (
+    s[MB_FS_YM]=s[MB_FS_Y0]; s[MB_FS_Y0]=s[MB_FS_Y1];
+    s[MB_FS_Y1]=s[MB_FS_YP]; s[MB_FS_YP]=mb_friction_random(f, rng);
+  ) : s[MB_FS_READY] && cell==s[MB_FS_CELL]-1 ? (
+    s[MB_FS_YP]=s[MB_FS_Y1]; s[MB_FS_Y1]=s[MB_FS_Y0];
+    s[MB_FS_Y0]=s[MB_FS_YM]; s[MB_FS_YM]=mb_friction_random(f, rng);
+  ) : (
+    s[MB_FS_YM]=mb_friction_random(f, rng); s[MB_FS_Y0]=mb_friction_random(f, rng);
+    s[MB_FS_Y1]=mb_friction_random(f, rng); s[MB_FS_YP]=mb_friction_random(f, rng);
+  );
+  s[MB_FS_CELL]=cell; s[MB_FS_READY]=1;
+  ym=s[MB_FS_YM]; y0=s[MB_FS_Y0]; y1=s[MB_FS_Y1]; yp=s[MB_FS_YP];
+  s[MB_FS_A]=1.5*(-ym+3*y0-3*y1+yp);
+  s[MB_FS_B]=2*ym-5*y0+4*y1-yp;
+  s[MB_FS_C]=0.5*(y1-ym);
+);
+
+function mb_friction_excitation(f)
+local(coarse, ridge, velocity, s, phase, cell, t)
+(
+  s=f+MB_FR_SURFACE1; phase=f[MB_FR_READ1]; cell=floor(phase);
+  !s[MB_FS_READY] || cell!=s[MB_FS_CELL] ? mb_friction_surface_prepare(f, s, cell, MB_FR_GRAIN_RNG);
+  t=phase-cell; coarse=(s[MB_FS_A]*t+s[MB_FS_B])*t+s[MB_FS_C];
+  ridge=0;
+  f[MB_FR_SQUEAK]>0.000001 ? (
+    // Smooth, slightly uneven winding ridges share the movement clock. The
+    // random gradient warps phase/amplitude continuously, not with impulses.
+    phase=f[MB_FR_READ2]+0.08*coarse;
+    t=2*(phase-floor(phase))-1;
+    ridge=4*t*(1-abs(t));
+    ridge+=0.225*(ridge*abs(ridge)-ridge);
+    ridge*=2.5*(1+0.1*coarse);
+  );
+  velocity=f[MB_FR_SPEED]/(0.35+abs(f[MB_FR_SPEED]));
+  velocity*(coarse+(ridge-coarse)*f[MB_FR_SQUEAK]);
+);
+
+// Control-rate preparation, every 1 ms while moving/settling or after an edit.
+// Slow motion retains a broad low-pass; fast motion favors a normalized band
+// around the winding clock. Q stays modest; no note-frequency input.
+function mb_friction_color(f, speed, elapsed)
+local(blend, center, response)
+(
+  // Legato threshold tuning affects only the mix/color knee, retaining actual
+  // speed for frequency and level. See doc/FRICTION_CURVES.md.
+  f[MB_FR_SOURCE]==1 ? speed/=MB_FRICTION_LEGATO_THRESHOLD;
+  blend=mb_clamp((speed-0.65)/0.40, 0, 1);
+  blend=blend*blend*(3-2*blend);
+  blend*=blend;
+  f[MB_FR_SOURCE]==1 ? (
+    // Fade the ridge mix and filter emphasis together, without moving the
+    // speed threshold or altering the texture clocks. Retargets keep this state.
+    response=blend>f[MB_FR_LEGATO_BLEND] ? MB_FRICTION_LEGATO_SQUEAK_FADE : MB_FRICTION_FAST_INTERVAL;
+    f[MB_FR_LEGATO_BLEND]+=(blend-f[MB_FR_LEGATO_BLEND])*elapsed/(response+elapsed);
+    blend=f[MB_FR_LEGATO_BLEND];
+  );
+  f[MB_FR_SQUEAK_TARGET]=0.9*sqrt(f[MB_FR_TEXTURE])*blend;
+  f[MB_FR_SOURCE]==1 ? f[MB_FR_SQUEAK_TARGET]*=MB_FRICTION_LEGATO_SQUEAK_MIX;
+  center=min(f[MB_FR_LP_HZ], max(80, abs(f[MB_FR_STEP2_TARGET])*srate));
+  center=f[MB_FR_LP_HZ]+(center-f[MB_FR_LP_HZ])*blend;
+  f[MB_FR_BP_G_TARGET]=tan($pi*center/srate);
+  f[MB_FR_BP_K_TARGET]=1/(0.707106781186548+0.8*f[MB_FR_SQUEAK_TARGET]);
+  !f[MB_FR_AUDIO_ACTIVE] ? (
+    f[MB_FR_BP_G]=f[MB_FR_BP_G_TARGET]; f[MB_FR_BP_K]=f[MB_FR_BP_K_TARGET];
+  );
+);
+
+// One high-pass plus one TPT state-variable filter (two integrators). Blend
+// low-pass scrape / unity-peak band-pass squeak; no additive resonator gain.
+function mb_friction_shape(f, input)
+local(high, g, k, band, low)
+(
+  f[MB_FR_BP_G]+=(f[MB_FR_BP_G_TARGET]-f[MB_FR_BP_G])*MB_FRICTION_AMP_SMOOTH;
+  f[MB_FR_BP_K]+=(f[MB_FR_BP_K_TARGET]-f[MB_FR_BP_K])*MB_FRICTION_AMP_SMOOTH;
+  f[MB_FR_HP_X]+=f[MB_FR_HP_A]*(input-f[MB_FR_HP_X]);
+  high=input-f[MB_FR_HP_X];
+  g=f[MB_FR_BP_G]; k=f[MB_FR_BP_K];
+  band=(f[MB_FR_BP1]+g*(high-f[MB_FR_BP2]))/(1+g*(g+k));
+  low=f[MB_FR_BP2]+g*band;
+  f[MB_FR_BP1]=2*band-f[MB_FR_BP1]; f[MB_FR_BP2]=2*low-f[MB_FR_BP2];
+  low+(k*band-low)*f[MB_FR_SQUEAK];
+);
+
+function mb_friction_render(st)
+local(f, speed, noise, simple, i, ramp, elapsed, performance_gain)
+(
+  f=st+MB_FRICTION; noise=0;
+  f[MB_FR_RUN] || f[MB_FR_TAIL]>0 ? (
+    performance_gain=mb_performance_friction_gain(st);
+    mb_friction_motion(f);
+    mb_friction_speed(f);
+    // Control ramps run only during an edit, not throughout every slide.
+    f[MB_FR_AMOUNT_LEFT]>0 ? (
+      f[MB_FR_AMOUNT]+=f[MB_FR_AMOUNT_STEP]; f[MB_FR_AMOUNT_LEFT]-=1;
+      f[MB_FR_AMOUNT_LEFT]<=0 ? f[MB_FR_AMOUNT]=f[MB_FR_AMOUNT_TARGET];
+    );
+    f[MB_FR_CONTROL_LEFT]>0 ? (
+      ramp=1/f[MB_FR_CONTROL_LEFT];
+      f[MB_FR_TEXTURE]+=(f[MB_FR_TEXTURE_TARGET]-f[MB_FR_TEXTURE])*ramp;
+      f[MB_FR_RESPONSE]+=(f[MB_FR_RESPONSE_TARGET]-f[MB_FR_RESPONSE])*ramp;
+      i=MB_FR_GAIN1; loop(6, f[i]+=(f[i+1]-f[i])*ramp; i+=2;);
+      i=MB_FR_RATE; loop(5, f[i]+=(f[i+1]-f[i])*ramp; i+=2;);
+      f[MB_FR_MIX_GAIN]=(1-f[MB_FR_MIX])*f[MB_FR_GAIN1]+f[MB_FR_MIX]*f[MB_FR_GAIN2];
+      f[MB_FR_CONTROL_LEFT]-=1;
+      f[MB_FR_CONTROL_LEFT]<=0 ? f[MB_FR_CLOCK]=0;
+    );
+    f[MB_FR_CLOCK]-=1;
+    f[MB_FR_CLOCK]<=0 ? (
+      f[MB_FR_CLOCK]=MB_FRICTION_FAST_INTERVAL;
+      elapsed=max(1, instrument_sample_clock-f[MB_FR_RATE_TIME]);
+      mb_friction_rates(f);
+      f[MB_FR_AMOUNT]>0 && f[MB_FR_SURFACE]>0 ? (
+        speed=min(3, abs(f[MB_FR_SPEED]));
+        f[MB_FR_FACTOR]=0.12*f[MB_FR_SURFACE]*(speed/(speed+0.15))^f[MB_FR_RESPONSE];
+        f[MB_FR_SOURCE]==1 ? (
+          // Suppress the low-speed drone; full base level by 0.9 m/s.
+          ramp=min(1, speed/0.9);
+          f[MB_FR_FACTOR]*=ramp*ramp*(3-2*ramp);
+        );
+        mb_friction_color(f, speed, elapsed);
+      );
+    );
+    mb_friction_clock(f);
+    f[MB_FR_AMOUNT]>0 && f[MB_FR_SURFACE]>0 && performance_gain>0 ? (
+      f[MB_FR_LEVEL]+=(f[MB_FR_FACTOR]-f[MB_FR_LEVEL])*MB_FRICTION_AMP_SMOOTH;
+      f[MB_FR_SQUEAK]+=(f[MB_FR_SQUEAK_TARGET]-f[MB_FR_SQUEAK])*MB_FRICTION_AMP_SMOOTH;
+      noise=mb_friction_excitation(f)*f[MB_FR_LEVEL];
+      f[MB_FR_RAW]=noise*f[MB_FR_AMOUNT];
+      noise=mb_friction_shape(f, noise);
+      f[MB_FR_SIMPLE]>0 ? (
+        simple=mb_electronics_render(f+MB_FR_ELECTRONICS-MB_ELECTRONICS, noise);
+        noise+=(simple-noise)*f[MB_FR_SIMPLE];
+      );
+      noise*=f[MB_FR_AMOUNT]; f[MB_FR_AUDIO_ACTIVE]=1;
+    ) : (
+      // Keep the silent physical cursor for hot enable; skip excitation/filtering.
+      f[MB_FR_RAW]=f[MB_FR_LEVEL]=0;
+      f[MB_FR_AUDIO_ACTIVE] ? (
+        memset(f+MB_FR_HP_X, 0, 4);
+        memset(f+MB_FR_ELECTRONICS+MB_E_X1, 0, 4);
+        f[MB_FR_AUDIO_ACTIVE]=0;
+      );
+    );
+    !f[MB_FR_RUN] ? f[MB_FR_TAIL]-=1;
+    f[MB_FR_TAIL]<=0 && !f[MB_FR_RUN] ? (
+      f[MB_FR_V]=f[MB_FR_LEVEL]=f[MB_FR_SPEED]=f[MB_FR_TEXTURE_SPEED]=f[MB_FR_SQUEAK]=0;
+      memset(f+MB_FR_HP_X, 0, 4);
+      memset(f+MB_FR_ELECTRONICS+MB_E_X1, 0, 4);
+      noise=0;
+    );
+  );
+  mb_performance_string(st)[MB_PS_LH] ? (noise*=performance_gain; f[MB_FR_RAW]*=performance_gain;);
+  f[MB_FR_OUTPUT]=noise;
+  noise;
+);
+
+// Simple uses a parallel copy of the existing linear electronics, allowing
+// muted movement before the first pluck without configuring the modal string.
+// Circuit receives unmixed pickup-equivalent buses before its shared network.
+function mb_friction_mix(st, signal)
+local(f, noise, h)
+(
+  f=st+MB_FRICTION;
+  f[MB_FR_RUN] || f[MB_FR_TAIL]>0 ? (
+    noise=mb_friction_render(st);
+    abs(noise)>0 ? (
+      signal+=noise*f[MB_FR_MIX_GAIN];
+      circuit_observe_current ? (
+        h=st+MB_CIR_PICKUP;
+        // Circuit owns sensitivity, polarity and blend; only enables here.
+        h[MB_CP_OUTPUT1]+=noise*f[MB_FR_ENABLE1]; h[MB_CP_OUTPUT2]+=noise*f[MB_FR_ENABLE2];
+      );
+    );
+  );
+  signal;
+);

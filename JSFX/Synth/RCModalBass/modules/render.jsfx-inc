@@ -1,0 +1,130 @@
+// Nonlinear fast path: observe the string and both circuit sources while
+// advancing each mode once. Physical arithmetic matches modal/live rendering;
+// pickup state and synthesis state remain in separate memory regions.
+@init
+function mb_render_nonlinear(st, base, weights, count)
+local(b, l, flag, masks, targets, damping, damper, mode_damper, coil, simple,
+      a, c, d, e, i, ptr, q, im, v, mask, frequency, band, nq, nv, nr, ni,
+      rot_r, rot_i, sum, sum1, sum2, circuit1, circuit2, h,
+      q1, q2, q3, q4, v1, v2, v3, v4, cp, kick, cx, cv, phi, nonlinear,
+      response_bank, response, level, cq, ci, oq, ov, rq, rv, impulse, next, pop,
+      contact_count, coupled, contact_mode, response_mode, pick, pick_y0, pick_y1, pick_phi)
+(
+  pick=base==st[MB_S_ACTIVE] && (st+MB_PICK)[MB_PK_LEFT]>0;
+  pick_y0=pick_y1=0;
+  cp=0; kick=cx=cv=0; pop=(st+MB_POP)[MB_POP_STYLE];
+  response_bank=mb_contact_ptr(st,base);
+  mb_contact_enabled(st, base, count) &&
+    !(response_bank[MB_FP_READY] && response_bank[MB_FP_SLEEP]) ? (
+    cp=pop ? mb_pop_contact_prepare(st,base,count) : mb_contact_prepare(st,base,count);
+    kick=pop ? mb_pop_contact_kick(st,cp) : mb_contact_kick(st,cp);
+  );
+  next=cp && pop ? (st+MB_POP_CONTACT)[MB_PCC_NEXT] : cp;
+  response_bank=mb_contact_ptr(st, base);
+  response=(response_bank[MB_FP_RESPONSE_ACTIVE] || kick>0) &&
+    !mb_contact_lazy_ptr(st,base)[MB_CL_ACTIVE];
+  response ? (
+    response_bank[MB_FP_RESPONSE_ACTIVE]=1; mb_contact_response_prepare(st, base, count);
+    rq=response_bank+MB_FP_RESPONSE_Q; rv=response_bank+MB_FP_RESPONSE_I;
+  );
+  level=(st+MB_CONTACT)[MB_K_LEVEL];
+  contact_count=cp && pop ? response_bank[MB_FP_RENDER_COUNT] : count;
+  nonlinear=(st+MB_PICKUP_NL)[MB_NL_ON];
+  b=mb_nonlinear_ptr(st, weights); l=st+MB_LIVE;
+  base==st+MB_BANK_A ? (
+    flag=l[MB_L_FLAG_A]; masks=st+MB_MASK_A; targets=st+MB_MASK_TARGET_A; damping=st+MB_BEND_DAMP_A;
+  ) : (
+    flag=l[MB_L_FLAG_B]; masks=st+MB_MASK_B; targets=st+MB_MASK_TARGET_B; damping=st+MB_BEND_DAMP_B;
+  );
+  a=b+MB_NLB_WEIGHTS; d=a+MB_MAX_MODES; c=d+MB_MAX_MODES; e=c+MB_MAX_MODES;
+  coil=b+MB_NLB_COILS;
+  simple=(coil+MB_NLC_WORDS)[MB_NLC_GAIN]<=0 && (coil+3*MB_NLC_WORDS)[MB_NLC_GAIN]<=0;
+  circuit_observe_current ? (
+    circuit1=mb_circuit_pickup_ptr(st, weights, 0);
+    circuit2=mb_circuit_pickup_ptr(st, weights, 1);
+  );
+  sum=sum1=sum2=q1=q2=q3=q4=v1=v2=v3=v4=i=0;
+  damper=st[MB_S_MUTE]; ptr=base;
+  loop(count,
+    coupled=i<contact_count;
+    contact_mode=cp && coupled; response_mode=response && coupled;
+    q=ptr[MB_M_R]; im=ptr[MB_M_I];
+    impulse=contact_mode ? kick*(cp+MB_FP_VELOCITY_WEIGHT)[i] : 0;
+    contact_mode ? im-=impulse;
+    v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;
+    oq=q; ov=v;
+    response_mode ? (
+      cq=rq[i]; ci=rv[i]-impulse;
+      abs(level)>0 ? (oq+=level*cq; ov+=level*(-ptr[MB_M_ALPHA]*cq-ptr[MB_M_OMEGA]*ci););
+    );
+    flag ? (
+      masks[i]+=(targets[i]-masks[i])*l[MB_L_MASK_SMOOTH]; mask=masks[i];
+      sum+=ov*weights[i]*mask;
+    ) : (mask=1; sum+=ov*weights[i];);
+    circuit_observe_current ? (
+      sum1+=ov*circuit1[i]*mask; sum2+=ov*circuit2[i]*mask;
+    );
+    frequency=ptr[MB_M_FREQ];
+    nonlinear && i<b[MB_NLB_COUNT] && frequency<MB_NL_FREQ_STOP ? (
+      band=frequency<=MB_NL_FREQ_FULL ? 1 : (MB_NL_FREQ_STOP-frequency)*MB_NL_FREQ_SCALE;
+      band=band*band*(3-2*band);
+      nq=oq*mask*band; nv=ov*mask*band;
+      q1+=nq*a[i]; v1+=nv*a[i]; q3+=nq*c[i]; v3+=nv*c[i];
+      !simple ? (q2+=nq*d[i]; v2+=nv*d[i]; q4+=nq*e[i]; v4+=nv*e[i];);
+    );
+    mode_damper=flag && l[MB_L_DAMP_LEFT]>0 ? damper*damping[i] : damper;
+    rot_r=ptr[MB_M_ROT_R]; rot_i=ptr[MB_M_ROT_I];
+    nr=(q*rot_r-im*rot_i)*mode_damper;
+    ni=(q*rot_i+im*rot_r)*mode_damper;
+    ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
+    pick ? (
+      pick_phi=(st+MB_PICK+MB_PK_PHI)[i];
+      pick_y0+=pick_phi*q; pick_y1+=pick_phi*nr;
+    );
+    response_mode ? (
+      rq[i]=(cq*rot_r-ci*rot_i)*mode_damper;
+      rv[i]=(cq*rot_i+ci*rot_r)*mode_damper;
+    );
+    flag && frequency>=0.48*srate && mask<0.000000001 ? (ptr[MB_M_R]=ptr[MB_M_I]=0;);
+    response_mode && flag && frequency>=0.48*srate && mask<0.000000001 ? (rq[i]=rv[i]=0;);
+    contact_mode ? (
+      phi=(next+MB_FP_PHI)[i];
+      cx+=phi*ptr[MB_M_R];
+      cv+=phi*(-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I]);
+    );
+    ptr+=MB_MODE_STRIDE; i+=1;
+  );
+  circuit_observe_current ? (
+    h=st+MB_CIR_PICKUP;
+    h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT1 : MB_CP_B_OUTPUT1]=sum1;
+    h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT2 : MB_CP_B_OUTPUT2]=sum2;
+  );
+  nonlinear ? mb_nonlinear_finish(st, weights, q1, v1, q2, v2, q3, v3, q4, v4);
+  cp ? (next[MB_FP_Q]=cx; next[MB_FP_V]=cv;);
+  pick ? mb_pick_step(st, pick_y0, pick_y1, next);
+  sum;
+);
+
+function mb_render_bank(st, base, weights, count)
+local(contact, flag, response, asleep, b, pick)
+(
+  pick=(st+MB_PICK)[MB_PK_LEFT]>0 ? mb_pick_active(st,base) : 0;
+  b=mb_contact_ptr(st,base);
+  count<=0 && mb_contact_ptr(st, base)[MB_FP_RESPONSE_ACTIVE] ? mb_contact_response_clear(st, base);
+  contact=mb_contact_enabled(st, base, count);
+  response=mb_contact_ptr(st, base)[MB_FP_RESPONSE_ACTIVE];
+  flag=base==st+MB_BANK_A ? (st+MB_LIVE)[MB_L_FLAG_A] : (st+MB_LIVE)[MB_L_FLAG_B];
+  asleep=contact && !pick ? mb_contact_sleep(st,base,count) : 0;
+  asleep ? contact=0;
+  !contact && !asleep && base==st[MB_S_ACTIVE] ? mb_contact_idle(st, base);
+  // A homogeneous reference replaces inaudible response updates. Live masks,
+  // finger forces and level edits use the regular, materialized response.
+  response && !pick && !flag && abs((st+MB_CONTACT)[MB_K_LEVEL])<=0 && !MB_ARTICULATION[MB_A_HO_RUNNING] &&
+    (!contact || (b[MB_FP_READY] && (st+MB_SLAP)[MB_SL_LEFT]<=0)) ? (
+    mb_contact_lazy_tick(st,base,count,contact); response=0;
+  ) : mb_contact_lazy_flush(st,base);
+  contact && !pick && !flag && !circuit_observe_current && !(st+MB_PICKUP_NL)[MB_NL_ON] ?
+    mb_contact_render_fast(st, base, weights, count) :
+  pick || (st+MB_PICKUP_NL)[MB_NL_ON] || contact || response ? mb_render_nonlinear(st, base, weights, count) :
+    mb_string_render_bank(st, base, weights, count);
+);

@@ -1,0 +1,195 @@
+// Pickup-equivalent pick friction. Two bounded spatial textures per string:
+// contact-driven attack scratch, and separately controlled longitudinal scrape.
+// Neither writes modes, fret contact, or the finger-slide generator.
+@init
+function mb_pick_friction_request()
+global(p_pick_drag, p_pick_scrape_amount, pick_drag_request, pick_scrape_amount_request)
+(
+  pick_drag_request=mb_clamp(p_pick_drag*0.01, 0, 1);
+  pick_scrape_amount_request=mb_clamp(p_pick_scrape_amount*0.01, 0, 1);
+);
+
+function mb_pick_friction_publish()
+global(pick_drag_current, pick_drag_request, pick_scrape_amount_current, pick_scrape_amount_request)
+(
+  pick_drag_current=pick_drag_request;
+  pick_scrape_amount_current=pick_scrape_amount_request;
+);
+
+function mb_pick_noise_clear(g)
+local(rng, fine, phase)
+global(MB_PN_RNG, MB_PN_FINE_RNG, MB_PN_PHASE, MB_PN_WORDS)
+(
+  rng=g[MB_PN_RNG]; fine=g[MB_PN_FINE_RNG]; phase=g[MB_PN_PHASE];
+  memset(g, 0, MB_PN_WORDS);
+  g[MB_PN_RNG]=rng; g[MB_PN_FINE_RNG]=fine; g[MB_PN_PHASE]=phase;
+);
+
+function mb_pick_friction_clear(st)
+(
+  mb_pick_noise_clear(st+MB_PICK_FRICTION+MB_PF_ATTACK);
+  mb_pick_noise_clear(st+MB_PICK_FRICTION+MB_PF_SCRAPE);
+  (st+MB_PICK_FRICTION)[MB_PF_ON]=(st+MB_PICK_FRICTION)[MB_PF_TAIL]=0;
+  (st+MB_PICK_FRICTION)[MB_PF_LEAD]=0;
+  memset(st+MB_PICK_FRICTION+MB_PF_ELECTRONICS+MB_E_X1, 0, 4);
+);
+
+function mb_pick_noise_prepare(st, g, kind, gauge, attack)
+local(index, spacing)
+(
+  index=floor(st/MB_STRING_WORDS);
+  !g[MB_PN_RNG] ? (
+    g[MB_PN_RNG]=104729+index*7919+attack*65537;
+    g[MB_PN_FINE_RNG]=130363+index*15401+attack*99991;
+  );
+  spacing=mb_clamp(0.0004*sqrt(gauge/105),0.00008,0.0008);
+  g[MB_PN_DENSITY]=1/spacing;
+  g[MB_PN_SURFACE]=kind==MB_WINDING_PLAIN ? (attack ? 0.08 : 0) :
+    kind==MB_WINDING_FLAT ? 0.22 : kind==MB_WINDING_TAPE ? 0.07 : 1;
+);
+
+// Capture once per stroke. Use actual planned depth/time, including sample
+// rounding and velocity/variation, rather than treating MIDI velocity as m/s.
+function mb_pick_friction_lead(depth, pull)
+local(speed)
+global(srate, MB_PICK_RUB_DISTANCE, MB_PICK_LEAD_MIN, MB_PICK_LEAD_MAX)
+(
+  speed=abs(depth)*srate/max(1,pull);
+  max(1,ceil(srate*mb_clamp(MB_PICK_RUB_DISTANCE/max(0.001,speed),MB_PICK_LEAD_MIN,MB_PICK_LEAD_MAX)));
+);
+
+function mb_pick_friction_arm(st)
+local(b, g, cfg, p)
+(
+  p=st+MB_PICK_FRICTION; p[MB_PF_LEAD]=0;
+  pick_drag_current>0 ? (
+    b=st+MB_PICK; g=p+MB_PF_ATTACK; cfg=st+MB_CONFIG;
+    mb_pick_noise_prepare(st,g,cfg[MB_C_WINDING]+MB_WINDING_ROUND,
+      cfg[MB_C_GAUGE]>0 ? cfg[MB_C_GAUGE] : mb_ref_gauge(cfg[MB_C_REFERENCE]),1);
+    g[MB_PN_GAIN]=pick_drag_current;
+    g[MB_PN_EDGE]=0.08+0.92*sin(b[MB_PK_ANGLE]*$pi/180);
+    p[MB_PF_LEAD]=p[MB_PF_LEAD_TOTAL]=mb_pick_friction_lead(b[MB_PK_DEPTH],b[MB_PK_PULL]);
+  );
+);
+
+// Called only by an actual Pick force step. Effective tangential travel is a
+// proxy for the oblique edge crossing winding ridges in this single-plane model.
+function mb_pick_friction_contact(st, travel, force, gain)
+local(g, velocity, load)
+(
+  g=st+MB_PICK_FRICTION+MB_PF_ATTACK;
+  velocity=travel*srate*g[MB_PN_EDGE];
+  load=abs(force)/(0.08+abs(force));
+  g[MB_PN_TARGET_V]=velocity;
+  g[MB_PN_TARGET_LEVEL]=0.045*g[MB_PN_GAIN]*g[MB_PN_SURFACE]*load*gain;
+  g[MB_PN_TIME]=instrument_sample_clock;
+  g[MB_PN_ACTIVE]=1; (st+MB_PICK_FRICTION)[MB_PF_ON]=1;
+);
+
+// A brief glancing contact precedes transverse loading. Its axial/ridge motion
+// is a pickup-equivalent proxy; no synthetic transverse force is injected here.
+function mb_pick_friction_touch(st)
+local(p, b, speed)
+(
+  p=st+MB_PICK_FRICTION; b=st+MB_PICK;
+  speed=b[MB_PK_DEPTH]*srate/max(1,b[MB_PK_PULL]);
+  pick_drag_current>0 ? mb_pick_friction_contact(st,speed/srate,0.04,1);
+  p[MB_PF_LEAD]-=1;
+);
+
+// Catmull-Rom gradients of two irregular spatial surfaces, with a small noisy
+// winding component. At most four PRNG steps per surface per sample, no events.
+function mb_pick_noise_surface(g)
+local(phase, cell, t, a, b, ridge, s)
+(
+  phase=g[MB_PN_PHASE]; cell=floor(phase); s=g+MB_PN_SURFACE1;
+  !s[MB_FS_READY] || s[MB_FS_CELL]!=cell ? mb_friction_surface_prepare(g,s,cell,MB_PN_RNG);
+  t=phase-cell; a=(s[MB_FS_A]*t+s[MB_FS_B])*t+s[MB_FS_C];
+  phase=phase*3.7+0.06*a; cell=floor(phase); s=g+MB_PN_SURFACE2;
+  !s[MB_FS_READY] || s[MB_FS_CELL]!=cell ? mb_friction_surface_prepare(g,s,cell,MB_PN_FINE_RNG);
+  t=phase-cell; b=(s[MB_FS_A]*t+s[MB_FS_B])*t+s[MB_FS_C];
+  t=2*(g[MB_PN_PHASE]-floor(g[MB_PN_PHASE]))-1;
+  ridge=4*t*(1-abs(t));
+  0.3*a+0.7*b+0.15*ridge*(1+0.2*a);
+);
+
+function mb_pick_noise_render(g, scrape)
+local(dx, speed, step, target, raw, high, color, noise)
+(
+  noise=0;
+  g[MB_PN_ACTIVE] ? (
+    scrape ? (
+      dx=0;
+      g[MB_PN_LEFT]>0 ? (
+        dx=(g[MB_PN_TARGET]-g[MB_PN_POS])/g[MB_PN_LEFT];
+        g[MB_PN_POS]+=dx; g[MB_PN_LEFT]-=1;
+      );
+      g[MB_PN_TARGET_V]=dx*srate;
+      g[MB_PN_TARGET_LEVEL]=0.10*pick_scrape_amount_current*g[MB_PN_SURFACE];
+      g[MB_PN_LEFT]<=0 && dx==0 ? g[MB_PN_TARGET_LEVEL]=0;
+    ) : g[MB_PN_TIME]!=instrument_sample_clock ? (
+      g[MB_PN_TARGET_V]=g[MB_PN_TARGET_LEVEL]=0;
+    );
+    g[MB_PN_V]+=(g[MB_PN_TARGET_V]-g[MB_PN_V])*MB_PICK_NOISE_V_SMOOTH;
+    g[MB_PN_LEVEL]+=(g[MB_PN_TARGET_LEVEL]-g[MB_PN_LEVEL])*MB_PICK_NOISE_AMP_SMOOTH;
+    speed=abs(g[MB_PN_V]);
+    // Continuous statistical coarse-graining bounds the fine spatial bandwidth.
+    step=g[MB_PN_V]*g[MB_PN_DENSITY]/srate;
+    step/=1+abs(step)/0.04;
+    g[MB_PN_PHASE]+=step;
+    g[MB_PN_LEVEL]>0.000000001 ? (
+      raw=mb_pick_noise_surface(g);
+      g[MB_PN_HP]+=(raw-g[MB_PN_HP])*MB_PICK_NOISE_HP;
+      high=raw-g[MB_PN_HP];
+      color=MB_PICK_NOISE_LP_LOW+(MB_PICK_NOISE_LP_HIGH-MB_PICK_NOISE_LP_LOW)*speed/(0.5+speed);
+      g[MB_PN_LP]+=(high-g[MB_PN_LP])*color;
+      noise=g[MB_PN_LP]*g[MB_PN_LEVEL]*g[MB_PN_V]/(0.12+speed);
+      g[MB_PN_RAW]=raw;
+    );
+    g[MB_PN_TARGET_V]==0 && speed<0.000001 && g[MB_PN_LEVEL]<0.000001 ? (
+      g[MB_PN_ACTIVE]=0; g[MB_PN_HP]=g[MB_PN_LP]=g[MB_PN_LEVEL]=g[MB_PN_V]=0;
+      noise=0;
+    );
+  );
+  g[MB_PN_OUTPUT]=noise;
+  noise;
+);
+
+// Private Simple filter allows a muted/unconfigured string to scrape. Circuit
+// receives pickup-equivalent unmixed feeds; its loading/colouring runs once.
+function mb_pick_friction_apply(st)
+local(b, e, cfg)
+(
+  b=st+MB_PICK_FRICTION;
+  !b[MB_PF_CONFIGURED] || b[MB_PF_RESONANCE]!=p_resonance || b[MB_PF_Q]!=p_q ? (
+    // Preparation scratch belongs to this auxiliary layer, never string config.
+    cfg=b+MB_PF_SCRATCH; memset(cfg,0,MB_CONFIG_WORDS);
+    cfg[MB_C_ELECTRICAL]=1; cfg[MB_C_RESONANCE]=p_resonance; cfg[MB_C_Q]=p_q;
+    mb_electronics_configure(b+MB_PF_ELECTRONICS-MB_ELECTRONICS,cfg);
+    b[MB_PF_RESONANCE]=p_resonance; b[MB_PF_Q]=p_q; b[MB_PF_CONFIGURED]=1;
+  );
+  b[MB_PF_SIMPLE]=p_electronics_model==1;
+);
+
+function mb_pick_friction_mix(st, signal)
+local(b, attack, scrape, noise, f, h)
+(
+  b=st+MB_PICK_FRICTION;
+  b[MB_PF_ON] ? (
+    attack=b+MB_PF_ATTACK; scrape=b+MB_PF_SCRAPE;
+    noise=mb_pick_noise_render(attack,0)+mb_pick_noise_render(scrape,1);
+    attack[MB_PN_ACTIVE] || scrape[MB_PN_ACTIVE] ? b[MB_PF_TAIL]=ceil(0.030*srate);
+    b[MB_PF_SIMPLE] ? noise=mb_electronics_render(b+MB_PF_ELECTRONICS-MB_ELECTRONICS,noise);
+    noise*=1+pick_gain_current;
+    f=st+MB_FRICTION; signal+=noise*f[MB_FR_MIX_GAIN];
+    circuit_observe_current ? (
+      h=st+MB_CIR_PICKUP;
+      h[MB_CP_OUTPUT1]+=noise*f[MB_FR_ENABLE1]; h[MB_CP_OUTPUT2]+=noise*f[MB_FR_ENABLE2];
+    );
+    b[MB_PF_TAIL]-=1;
+    b[MB_PF_TAIL]<=0 && !attack[MB_PN_ACTIVE] && !scrape[MB_PN_ACTIVE] ? (
+      b[MB_PF_ON]=0; memset(b+MB_PF_ELECTRONICS+MB_E_X1,0,4);
+    );
+  );
+  signal;
+);

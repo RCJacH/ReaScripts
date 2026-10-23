@@ -1,0 +1,368 @@
+// Six stable physical instances; settings/retirement do not occupy modal RAM.
+// All functions run on the audio thread. Indices here are zero based (UI 1..6).
+@init
+function mb_rack_string(index)
+global(MB_STRING_WORDS)
+( index*MB_STRING_WORDS; );
+function mb_rack_slot(index)
+global(MB_RACK_SLOT_WORDS, MB_RACK_SLOTS)
+( MB_RACK_SLOTS+index*MB_RACK_SLOT_WORDS; );
+
+function mb_rack_common_controls(st)
+global(MB_STRING_WORDS, p_bend_damping, p_contact_damping, p_contact_stiffness, p_contact_surface, p_fret_contact, p_fret_noise_level)
+(
+  mb_output_configure(st, floor(st/MB_STRING_WORDS), 1);
+  mb_action_configure(st, floor(st/MB_STRING_WORDS));
+  mb_pickup_apply(st);
+  mb_nonlinear_apply(st);
+  mb_magnet_apply(st);
+  mb_engine_bend_damping(st, p_bend_damping);
+  mb_engine_contact_configure(st, p_fret_contact, p_contact_stiffness, p_contact_damping, p_contact_surface);
+  mb_contact_level_configure(st, p_fret_noise_level);
+  mb_friction_apply(st);
+  mb_pick_friction_apply(st);
+);
+
+function mb_rack_init()
+local(i, st, slot)
+(
+  memset(MB_RACK, 0, MB_RACK_HEADER_WORDS+MB_MAX_STRINGS*MB_RACK_SLOT_WORDS);
+  MB_RACK[MB_R_COUNT]=rack_count_request;
+  i=0;
+  loop(MB_MAX_STRINGS,
+    st=mb_rack_string(i);
+    slot=mb_rack_slot(i);
+    mb_string_init(st);
+    mb_rack_common_controls(st);
+    slot[MB_RS_ENABLED]=i<rack_count_request;
+    slot[MB_RS_OPEN]=mb_tuning_requested_open(i);
+    slot[MB_RS_FINE]=mb_tuning_requested_fine(i);
+    slot[MB_RS_REFERENCE]=mb_tuning_requested_reference(i);
+    i+=1;
+  );
+);
+
+function mb_rack_set_tuning(index, open_note, cents, reference)
+local(slot, previous)
+(
+  index>=0 && index<MB_MAX_STRINGS ? (
+    slot=mb_rack_slot(index);
+    previous=slot[MB_RS_PENDING];
+    slot[MB_RS_OPEN]=mb_clamp(floor(open_note), 0, 127);
+    slot[MB_RS_FINE]=mb_clamp(cents, -100, 100);
+    slot[MB_RS_REFERENCE]=mb_clamp(floor(reference), 0, 5);
+    slot[MB_RS_PENDING]=slot[MB_RS_LATCHED] &&
+      (slot[MB_RS_OPEN]!=slot[MB_RS_LATCH_OPEN] ||
+       abs(slot[MB_RS_FINE]-slot[MB_RS_LATCH_FINE])>0.000000001 ||
+       slot[MB_RS_REFERENCE]!=slot[MB_RS_LATCH_REFERENCE] ||
+       abs((mb_rack_string(index)+MB_CONFIG)[MB_C_A4_OFFSET]-(tuning_a4_current-440))>0.000000001 ||
+       mb_string_setup_pending(mb_rack_string(index), index) || mb_sustain_pending(mb_rack_string(index), index));
+    MB_RACK[MB_R_PENDING]+=slot[MB_RS_PENDING]-previous;
+    1;
+  ) : 0;
+);
+
+function mb_rack_configure_count(count)
+local(i, st, slot, enabled)
+(
+  count=mb_clamp(floor(count), 1, MB_MAX_STRINGS);
+  count!=MB_RACK[MB_R_COUNT] ? slap_pop_anchor=0;
+  i=0;
+  loop(MB_MAX_STRINGS,
+    st=mb_rack_string(i);
+    slot=mb_rack_slot(i);
+    enabled=i<count;
+    enabled!=slot[MB_RS_ENABLED] ? (
+      mb_notes_retire_string(i, enabled ? 0 : 1);
+      enabled ? (
+        // Re-enable empty, including filters, contact and fades. Tuning survives.
+        mb_string_init(st);
+        mb_rack_common_controls(st);
+        slot[MB_RS_RETIRING]=slot[MB_RS_BUSY]=slot[MB_RS_LATCHED]=0;
+        MB_RACK[MB_R_PENDING]-=slot[MB_RS_PENDING];
+        slot[MB_RS_PENDING]=0;
+        slot[MB_RS_RETIRE_LEFT]=slot[MB_RS_LEVEL]=0;
+      ) : (
+        mb_engine_damp(st, 70);
+        mb_friction_stop(st);
+        slot[MB_RS_RETIRING]=slot[MB_RS_BUSY];
+        // Five 70-ms T60s, then clear residual state; never resurrect it.
+        slot[MB_RS_RETIRE_LEFT]=ceil(0.350*srate);
+      );
+      slot[MB_RS_ENABLED]=enabled;
+    );
+    i+=1;
+  );
+  MB_RACK[MB_R_COUNT]=count;
+);
+
+function mb_rack_apply_preset(preset)
+local(i, count, reference)
+global(MB_R_PRESET, MB_RACK, p_string_count)
+(
+  count=mb_tuning_preset_count(preset);
+  i=0;
+  loop(count,
+    reference=mb_tuning_preset_reference(preset, i);
+    mb_rack_set_tuning(i, mb_ref_midi(reference), 0, reference);
+    mb_tuning_publish_slot(i, mb_ref_midi(reference), 0);
+    i+=1;
+  );
+  p_string_count=count;
+  sliderchange(p_string_count);
+  mb_rack_configure_count(count);
+  MB_RACK[MB_R_PRESET]=preset;
+  mb_tuning_request();
+);
+
+function mb_rack_matches_preset(preset)
+local(i, count, reference, slot, matches)
+global(MB_R_COUNT, MB_RACK, MB_RS_FINE, MB_RS_OPEN, MB_RS_REFERENCE)
+(
+  count=mb_tuning_preset_count(preset);
+  matches=MB_RACK[MB_R_COUNT]==count;
+  i=0;
+  loop(count,
+    slot=mb_rack_slot(i);
+    reference=mb_tuning_preset_reference(preset, i);
+    slot[MB_RS_OPEN]!=mb_ref_midi(reference) || abs(slot[MB_RS_FINE])>0.000000001 ||
+      slot[MB_RS_REFERENCE]!=reference ? matches=0;
+    i+=1;
+  );
+  matches;
+);
+
+function mb_rack_apply_requests()
+local(i)
+global(MB_MAX_STRINGS, MB_R_PRESET, MB_RACK, rack_count_request, tuning_a4_request, tuning_a4_current)
+(
+  // Host settings are authoritative; only the explicit preset API applies one.
+  tuning_a4_current=tuning_a4_request;
+  mb_string_setup_apply_requests();
+  mb_sustain_apply_requests();
+  mb_rack_configure_count(rack_count_request);
+  i=0;
+  loop(MB_MAX_STRINGS,
+    mb_rack_set_tuning(i, mb_tuning_requested_open(i), mb_tuning_requested_fine(i),
+                        mb_tuning_requested_reference(i)); i+=1;
+  );
+  MB_RACK[MB_R_PRESET]=mb_rack_matches_preset(1) ? 1 :
+    mb_rack_matches_preset(2) ? 2 : mb_rack_matches_preset(3) ? 3 : 0;
+);
+
+function mb_rack_wake(st, source)
+local(index, slot)
+global(MB_MAX_STRINGS, MB_R_PENDING, MB_RACK, MB_RS_BUSY, MB_RS_LATCHED, MB_RS_PENDING,
+       MB_RS_SOURCE, MB_STRING_WORDS)
+(
+  index=floor(st/MB_STRING_WORDS);
+  index>=0 && index<MB_MAX_STRINGS && st==mb_rack_string(index) ? (
+    slot=mb_rack_slot(index);
+    slot[MB_RS_BUSY]=1;
+    slot[MB_RS_SOURCE]=source;
+    source==0 ? (
+      mb_fingers_forget(index);
+      slot[MB_RS_LATCHED]=0;
+      MB_RACK[MB_R_PENDING]-=slot[MB_RS_PENDING];
+      slot[MB_RS_PENDING]=0;
+    );
+  );
+);
+
+// Auto starts a phrase with Slap on any string. Each accepted Slap
+// moves the boundary: that string and its immediate higher neighbor are Slap;
+// higher strings are Pop. Queries never commit history or alter ringing notes.
+function mb_rack_excitation_style(index)
+local(style)
+global(MB_STYLE_SLAP_POP_AUTO, MB_STYLE_SLAP, MB_STYLE_POP, slap_pop_anchor)
+(
+  style=mb_fingers_style();
+  style==MB_STYLE_SLAP_POP_AUTO ? (
+    slap_pop_anchor>0 && !mb_fingers_phrase_start() ? (
+      style=mb_string_number(index)>=slap_pop_anchor-1 ? MB_STYLE_SLAP : MB_STYLE_POP;
+    ) : (
+      style=MB_STYLE_SLAP;
+    );
+  );
+  style;
+);
+
+// Separate from live fret/bend: a fresh ordinary excitation at pending tuning.
+// No pitch allocator or channel bend ownership is implemented by this API.
+function mb_rack_begin_gesture(index, velocity, fret, bend, note, channel, pluck)
+local(st, slot, cfg, pop, slap, pick, style)
+(
+  index>=0 && index<MB_MAX_STRINGS && mb_rack_slot(index)[MB_RS_ENABLED] &&
+    !MB_NOTES[MB_NH_FAULT] && mb_notes_retire_string(index, 0) ? (
+    st=mb_rack_string(index);
+    slot=mb_rack_slot(index);
+    cfg=st+MB_CONFIG;
+    mb_friction_stop(st);
+    fret=mb_engine_fret_position(st, fret);
+    bend=mb_clamp(bend, -12, 12);
+    mb_tuned_configuration(cfg, slot[MB_RS_REFERENCE], slot[MB_RS_OPEN], slot[MB_RS_FINE], fret, bend);
+    mb_string_setup_configuration(cfg, index);
+    mb_sustain_configuration(cfg, index);
+    style=pluck ? mb_rack_excitation_style(index) : -1;
+    pop=style==MB_STYLE_POP;
+    slap=style==MB_STYLE_SLAP;
+    pick=style>=MB_STYLE_PICK_AUTO && style<=MB_STYLE_PICK_DOWN;
+    pluck ? mb_fingers_prepare(cfg);
+    slap || pop ? mb_slap_pop_position(cfg, style);
+    pop ? mb_pop_configuration(cfg);
+    slap ? mb_slap_configuration(st, cfg);
+    pick ? mb_pick_configuration(st, cfg);
+    mb_variation_begin(st, cfg, pluck, fret);
+    pluck ? mb_variation_configuration(st, cfg);
+    cfg[MB_C_FRET]=mb_variation_fret(st, fret, cfg[MB_C_SCALE]);
+    !slot[MB_RS_BUSY] ? mb_output_configure(st, index, 1);
+    mb_engine_configure(st, cfg);
+    pluck ? (
+      slap ? mb_engine_slap(st, velocity, note, channel) :
+        pick ? mb_engine_pick(st, velocity, note, channel) :
+        pop ? mb_engine_pop(st, velocity, note, channel) : mb_engine_excite(st, velocity, note, channel);
+    ) : mb_engine_seed_tap(st, velocity, note, channel);
+    mb_fingers_remember(st, index, pluck);
+    pluck ? mb_slap_pop_remember(index, style);
+    pop ? mb_pop_remember(index);
+    slap ? mb_slap_remember(index);
+    mb_live_pluck_bend(st, bend);
+    // Geometry may be detuned; routing and slide clocks retain the played fret.
+    cfg[MB_C_FRET]!=fret ? (
+      (st+MB_LIVE)[MB_L_FRET]=(st+MB_LIVE)[MB_L_FRET_TARGET]=fret;
+      mb_fret_response_level(st, st[MB_S_PREVIOUS_LEFT]<=0);
+    );
+    mb_rack_wake(st, 1);
+    mb_owner_ptr(index)[MB_O_STATE]=MB_VOICE_RINGING;
+    slot[MB_RS_LATCH_OPEN]=slot[MB_RS_OPEN];
+    slot[MB_RS_LATCH_FINE]=slot[MB_RS_FINE];
+    slot[MB_RS_LATCH_REFERENCE]=slot[MB_RS_REFERENCE];
+    slot[MB_RS_LATCHED]=1;
+    MB_RACK[MB_R_PENDING]-=slot[MB_RS_PENDING];
+    slot[MB_RS_PENDING]=0;
+    1;
+  ) : 0;
+);
+
+function mb_rack_excite_tuned(index, velocity, fret, bend, note, channel)
+global()
+( mb_rack_begin_gesture(index, velocity, fret, bend, note, channel, 1); );
+
+function mb_rack_seed_tap(index, velocity, fret, bend, note, channel)
+global()
+( mb_rack_begin_gesture(index, velocity, fret, bend, note, channel, 0); );
+
+function mb_rack_kill_string(index)
+local(slot)
+global(MB_R_PENDING, MB_RACK, MB_RS_BUSY, MB_RS_LATCHED, MB_RS_LEVEL, MB_RS_PENDING,
+       MB_RS_RETIRE_LEFT, MB_RS_RETIRING, circuit_observe_current)
+(
+  mb_engine_kill(mb_rack_string(index));
+  mb_notes_retire_string(index, 0);
+  mb_fingers_forget(index);
+  slot=mb_rack_slot(index);
+  slot[MB_RS_BUSY]=slot[MB_RS_RETIRING]=slot[MB_RS_RETIRE_LEFT]=slot[MB_RS_LEVEL]=0;
+  slot[MB_RS_LATCHED]=0;
+  MB_RACK[MB_R_PENDING]-=slot[MB_RS_PENDING];
+  slot[MB_RS_PENDING]=0;
+  circuit_observe_current ? mb_circuit_stop_if_idle();
+);
+
+function mb_rack_kill_all()
+local(i)
+global(MB_MAX_STRINGS, mb_rack_prepare_pending)
+(
+  i=0;
+  loop(MB_MAX_STRINGS, mb_rack_kill_string(i); i+=1;);
+  mb_rack_prepare_pending=0;
+  mb_circuit_clear();
+);
+
+function mb_rack_can_sleep(st)
+local(l, e)
+(
+  l=st+MB_LIVE; e=st+MB_ELECTRONICS;
+  st[MB_S_COUNT]==0 && st[MB_S_PREVIOUS_LEFT]<=0 && !l[MB_L_JOB] &&
+    !l[MB_L_BEND_LEFT] && abs(l[MB_L_FRET_TARGET]-l[MB_L_FRET])<0.000000001 &&
+    abs(e[MB_E_X1])+abs(e[MB_E_X2])+abs(e[MB_E_Y1])+abs(e[MB_E_Y2])<0.0000000000001;
+);
+
+function mb_rack_render()
+local(i, j, st, slot, l, chosen, cursor, sum, signal, pairs, active, remaining)
+(
+  // Fair shared matrix budget and at most one fret commit per sample. Summation
+  // still follows stable ID order, independently of preparation scheduling.
+  chosen=-1;
+  impact_compress_running ? mb_impact_compress_tick();
+  mb_circuit_start();
+  cursor=MB_RACK[MB_R_PREP_CURSOR];
+  j=0;
+  mb_rack_prepare_pending ? (
+  remaining=0;
+  loop(MB_MAX_STRINGS,
+    i=cursor+j;
+    i>=MB_MAX_STRINGS ? i-=MB_MAX_STRINGS;
+    st=mb_rack_string(i);
+    l=st+MB_LIVE;
+    slot=mb_rack_slot(i);
+    (i==0 || slot[MB_RS_BUSY]) && l[MB_L_HAS_CONFIG] &&
+      (l[MB_L_JOB] || abs(l[MB_L_FRET_TARGET]-l[MB_L_FRET])>0.000000001) ? (
+      remaining=1;
+      chosen<0 && st[MB_S_PREVIOUS_LEFT]<=0 ? chosen=i;
+    );
+    j+=1;
+  );
+  mb_rack_prepare_pending=remaining;
+  );
+  chosen>=0 ? MB_RACK[MB_R_PREP_CURSOR]=chosen+1<MB_MAX_STRINGS ? chosen+1 : 0;
+  sum=pairs=active=0;
+  mb_tension_budgeted=1; mb_tension_allowance=MB_MAX_MODES;
+  mb_vibrato_budgeted=1; mb_vibrato_allowance=MB_MAX_MODES;
+  MB_RACK[MB_R_RENDERED]=0;
+  i=0;
+  loop(MB_MAX_STRINGS,
+    st=mb_rack_string(i);
+    slot=mb_rack_slot(i);
+    // String 1 retains legacy idle clocks/telemetry for reference comparisons.
+    i==0 || slot[MB_RS_BUSY] ? (
+      mb_preparation_allowance=i==chosen ? MB_PROJECTION_BUDGET : 0;
+      signal=mb_engine_render(st);
+      signal=mb_output_render(st, signal);
+      circuit_observe_current ? mb_circuit_add(st);
+      sum+=signal;
+      pairs+=(st+MB_LIVE)[MB_L_PAIRS_THIS_SAMPLE];
+      slot[MB_RS_LEVEL]=max(abs(signal), slot[MB_RS_LEVEL]*meter_decay);
+      MB_RACK[MB_R_RENDERED]+=1;
+      slot[MB_RS_RETIRING] ? (
+        slot[MB_RS_RETIRE_LEFT]-=1;
+        slot[MB_RS_RETIRE_LEFT]<=0 ? (
+          mb_string_init(st);
+          mb_rack_common_controls(st);
+          slot[MB_RS_RETIRING]=slot[MB_RS_BUSY]=slot[MB_RS_LATCHED]=0;
+          MB_RACK[MB_R_PENDING]-=slot[MB_RS_PENDING];
+          slot[MB_RS_PENDING]=0;
+          slot[MB_RS_LEVEL]=0;
+          mb_notes_quiet(i);
+        );
+      );
+      // Checking once per retirement interval avoids a heavy idle predicate.
+      st[MB_S_SLEEP]==0 && mb_rack_can_sleep(st) ? (
+        mb_impact_compress_clear(st);
+        slot[MB_RS_BUSY]=(st+MB_FRICTION)[MB_FR_RUN] || (st+MB_FRICTION)[MB_FR_TAIL]>0 ||
+          (st+MB_PICK_FRICTION)[MB_PF_ON];
+        // A momentarily held HO/PO can start a new finger note after decay.
+        !(fretting_amount_current>0 && MB_ARTICULATION[MB_A_KIND]==MB_ROLE_HOPO &&
+          mb_owner_ptr(i)[MB_O_KEY_DOWN] && slot[MB_RS_LATCHED]) ? mb_notes_quiet(i);
+      );
+    );
+    active+=slot[MB_RS_BUSY];
+    i+=1;
+  );
+  mb_preparation_allowance=MB_PROJECTION_BUDGET;
+  mb_tension_budgeted=0;
+  mb_vibrato_budgeted=0;
+  MB_RACK[MB_R_PAIRS]=pairs;
+  MB_RACK[MB_R_ACTIVE]=active;
+  impact_compress_running ? impact_compress_running=impact_compress_next_running;
+  mb_circuit_render(sum);
+);

@@ -1,0 +1,160 @@
+// GUI colors, drawing primitives and coordinate helpers.
+@init
+
+// ---- gui colors ----
+// HSL conversion and component/state recipes adapted from RCModEQ's
+// dependencies/hsl_colors.jsfx-inc. Explicit buffers replace its namespaces.
+// @gfx owns this region; it never overlaps string, observer or MIDI RAM.
+function mb_gui_color_constants()
+(
+  MB_UI_BASE=786432; MB_UI_WORDS=768;
+  MB_UI_THEME_STRIDE=96; MB_UI_THEME_COUNT=6;
+  MB_UI_PANEL=0; MB_UI_PANEL_BG=3; MB_UI_PANEL_TEXT=6;
+  MB_UI_BUTTON=9; MB_UI_ACCENT=81; MB_UI_SCREEN=84;
+  MB_UI_PICKUP1=87; MB_UI_PICKUP2=90; MB_UI_LH=93;
+  MB_UI_COMPONENTS=4; MB_UI_STATE_WORDS=12;
+  MB_UI_MAIN=0; MB_UI_BORDER=1; MB_UI_BG=2; MB_UI_TEXT=3;
+  MB_UI_NORMAL=0; MB_UI_HOVER=1; MB_UI_PRESS=2; MB_UI_DISABLED=3;
+);
+
+function mb_gui_hue_rgb(p, q, t)
+global()
+(
+  t=(t+360)%360;
+  t<60 ? p+(q-p)*t/60 : t<180 ? q : t<240 ? p+(q-p)*(240-t)/60 : p;
+);
+
+function mb_gui_hsl_rgb(mem, hue, saturation, lightness)
+local(s, l, p, q)
+global()
+(
+  s=saturation*0.01; l=lightness*0.01;
+  !s || !l || l==1 ? (mem[0]=mem[1]=mem[2]=l;) : (
+    q=l<0.5 ? l*(1+s) : l+s-l*s; p=2*l-q;
+    mem[0]=mb_gui_hue_rgb(p, q, hue+120);
+    mem[1]=mb_gui_hue_rgb(p, q, hue);
+    mem[2]=mb_gui_hue_rgb(p, q, hue-120);
+  );
+);
+
+function mb_gui_hsl_scaled(value, percent)
+global()
+(
+  percent>0 ? value+(100-value)*percent*0.01 :
+  percent<0 ? value*abs(percent*0.01+1) : value;
+);
+
+function mb_gui_button_colors(mem, hue, saturation, lightness)
+global()
+(
+  mb_gui_hsl_rgb(mem, hue, saturation, lightness);
+  mb_gui_hsl_rgb(mem+3, hue, mb_gui_hsl_scaled(saturation, -10), mb_gui_hsl_scaled(lightness, 20));
+  mb_gui_hsl_rgb(mem+6, hue, mb_gui_hsl_scaled(saturation, -80), mb_gui_hsl_scaled(lightness, -60));
+  mb_gui_hsl_rgb(mem+9, hue, mb_gui_hsl_scaled(saturation, -10), mb_gui_hsl_scaled(lightness, 80));
+);
+
+function mb_gui_theme_build(index, hue)
+local(base, buttons, i, s, l)
+(
+  base=MB_UI_BASE+index*MB_UI_THEME_STRIDE; buttons=base+MB_UI_BUTTON;
+  mb_gui_hsl_rgb(base+MB_UI_PANEL, hue, 12, 15);
+  mb_gui_hsl_rgb(base+MB_UI_PANEL_BG, hue, 38, 19);
+  mb_gui_hsl_rgb(base+MB_UI_PANEL_TEXT, hue, 20, 88);
+  mb_gui_hsl_rgb(base+MB_UI_ACCENT, hue, 72, 68);
+  mb_gui_hsl_rgb(base+MB_UI_SCREEN, hue, 24, 9);
+  // Brass/copper pickup footprints and a bone-colored LH guide.
+  mb_gui_hsl_rgb(base+MB_UI_PICKUP1, 46, 60, 72);
+  mb_gui_hsl_rgb(base+MB_UI_PICKUP2, 10, 62, 66);
+  mb_gui_hsl_rgb(base+MB_UI_LH, 42, 20, 85);
+  i=0; loop(6,
+    // RCModEQ monochrome disabled, then normal/hover/press offsets.
+    s=i>=3 ? mb_gui_hsl_scaled(62, -50) : 62;
+    l=i>=3 ? mb_gui_hsl_scaled(58, -30) : 58;
+    i%3==1 ? (s=max(0, s-5); l=min(100, l+5););
+    i%3==2 ? (s=max(0, s-10); l=min(100, l+10););
+    mb_gui_button_colors(buttons+i*MB_UI_STATE_WORDS, hue, s, l);
+    i+=1;
+  );
+);
+
+function mb_gui_colors_init()
+global(MB_UI_BASE, MB_UI_WORDS, ui_colors_ready, ui_memory_fault)
+(
+  mb_gui_color_constants();
+  ui_memory_fault=__memtop()<MB_UI_BASE+MB_UI_WORDS;
+  !ui_memory_fault ? (
+    mb_gui_theme_build(0, 28); // Instrument: walnut.
+    mb_gui_theme_build(1, 38); // Play: amber.
+    mb_gui_theme_build(2, 20); // Electronics: copper.
+    mb_gui_theme_build(3, 12); // Variation: rosewood.
+    mb_gui_theme_build(4, 46); // Mapping: brass.
+    mb_gui_theme_build(5, 30); // Persistent fretboard: dark wood.
+  );
+  ui_colors_ready=1;
+);
+
+function mb_gui_color(mem, alpha)
+global()
+(
+  gfx_set(mem[0], mem[1], mem[2], alpha);
+);
+
+function mb_gui_button_color(theme, status, component, alpha)
+global(MB_UI_BUTTON, MB_UI_STATE_WORDS)
+(
+  mb_gui_color(theme+MB_UI_BUTTON+status*MB_UI_STATE_WORDS+component*3, alpha);
+);
+
+// ---- gui widgets ----
+// Fretboard text and GUI requests. Synthesis mutations stay on the audio thread.
+function mb_gui_text(text, x, y, w, h, centered)
+global(gfx_x, gfx_y)
+(
+  gfx_x=x; gfx_y=y;
+  gfx_drawstr(text, centered ? 5 : 4, x+w, y+h);
+);
+
+function mb_gui_panic_button(x, y, w, h, theme)
+local(inside, down, status)
+global(mouse_x, mouse_y, mouse_cap, ui_panic_down, gui_panic_requests,
+       MB_UI_NORMAL, MB_UI_HOVER, MB_UI_PRESS, MB_UI_BG, MB_UI_BORDER, MB_UI_TEXT)
+(
+  inside=mouse_x>=x && mouse_x<x+w && mouse_y>=y && mouse_y<y+h;
+  down=mouse_cap&1;
+  inside && down && !ui_panic_down ? gui_panic_requests+=1;
+  ui_panic_down=down;
+  status=inside ? (down ? MB_UI_PRESS : MB_UI_HOVER) : MB_UI_NORMAL;
+  mb_gui_button_color(theme, status, MB_UI_BG, 1); gfx_rect(x, y, w, h, 1);
+  mb_gui_button_color(theme, status, MB_UI_BORDER, 0.65); gfx_rect(x, y, w, h, 0);
+  mb_gui_button_color(theme, status, MB_UI_TEXT, 1);
+  mb_gui_text("Panic", x, y, w, h, 1);
+);
+
+function mb_gui_parameter_notify(id, end_touch)
+(
+  id==MB_P_OUTPUT ? (sliderchange(p_output_db); slider_automate(p_output_db, end_touch););
+  id==MB_P_FRET ? (sliderchange(p_capo); slider_automate(p_capo, end_touch););
+  id==MB_P_PLAYING_POSITION ? (sliderchange(p_playing_position); slider_automate(p_playing_position, end_touch););
+  id==MB_P_STRING_SELECTION ? (sliderchange(p_string_selection); slider_automate(p_string_selection, end_touch););
+  id==MB_P_PICKING_POSITION ? (sliderchange(p_picking_position); slider_automate(p_picking_position, end_touch););
+);
+
+function mb_gui_parameter_set(id, value)
+local(old)
+(
+  old=id==MB_P_OUTPUT ? p_output_db : id==MB_P_FRET ? p_capo : id==MB_P_PLAYING_POSITION ? p_playing_position : id==MB_P_STRING_SELECTION ? p_string_selection : p_picking_position;
+  abs(old-value)>0.000000001 ? (
+    id==MB_P_OUTPUT ? (p_output_db=mb_clamp(floor(value*10+0.5)*0.1, -36, 18); value=p_output_db;);
+    id==MB_P_FRET ? (p_capo=mb_clamp(floor(value+0.5), 0, pub_fret_count); value=p_capo;);
+    id==MB_P_PLAYING_POSITION ? (
+      p_playing_position=mb_clamp(p_contact_surface>=0.5 ? floor(value*100+0.5)*0.01 : floor(value+0.5), 0, pub_fret_count);
+      value=p_playing_position;
+    );
+    id==MB_P_STRING_SELECTION ? (p_string_selection=mb_clamp(floor(value+0.5), 0, 6); value=p_string_selection;);
+    id==MB_P_PICKING_POSITION ? (p_picking_position=mb_clamp(floor(value*100+0.5)*0.01, 0, 1); value=p_picking_position;);
+    abs(old-value)>0.000000001 ? (
+      gui_parameter_requests+=1;
+      mb_gui_parameter_notify(id, 0);
+    );
+  );
+);

@@ -1,0 +1,331 @@
+// Slap/Pop gesture preparation and force rendering.
+@init
+
+// ---- pop ----
+// Pop pull/hardness and shared Slap/Pop contact lifecycle/output gain.
+// Body voicing is Pop-only. Kind: 0 ordinary, MB_IMPACT_POP, MB_IMPACT_SLAP.
+// Contact activity and duration are owned by pop_contact, not a timed envelope.
+function mb_pop_request()
+global(p_pop_displacement, p_pop_body, p_pop_contact_hardness, p_pop_level,
+       pop_displacement_request, pop_body_request, pop_hardness_request, pop_gain_request)
+(
+  pop_displacement_request=mb_clamp(p_pop_displacement, 0.05, 8);
+  pop_body_request=mb_clamp(p_pop_body*0.01, 0, 1);
+  // K spans 0.01-100x; C follows sqrt(K), preserving the nominal damping ratio.
+  pop_hardness_request=10^((mb_clamp(p_pop_contact_hardness,0,100)-50)/50)-1;
+  pop_gain_request=10^(mb_clamp(p_pop_level,-24,12)/20)-1;
+);
+
+function mb_pop_apply()
+local(i, b)
+global(pop_displacement_request, pop_body_request, pop_hardness_request, pop_gain_request,
+       pop_displacement_current, pop_body_current, pop_hardness_current, pop_gain_current,
+       MB_MAX_STRINGS, MB_STRING_WORDS, MB_POP, MB_POP_STYLE, MB_POP_BODY_TARGET,
+       MB_POP_HARDNESS_TARGET, MB_POP_GAIN_TARGET, MB_IMPACT_POP)
+(
+  pop_displacement_current=pop_displacement_request;
+  pop_body_current=pop_body_request;
+  pop_hardness_current=pop_hardness_request;
+  pop_gain_current=pop_gain_request;
+  // Audio-thread application; contact hardness and voicing work during a held Pop.
+  i=0; loop(MB_MAX_STRINGS,
+    b=i*MB_STRING_WORDS+MB_POP;
+    b[MB_POP_STYLE]==MB_IMPACT_POP ? (
+      b[MB_POP_BODY_TARGET]=pop_body_current-1;
+      b[MB_POP_HARDNESS_TARGET]=pop_hardness_current;
+      b[MB_POP_GAIN_TARGET]=pop_gain_current;
+    );
+    i+=1;
+  );
+);
+
+// Note-on releases the pull away from the fretboard. The fresh string starts
+// with zero velocity; the former artificial release-velocity impulse is gone.
+function mb_pop_configuration(cfg)
+global(pop_displacement_current, MB_POP_WIDTH_MM, MB_POP_RELEASE_MS,
+       MB_C_DISPLACEMENT, MB_C_CONTACT_WIDTH, MB_C_SOFTNESS, MB_C_DIRECTION)
+(
+  cfg[MB_C_DISPLACEMENT]=pop_displacement_current;
+  cfg[MB_C_CONTACT_WIDTH]=MB_POP_WIDTH_MM;
+  cfg[MB_C_SOFTNESS]=MB_POP_RELEASE_MS;
+  cfg[MB_C_DIRECTION]=0;
+);
+
+// Ordinary attacks restore neutral voicing; contact caches change only on the
+// audio thread. Returning from Pop invalidates its alternative shape cache.
+function mb_pop_begin(st, kind)
+local(b, old, a, c)
+global(MB_POP, MB_POP_STYLE, MB_POP_BODY_TARGET, MB_POP_HARDNESS_TARGET, MB_POP_GAIN_TARGET,
+       MB_POP_BODY, MB_POP_HARDNESS, MB_POP_GAIN, MB_POP_ON, pop_body_current,
+       pop_hardness_current, pop_gain_current, MB_FRET_POINT, MB_FP_WORDS, MB_FP_READY,
+       MB_FP_COUNT, MB_S_PREVIOUS_COUNT, MB_S_PREVIOUS_LEFT, MB_POP_CONTACT, MB_PCC_SELECT,
+       MB_IMPACT_POP, MB_IMPACT_SLAP, slap_gain_current)
+(
+  b=st+MB_POP;
+  old=b[MB_POP_STYLE]; b[MB_POP_STYLE]=kind;
+  kind || old ? (
+    a=st+MB_FRET_POINT; c=a+MB_FP_WORDS;
+    a[MB_FP_READY]=c[MB_FP_READY]=0; a[MB_FP_COUNT]=c[MB_FP_COUNT]=-1;
+  );
+  b[MB_POP_BODY_TARGET]=kind==MB_IMPACT_POP ? pop_body_current-1 : 0;
+  b[MB_POP_HARDNESS_TARGET]=kind==MB_IMPACT_POP ? pop_hardness_current : 0;
+  b[MB_POP_GAIN_TARGET]=kind==MB_IMPACT_POP ? pop_gain_current : kind==MB_IMPACT_SLAP ? slap_gain_current : 0;
+  kind ? (
+    (st+MB_POP_CONTACT)[MB_PCC_SELECT]=1;
+    b[MB_POP_ON]=1;
+    st[MB_S_PREVIOUS_COUNT]<=0 && st[MB_S_PREVIOUS_LEFT]<=0 ? (
+      b[MB_POP_BODY]=b[MB_POP_BODY_TARGET]; b[MB_POP_HARDNESS]=b[MB_POP_HARDNESS_TARGET];
+      b[MB_POP_GAIN]=b[MB_POP_GAIN_TARGET];
+    );
+  );
+);
+
+function mb_pop_clear(st)
+local(i)
+global(MB_POP, MB_POP_WORDS, MB_POP_CONTACT, MB_PCC_HEADER, MB_PCC_POINT_WORDS, MB_FP_HEADER)
+(
+  memset(st+MB_POP,0,MB_POP_WORDS);
+  memset(st+MB_POP_CONTACT,0,MB_PCC_HEADER);
+  i=0; loop(3,
+    memset(st+MB_POP_CONTACT+MB_PCC_HEADER+i*MB_PCC_POINT_WORDS,0,MB_FP_HEADER); i+=1;
+  );
+);
+
+function mb_pop_tone(b, low, signal)
+global(MB_POP_LOW_COEFFICIENT, MB_POP_BODY, MB_POP_GAIN)
+(
+  b[low]+=(signal-b[low])*MB_POP_LOW_COEFFICIENT;
+  (signal+b[MB_POP_BODY]*b[low])*(1+b[MB_POP_GAIN]);
+);
+
+// Constant work/sample; no modal traversal. Both circuit feeds receive the same
+// Body/trim as the Direct/Simple signal, before electronics and slide noise.
+// The smoothed hardness coefficient is consumed by actual contact next sample.
+function mb_pop_voice(st, signal)
+local(b, h, i, field, target, slap)
+global(MB_POP, MB_POP_ON, MB_POP_STYLE, MB_POP_BODY, MB_POP_HARDNESS, MB_POP_GAIN,
+       MB_POP_BODY_TARGET, MB_POP_LOW, MB_POP_LOW1, MB_POP_LOW2,
+       MB_POP_HARDNESS_TARGET, MB_POP_GAIN_TARGET,
+       MB_POP_BODY_SMOOTH, circuit_observe_current,
+       MB_CIR_PICKUP, MB_CP_OUTPUT1, MB_CP_OUTPUT2,
+       MB_IMPACT_SLAP, MB_SLAP, MB_SL_CLANK, MB_SL_CLANK_TARGET)
+(
+  b=st+MB_POP;
+  b[MB_POP_ON] ? (
+    b[MB_POP_STYLE]==MB_IMPACT_SLAP ? (
+      slap=st+MB_SLAP;
+      abs(slap[MB_SL_CLANK]-slap[MB_SL_CLANK_TARGET])>0 ? (
+        slap[MB_SL_CLANK]+=(slap[MB_SL_CLANK_TARGET]-slap[MB_SL_CLANK])*MB_POP_BODY_SMOOTH;
+        abs(slap[MB_SL_CLANK]-slap[MB_SL_CLANK_TARGET])<0.000000000001 ?
+          slap[MB_SL_CLANK]=slap[MB_SL_CLANK_TARGET];
+      );
+    );
+    i=0; loop(3,
+      field=i==0 ? MB_POP_BODY : i==1 ? MB_POP_HARDNESS : MB_POP_GAIN;
+      target=i==0 ? MB_POP_BODY_TARGET : i==1 ? MB_POP_HARDNESS_TARGET : MB_POP_GAIN_TARGET;
+      b[field]+=(b[target]-b[field])*MB_POP_BODY_SMOOTH;
+      abs(b[field]-b[target])<0.000000000001 ? b[field]=b[target];
+      i+=1;
+    );
+    signal=mb_pop_tone(b,MB_POP_LOW,signal);
+    circuit_observe_current ? (
+      h=st+MB_CIR_PICKUP;
+      h[MB_CP_OUTPUT1]=mb_pop_tone(b,MB_POP_LOW1,h[MB_CP_OUTPUT1]);
+      h[MB_CP_OUTPUT2]=mb_pop_tone(b,MB_POP_LOW2,h[MB_CP_OUTPUT2]);
+    );
+    !b[MB_POP_STYLE] && b[MB_POP_BODY]==0 && b[MB_POP_HARDNESS]==0 && b[MB_POP_GAIN]==0 ?
+      mb_pop_clear(st);
+  );
+  signal;
+);
+
+function mb_pop_remember(index)
+global(MB_FV_FINGER, MB_RH_POP)
+( mb_fingers_view(index)[MB_FV_FINGER]=MB_RH_POP; );
+
+// ---- slap ----
+// Thumb strike: a short, smooth inward force, with bounded positive work.
+// Thumb mass/compliance set contact duration; no isolated velocity spike or EQ.
+// Prescribed pulse approximation, not a coupled thumb/string contact solver.
+function mb_slap_request()
+global(p_slap_strength, p_slap_attack_character, p_slap_clank, p_slap_level,
+       slap_speed_request, slap_stiffness_request, slap_clank_request, slap_gain_request,
+       MB_SLAP_REFERENCE_SPEED)
+(
+  slap_speed_request=MB_SLAP_REFERENCE_SPEED*(mb_clamp(p_slap_strength,0,100)*0.02);
+  slap_stiffness_request=10^(3+3*mb_clamp(p_slap_attack_character*0.01,0,1));
+  slap_clank_request=mb_clamp(p_slap_clank*0.01,0,1)-1;
+  slap_gain_request=10^(mb_clamp(p_slap_level,-24,12)/20)-1;
+);
+
+function mb_slap_apply()
+local(i, b)
+global(slap_speed_request, slap_stiffness_request, slap_clank_request, slap_gain_request,
+       slap_speed_current, slap_stiffness_current, slap_clank_current, slap_gain_current,
+       MB_MAX_STRINGS, MB_STRING_WORDS, MB_POP, MB_POP_STYLE, MB_IMPACT_SLAP, MB_POP_GAIN_TARGET,
+       MB_SLAP, MB_SL_CLANK_TARGET)
+(
+  slap_speed_current=slap_speed_request; slap_stiffness_current=slap_stiffness_request;
+  slap_clank_current=slap_clank_request;
+  slap_gain_current=slap_gain_request;
+  i=0; loop(MB_MAX_STRINGS,
+    b=i*MB_STRING_WORDS+MB_POP;
+    b[MB_POP_STYLE]==MB_IMPACT_SLAP ? (
+      b[MB_POP_GAIN_TARGET]=slap_gain_current;
+      (i*MB_STRING_WORDS+MB_SLAP)[MB_SL_CLANK_TARGET]=slap_clank_current;
+    );
+    i+=1;
+  );
+);
+
+function mb_slap_configuration(st, cfg)
+local(b)
+global(MB_SLAP, MB_SL_SPEED, MB_SL_MASS, MB_SL_STIFFNESS, MB_SL_CLANK, MB_SL_CLANK_TARGET,
+       MB_C_DISPLACEMENT, MB_C_CONTACT_WIDTH, MB_C_SOFTNESS, MB_C_DIRECTION,
+       slap_speed_current, slap_stiffness_current, slap_clank_current,
+       MB_SLAP_THUMB_MASS, MB_SLAP_WIDTH_MM)
+(
+  b=st+MB_SLAP;
+  b[MB_SL_SPEED]=slap_speed_current; b[MB_SL_MASS]=MB_SLAP_THUMB_MASS;
+  b[MB_SL_STIFFNESS]=slap_stiffness_current;
+  b[MB_SL_CLANK]=b[MB_SL_CLANK_TARGET]=slap_clank_current;
+  cfg[MB_C_DISPLACEMENT]=0; cfg[MB_C_CONTACT_WIDTH]=MB_SLAP_WIDTH_MM;
+  cfg[MB_C_SOFTNESS]=0; cfg[MB_C_DIRECTION]=0;
+);
+
+function mb_excite_slap_modes(st, velocity)
+local(b, cfg, g, length, point, width, mass, norm, raw, reduced, duration, speed,
+      impulse, i, ptr, weight, z, response)
+(
+  b=st+MB_SLAP; cfg=st+MB_CONFIG; g=st+MB_GEOMETRY;
+  length=g[MB_G_LENGTH]; point=g[MB_G_P]; width=g[MB_G_WIDTH];
+  mass=cfg[MB_C_TENSION]/(2*length*g[MB_G_F1])^2*length/2;
+  speed=mb_variation_strength(st,b[MB_SL_SPEED]*(mb_clamp(velocity,1,127)/127)^velocity_curve_current);
+  // Contact duration follows the thumb's compliance, not the near-zero
+  // instantaneous receiving mass of a point spread over all modal frequencies.
+  duration=$pi*sqrt(b[MB_SL_MASS]/b[MB_SL_STIFFNESS]);
+  duration=mb_variation_softness(st,duration);
+  duration+=0.00025*low_velocity_attack_softness_current*(1-mb_clamp(velocity,1,127)/127);
+  duration=mb_clamp(duration,0.00025,0.006);
+  b[MB_SL_TOTAL]=b[MB_SL_LEFT]=max(4,ceil(duration*srate));
+  duration=b[MB_SL_TOTAL]/srate;
+  b[MB_SL_COUNT]=min(MB_SLAP_MODES,st[MB_S_COUNT]);
+  raw=norm=i=0;
+  loop(b[MB_SL_COUNT],
+    ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+    weight=sin((i+1)*$pi*point)*mb_sinc((i+1)*$pi*width/(2*length))*mb_band_taper(ptr[MB_M_FREQ]);
+    weight*=exp(-g[MB_G_AGE]*ptr[MB_M_FREQ]/6000);
+    // Integral of the prescribed raised-cosine force, used only to estimate
+    // receiving mass/work. The actual audio is driven over time below.
+    z=0.5*ptr[MB_M_OMEGA]*duration;
+    response=mb_sinc(z)+0.5*(mb_sinc(z+$pi)+mb_sinc(z-$pi));
+    b[MB_SL_WEIGHTS+i]=weight;
+    b[MB_SL_FORECAST+i]=weight*response/ptr[MB_M_OMEGA];
+    raw+=weight*weight; norm+=(weight*response)^2; i+=1;
+  );
+  // The isolated full impulse supplies an upper bound; the finite pulse can
+  // transfer less because the string moves during contact. Never normalize up.
+  reduced=1/(1/b[MB_SL_MASS]+norm/mass);
+  impulse=(1+MB_SLAP_RESTITUTION)*reduced*speed;
+  i=0; loop(b[MB_SL_COUNT],
+    b[MB_SL_FORECAST+i]=abs(b[MB_SL_FORECAST+i]*impulse/mass); i+=1;
+  );
+  i=0;
+  loop(st[MB_S_COUNT],
+    ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+    ptr[MB_M_R]=ptr[MB_M_I]=ptr[MB_M_INITIAL]=0; i+=1;
+  );
+  b[MB_SL_SPEED]=speed; b[MB_SL_WIDTH]=width; b[MB_SL_DURATION]=duration;
+  b[MB_SL_IMPULSE]=impulse; b[MB_SL_ENERGY]=0.5*impulse*impulse*norm/mass;
+  b[MB_SL_AVAILABLE]=0.5*b[MB_SL_MASS]*speed*speed;
+  b[MB_SL_MODAL_MASS]=mass; b[MB_SL_NORM]=norm;
+  b[MB_SL_RAW_NORM]=raw;
+  b[MB_SL_BUDGET]=length*(impulse/mass)^2*norm;
+  b[MB_SL_WORK]=b[MB_SL_LAST_WORK]=0;
+  b[MB_SL_BUDGET]<=0 ? b[MB_SL_LEFT]=0;
+  b[MB_SL_BANK]=st[MB_S_ACTIVE]; b[MB_SL_LENGTH]=length;
+);
+
+// Called after passive old-state carry. Thumb work cannot raise the driven
+// band's energy beyond its carried value plus this gesture's allowance.
+function mb_slap_arm(st)
+local(b)
+global(MB_SLAP, MB_SL_CEILING, MB_SL_BANK, MB_SL_COUNT, MB_SL_LENGTH, MB_SL_BUDGET)
+(
+  b=st+MB_SLAP;
+  b[MB_SL_CEILING]=mb_bank_energy(b[MB_SL_BANK],b[MB_SL_COUNT],b[MB_SL_LENGTH])+b[MB_SL_BUDGET];
+);
+
+function mb_slap_cancel(st)
+global(MB_SLAP, MB_SL_LEFT)
+( (st+MB_SLAP)[MB_SL_LEFT]=0; );
+
+// Only a short strike runs two <=32-mode passes. No full-bank projection,
+// coefficient invalidation or contact-cache rebuild is performed per pulse sample.
+function mb_slap_tick(st)
+local(b, count, length, pulse, i, ptr, q, v, dv, energy, linear, quadratic,
+      allowed, scale, work, pc, primary, site, point, owner, partial)
+(
+  b=st+MB_SLAP;
+  b[MB_SL_LEFT]>0 ? (
+    owner=MB_OWNERS+floor(st/MB_STRING_WORDS)*MB_OWNER_WORDS;
+    st[MB_S_ACTIVE]!=b[MB_SL_BANK] || st[MB_S_COUNT]<=0 ||
+      (st[MB_S_MUTE]<1 && (st+MB_LIVE)[MB_L_GHOST_DAMP]<=0) ||
+      (owner[MB_O_SERIAL]>0 && !owner[MB_O_KEY_DOWN]) ||
+      abs((st+MB_GEOMETRY)[MB_G_LENGTH]-b[MB_SL_LENGTH])>0.000000001 ? b[MB_SL_LEFT]=0 : (
+      count=min(b[MB_SL_COUNT],st[MB_S_COUNT]); length=b[MB_SL_LENGTH];
+      // Harmonic touch is captured after rack excitation. Project the pending
+      // force too, without boosting surviving modes or reopening its budget.
+      partial=st[MB_S_HARMONIC];
+      b[MB_SL_LEFT]==b[MB_SL_TOTAL] && partial>1 ? (
+        i=0; loop(count,
+          (i+1)%partial ? (b[MB_SL_WEIGHTS+i]=b[MB_SL_FORECAST+i]=0;); i+=1;
+        );
+      );
+      pulse=-b[MB_SL_IMPULSE]/b[MB_SL_MODAL_MASS]*(1-cos(2*$pi*
+        (b[MB_SL_TOTAL]-b[MB_SL_LEFT]+0.5)/b[MB_SL_TOTAL]))/b[MB_SL_TOTAL];
+      energy=linear=quadratic=i=0;
+      loop(count,
+        ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE; q=ptr[MB_M_R];
+        v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*ptr[MB_M_I];
+        dv=ptr[MB_M_FREQ]<0.48*srate ? pulse*b[MB_SL_WEIGHTS+i] : 0;
+        energy+=v*v+(ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2)*q*q;
+        linear+=2*v*dv; quadratic+=dv*dv; i+=1;
+      );
+      energy*=length; linear*=length; quadratic*=length;
+      allowed=max(0,min(b[MB_SL_BUDGET]-b[MB_SL_WORK],b[MB_SL_CEILING]-energy));
+      scale=1;
+      linear+quadratic>allowed && quadratic>0 ? (
+        scale=linear>=0 ? 2*allowed/max(0.000000000000000000000000000001,linear+sqrt(linear*linear+4*quadratic*allowed)) :
+          (-linear+sqrt(linear*linear+4*quadratic*allowed))/(2*quadratic);
+        scale=mb_clamp(scale,0,1);
+      );
+      work=scale*linear+scale*scale*quadratic;
+      i=0; loop(count,
+        ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+        ptr[MB_M_FREQ]<0.48*srate ? ptr[MB_M_I]-=scale*pulse*b[MB_SL_WEIGHTS+i]/ptr[MB_M_OMEGA];
+        i+=1;
+      );
+      b[MB_SL_WORK]+=max(0,work); b[MB_SL_LAST_WORK]=work; b[MB_SL_AFTER]=energy+work;
+      work>0 ? mb_tension_work(st);
+      // Keep the next site's measured velocity exact without rebuilding its
+      // shape arrays. Projections were cached at geometry preparation time.
+      primary=mb_contact_ptr(st,st[MB_S_ACTIVE]); pc=st+MB_POP_CONTACT;
+      primary[MB_FP_READY] ? (
+        site=0; loop(pc[MB_PCC_COUNT],
+          point=pc+MB_PCC_HEADER+site*MB_PCC_POINT_WORDS;
+          point[MB_FP_V]+=scale*pulse*pc[MB_PCC_DRIVE_DOT+site]; site+=1;
+        );
+      );
+      b[MB_SL_LEFT]-=1;
+    );
+  );
+);
+
+function mb_slap_clear(st)
+global(MB_SLAP, MB_SLAP_HEADER)
+( memset(st+MB_SLAP,0,MB_SLAP_HEADER); );
+
+function mb_slap_remember(index)
+global(MB_FV_FINGER, MB_RH_SLAP)
+( mb_fingers_view(index)[MB_FV_FINGER]=MB_RH_SLAP; );

@@ -1,0 +1,124 @@
+@init
+function mb_block_begin()
+global(block_midi_fault, event_count, event_read, queue_last_offset, queue_overflow, sample_index, memory_fault)
+(
+  sample_index=0;
+  event_count=event_read=0;
+  queue_overflow=0;
+  block_midi_fault=0;
+  queue_last_offset=-1;
+  !memory_fault ? mb_passthrough_sync(0);
+);
+
+function mb_midi_receive(offset, midi_status, midi_note, midi_velocity)
+local(kind, relevant, ep)
+(
+  !memory_fault ? mb_passthrough_receive(offset, midi_status, midi_note, midi_velocity);
+  kind=midi_status&$xF0;
+  relevant=kind==$x90 || kind==$x80 || kind==$xE0 ||
+           (kind==$xD0 && (mb_midi_controller_selected(MB_CTRL_PRESSURE) || mb_performance_selected(MB_CTRL_PRESSURE))) ||
+           (kind==$xB0 && (midi_note==120 || midi_note==121 || midi_note==123 ||
+                          mb_ring_cc_selected(midi_note&127) ||
+                          mb_pick_scrape_selected(midi_note&127) ||
+                          mb_palm_cc_selected(midi_note&127) ||
+                          mb_instrument_cc_selected(midi_note&127) ||
+                          mb_art_cc_selected(midi_note&127) ||
+                          mb_performance_selected(MB_CTRL_CC_FIRST+(midi_note&127)) ||
+                          mb_midi_controller_selected(MB_CTRL_CC_FIRST+(midi_note&127))));
+  relevant && !memory_fault ? (
+    offset<0 || offset>=samplesblock || offset<queue_last_offset || offset!=floor(offset) ? (
+      !block_midi_fault ? block_midi_fault=MB_FAULT_ORDER;
+      MB_NOTES[MB_NH_QUEUE_DROPS]+=1;
+    ) : event_count<MB_EVENT_LIMIT ? (
+      ep=events+event_count*MB_EVENT_STRIDE;
+      ep[MB_EV_OFFSET]=offset;
+      ep[MB_EV_STATUS]=midi_status;
+      ep[MB_EV_DATA1]=midi_note;
+      ep[MB_EV_DATA2]=midi_velocity;
+      event_count+=1;
+      queue_last_offset=offset;
+    ) : (
+      queue_overflow=1;
+      !block_midi_fault ? block_midi_fault=MB_FAULT_QUEUE;
+      MB_NOTES[MB_NH_QUEUE_DROPS]+=1;
+    );
+  );
+);
+
+function mb_block_end()
+global(memory_fault)
+(
+  mb_parameters_apply();
+  !memory_fault ? mb_passthrough_sync(0);
+  !memory_fault ? (
+    mb_hand_refresh(); mb_hand_position_notify(); mb_ring_notify();
+    mb_performance_notify(); mb_force_notify(); mb_pick_scrape_notify();
+    mb_palm_notify(); mb_instrument_cc_notify();
+  );
+);
+
+// Reset/fault safety, then MIDI events in sample/host order; render follows.
+function mb_events_sample()
+local(ep, status, channel, note, velocity, released, role)
+(
+  midi_reset_pending ? (mb_performance_clear(-1); mb_midi_reset(); mb_performance_init(); midi_reset_pending=0;);
+  block_midi_fault ? (mb_notes_fault(block_midi_fault); block_midi_fault=0;);
+  MB_NOTES[MB_NH_FAULT] && !MB_NOTES[MB_NH_FAULT_SILENCED] ? mb_performance_clear(-1);
+  mb_midi_enforce_fault();
+  while(event_read<event_count && (events+event_read*MB_EVENT_STRIDE)[MB_EV_OFFSET]<=sample_index) (
+    ep=events+event_read*MB_EVENT_STRIDE;
+    status=ep[MB_EV_STATUS]&$xF0;
+    channel=ep[MB_EV_STATUS]&15;
+    note=ep[MB_EV_DATA1]&127;
+    velocity=ep[MB_EV_DATA2]&127;
+    !MB_NOTES[MB_NH_FAULT] ? (
+      status==$x90 && velocity>0 ? (
+        role=mb_art_matches(channel, note);
+        role==MB_ROLE_TAP ? role=MB_ROLE_PERF_FIRST+MB_PF_TAP;
+        !role && mb_ring_matches(channel, note) ? role=MB_ROLE_LET_RING;
+        !role ? role=mb_performance_matches(channel,note);
+        role>=MB_ROLE_PERF_FIRST ? mb_performance_note_on(channel,note,velocity,role) :
+        role==MB_ROLE_LET_RING ? mb_ring_note_on(channel, note, velocity) :
+        role ? mb_art_note_on(channel, note, velocity, role) :
+          (mb_performance_playing(); mb_routing_note_on(channel, note, velocity););
+      ) : (
+        status==$x80 || (status==$x90 && velocity==0) ? (
+          released=mb_notes_off(channel, note, !mb_ring_active(channel));
+          MB_NOTES[MB_NH_OFF_VALID] && MB_NOTES[MB_NH_OFF_ROLE]!=MB_ROLE_NOTE ? (
+            MB_NOTES[MB_NH_OFF_ROLE]>=MB_ROLE_PERF_FIRST ?
+              mb_performance_note_off(channel,MB_NOTES[MB_NH_OFF_SERIAL]) :
+            MB_NOTES[MB_NH_OFF_ROLE]==MB_ROLE_LET_RING ?
+              mb_ring_note_off(channel, MB_NOTES[MB_NH_OFF_SERIAL]) :
+              mb_art_note_off(channel, MB_NOTES[MB_NH_OFF_SERIAL], MB_NOTES[MB_NH_OFF_ROLE]);
+          );
+          released>=0 ? (
+            mb_motion_note_off(released, MB_NOTES[MB_NH_OFF_SERIAL]);
+            !mb_hopo_release(released) ? (
+              mb_release_capture(released);
+              !mb_ring_active(channel) ? mb_release_apply(released);
+            );
+          );
+        );
+        status==$xB0 ? (
+          mb_midi_channel_controller(channel, note);
+          note==120 || note==121 || note==123 ? mb_pick_scrape_reset(channel,note==120);
+          mb_pick_scrape_cc(channel,note,velocity);
+          mb_palm_cc(channel,note,velocity);
+          mb_instrument_cc(channel,note,velocity);
+          note==120 || note==121 || note==123 ? mb_performance_clear(channel);
+          mb_ring_controller(channel, note, velocity);
+          mb_art_controller(channel, note, velocity);
+          mb_midi_control(channel, MB_CTRL_CC_FIRST+note, velocity);
+          mb_performance_control(channel,MB_CTRL_CC_FIRST+note,velocity);
+        );
+        status==$xD0 ? (mb_midi_control(channel, MB_CTRL_PRESSURE, note);
+          mb_performance_control(channel,MB_CTRL_PRESSURE,note););
+        status==$xE0 ? mb_midi_wheel(channel, note, velocity);
+      );
+    ) : status==$x90 && velocity>0 ? MB_NOTES[MB_NH_REJECTED]+=1;
+    MB_NOTES[MB_NH_FAULT] && !MB_NOTES[MB_NH_FAULT_SILENCED] ? mb_performance_clear(-1);
+    mb_midi_enforce_fault();
+    mb_pick_scrape_selection_sync();
+    event_read+=1;
+  );
+);

@@ -1,0 +1,120 @@
+// One-shot generic pickup designs. Named native controls remain authoritative;
+// profiles own no vibration, observation or circuit delay state.
+@init
+function mb_pickup_profiles_init()
+(
+  // Logical profile fields, not native parameter IDs or RAM offsets.
+  MB_PPF_COIL=0; MB_PPF_WIDTH=1; MB_PPF_SPACING=2; MB_PPF_STAGGER=3;
+  MB_PPF_SENSITIVITY=4; MB_PPF_RESISTANCE=5; MB_PPF_INDUCTANCE=6; MB_PPF_CAPACITANCE=7;
+  MB_PPF_FIELDS=8; MB_PPF_SELECT=8;
+  pickup_profiles_initialized=0; pickup_profile1_applied=pickup_profile2_applied=0;
+);
+
+function mb_pickup_profiles_request()
+global(p_pickup_1_profile, p_pickup_2_profile, pickup_profile1_request, pickup_profile2_request)
+(
+  pickup_profile1_request=mb_clamp(floor(p_pickup_1_profile+0.5), 0, 3);
+  pickup_profile2_request=mb_clamp(floor(p_pickup_2_profile+0.5), 0, 3);
+);
+
+// Profiles 1..3: Single, Split P-style, Dual series. Native units: mm, %, kOhm, H, pF.
+// Generic starting values, not measured products. Single retains the reference coil.
+function mb_pickup_profile_target(profile, field)
+(
+  field==MB_PPF_COIL ? (profile==1 ? MB_COIL_SINGLE : profile==2 ? MB_COIL_SPLIT : MB_COIL_SERIES) :
+  field==MB_PPF_WIDTH ? (profile==3 ? 8 : 12) :
+  field==MB_PPF_SPACING ? (profile==3 ? 18 : 0) :
+  field==MB_PPF_STAGGER ? (profile==2 ? 10 : 0) :
+  field==MB_PPF_SENSITIVITY ? 100 :
+  field==MB_PPF_RESISTANCE ? (profile==1 ? 6 : profile==2 ? 5 : 4) :
+  field==MB_PPF_INDUCTANCE ? (profile==1 ? 2.5 : 2) :
+  field==MB_PPF_CAPACITANCE ? (profile==1 ? 150 : profile==2 ? 120 : 100) : 0;
+);
+
+function mb_pickup_profile_get(pickup, field)
+(
+  pickup==0 ? (
+    field==MB_PPF_COIL ? p_pickup_1_coil_configuration :
+    field==MB_PPF_WIDTH ? p_pickup_1_sensing_width :
+    field==MB_PPF_SPACING ? p_pickup_1_coil_spacing :
+    field==MB_PPF_STAGGER ? p_pickup_1_split_stagger :
+    field==MB_PPF_SENSITIVITY ? p_pickup_1_sensitivity :
+    field==MB_PPF_RESISTANCE ? p_pickup_1_coil_resistance :
+    field==MB_PPF_INDUCTANCE ? p_pickup_1_coil_inductance :
+    field==MB_PPF_CAPACITANCE ? p_pickup_1_internal_capacitance : p_pickup_1_profile;
+  ) : (
+    field==MB_PPF_COIL ? p_pickup_2_coil_configuration :
+    field==MB_PPF_WIDTH ? p_pickup_2_sensing_width :
+    field==MB_PPF_SPACING ? p_pickup_2_coil_spacing :
+    field==MB_PPF_STAGGER ? p_pickup_2_split_stagger :
+    field==MB_PPF_SENSITIVITY ? p_pickup_2_sensitivity :
+    field==MB_PPF_RESISTANCE ? p_pickup_2_coil_resistance :
+    field==MB_PPF_INDUCTANCE ? p_pickup_2_coil_inductance :
+    field==MB_PPF_CAPACITANCE ? p_pickup_2_internal_capacitance : p_pickup_2_profile;
+  );
+);
+
+// Audio-thread publication only; sliderchange refreshes native displays/saved values.
+function mb_pickup_profile_put(pickup, field, value)
+(
+  abs(mb_pickup_profile_get(pickup, field)-value)>0.000000001 ? (
+    pickup==0 ? (
+      field==MB_PPF_COIL ? (p_pickup_1_coil_configuration=value; sliderchange(p_pickup_1_coil_configuration);) :
+      field==MB_PPF_WIDTH ? (p_pickup_1_sensing_width=value; sliderchange(p_pickup_1_sensing_width);) :
+      field==MB_PPF_SPACING ? (p_pickup_1_coil_spacing=value; sliderchange(p_pickup_1_coil_spacing);) :
+      field==MB_PPF_STAGGER ? (p_pickup_1_split_stagger=value; sliderchange(p_pickup_1_split_stagger);) :
+      field==MB_PPF_SENSITIVITY ? (p_pickup_1_sensitivity=value; sliderchange(p_pickup_1_sensitivity);) :
+      field==MB_PPF_RESISTANCE ? (p_pickup_1_coil_resistance=value; sliderchange(p_pickup_1_coil_resistance);) :
+      field==MB_PPF_INDUCTANCE ? (p_pickup_1_coil_inductance=value; sliderchange(p_pickup_1_coil_inductance);) :
+      field==MB_PPF_CAPACITANCE ? (p_pickup_1_internal_capacitance=value; sliderchange(p_pickup_1_internal_capacitance);) :
+        (p_pickup_1_profile=value; sliderchange(p_pickup_1_profile););
+    ) : (
+      field==MB_PPF_COIL ? (p_pickup_2_coil_configuration=value; sliderchange(p_pickup_2_coil_configuration);) :
+      field==MB_PPF_WIDTH ? (p_pickup_2_sensing_width=value; sliderchange(p_pickup_2_sensing_width);) :
+      field==MB_PPF_SPACING ? (p_pickup_2_coil_spacing=value; sliderchange(p_pickup_2_coil_spacing);) :
+      field==MB_PPF_STAGGER ? (p_pickup_2_split_stagger=value; sliderchange(p_pickup_2_split_stagger);) :
+      field==MB_PPF_SENSITIVITY ? (p_pickup_2_sensitivity=value; sliderchange(p_pickup_2_sensitivity);) :
+      field==MB_PPF_RESISTANCE ? (p_pickup_2_coil_resistance=value; sliderchange(p_pickup_2_coil_resistance);) :
+      field==MB_PPF_INDUCTANCE ? (p_pickup_2_coil_inductance=value; sliderchange(p_pickup_2_coil_inductance);) :
+      field==MB_PPF_CAPACITANCE ? (p_pickup_2_internal_capacitance=value; sliderchange(p_pickup_2_internal_capacitance);) :
+        (p_pickup_2_profile=value; sliderchange(p_pickup_2_profile););
+    );
+    1;
+  ) : 0;
+);
+
+function mb_pickup_profile_update(pickup, selected, previous)
+local(field, changed, mismatch)
+global(MB_PPF_FIELDS, MB_PPF_SELECT, pickup_profiles_initialized)
+(
+  field=changed=mismatch=0;
+  selected>0 ? (
+    !pickup_profiles_initialized || selected!=previous ? (
+      loop(MB_PPF_FIELDS,
+        changed+=mb_pickup_profile_put(pickup, field, mb_pickup_profile_target(selected, field));
+        field+=1;
+      );
+    ) : (
+      loop(MB_PPF_FIELDS,
+        mismatch+=abs(mb_pickup_profile_get(pickup, field)-mb_pickup_profile_target(selected, field))>0.000000001;
+        field+=1;
+      );
+      mismatch ? changed=mb_pickup_profile_put(pickup, MB_PPF_SELECT, 0);
+    );
+  );
+  changed;
+);
+
+// A new selection wins simultaneous manual edits. Otherwise edits select Custom.
+function mb_pickup_profiles_apply()
+local(changed)
+global(pickup_profile1_request, pickup_profile2_request, pickup_profile1_applied,
+       pickup_profile2_applied, pickup_profiles_initialized)
+(
+  changed=mb_pickup_profile_update(0, pickup_profile1_request, pickup_profile1_applied);
+  changed+=mb_pickup_profile_update(1, pickup_profile2_request, pickup_profile2_applied);
+  changed ? mb_pickup_profiles_request();
+  pickup_profile1_applied=pickup_profile1_request; pickup_profile2_applied=pickup_profile2_request;
+  pickup_profiles_initialized=1;
+  changed;
+);

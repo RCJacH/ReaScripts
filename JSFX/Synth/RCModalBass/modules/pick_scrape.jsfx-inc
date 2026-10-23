@@ -1,0 +1,124 @@
+// Explicit longitudinal Pick gesture; no note allocation, pluck or fret change.
+@init
+function mb_pick_scrape_request()
+global(p_pick_scrape_position, p_pick_scrape_controller, pick_scrape_position_request, pick_scrape_cc_request)
+(
+  pick_scrape_position_request=mb_clamp(p_pick_scrape_position,0,1);
+  pick_scrape_cc_request=mb_midi_cc_supported(floor(p_pick_scrape_controller)) ? floor(p_pick_scrape_controller) : -1;
+);
+
+function mb_pick_scrape_selected(cc)
+global(p_pick_scrape_controller)
+( mb_midi_cc_supported(cc) && cc==floor(p_pick_scrape_controller); );
+
+function mb_pick_scrape_reset(channel, hard)
+local(i, b, g)
+(
+  i=0; loop(MB_MAX_STRINGS,
+    b=mb_rack_string(i)+MB_PICK_FRICTION; g=b+MB_PF_SCRAPE;
+    channel<0 || g[MB_PN_CHANNEL]==channel ? (
+      hard ? mb_pick_noise_clear(g) : (
+        g[MB_PN_READY]=g[MB_PN_LEFT]=g[MB_PN_TARGET_V]=g[MB_PN_TARGET_LEVEL]=0;
+      );
+      hard && !(b+MB_PF_ATTACK)[MB_PN_ACTIVE] ? (
+        b[MB_PF_ON]=b[MB_PF_TAIL]=0; memset(b+MB_PF_ELECTRONICS+MB_E_X1,0,4);
+      );
+    );
+    i+=1;
+  );
+);
+
+// Switching a held Force String is selection, never longitudinal travel.
+// Called at event/block boundaries, not on every rendered sample.
+function mb_pick_scrape_selection_sync()
+local(selection)
+global(pick_scrape_selection_seen)
+(
+  selection=mb_string_selection();
+  pick_scrape_selection_seen!=selection ? (
+    mb_pick_scrape_reset(-1,0); pick_scrape_selection_seen=selection;
+  );
+);
+
+// First packet is a silent baseline. Each later packet supplies physical travel
+// and an actual time interval, interpolated until the next expected packet.
+function mb_pick_scrape_move(channel, position)
+local(selection, index, st, slot, g, now, elapsed, duration, target, speed, scale)
+(
+  mb_pick_scrape_selection_sync();
+  selection=mb_string_selection();
+  selection>0 ? (
+    index=mb_routing_selection_index(selection);
+    st=mb_rack_string(index); slot=mb_rack_slot(index);
+    slot[MB_RS_ENABLED] && !slot[MB_RS_RETIRING] &&
+      (channel_mode_current==0 || channel==mb_midi_string_channel(index)) ? (
+      g=st+MB_PICK_FRICTION+MB_PF_SCRAPE;
+      scale=mb_clamp(p_scale_length,600,1000)*0.001;
+      target=scale*mb_clamp(position,0,1); now=instrument_sample_clock;
+      !g[MB_PN_READY] || g[MB_PN_CHANNEL]!=channel ? (
+        mb_pick_noise_prepare(st,g,mb_winding_current(index),mb_gauge_current(index),0);
+        g[MB_PN_POS]=g[MB_PN_TARGET]=g[MB_PN_LAST_TARGET]=target;
+        g[MB_PN_LAST_TIME]=now; g[MB_PN_READY]=1; g[MB_PN_CHANNEL]=channel;
+        g[MB_PN_LEFT]=g[MB_PN_TARGET_V]=g[MB_PN_TARGET_LEVEL]=0;
+      ) : (
+        elapsed=max(1,now-g[MB_PN_LAST_TIME]);
+        now==g[MB_PN_LAST_TIME] ? elapsed=max(1,g[MB_PN_INTERVAL]);
+        speed=abs(target-g[MB_PN_LAST_TARGET])*srate/elapsed;
+        // Reject coarse MIDI resets/teleports, not ordinary continuous motion.
+        elapsed>ceil(0.100*srate) ||
+          (abs(target-g[MB_PN_LAST_TARGET])>0.08 && speed>max(8,4*abs(g[MB_PN_V]))) ? (
+          g[MB_PN_POS]=g[MB_PN_TARGET]=target; g[MB_PN_LEFT]=0;
+          g[MB_PN_TARGET_V]=g[MB_PN_TARGET_LEVEL]=0;
+        ) : (
+          abs(target-g[MB_PN_TARGET])>0.0000000001 ? (
+            duration=mb_clamp(elapsed,ceil(0.002*srate),ceil(0.100*srate));
+            g[MB_PN_TARGET]=target; g[MB_PN_LEFT]=duration;
+            g[MB_PN_ACTIVE]=1; (st+MB_PICK_FRICTION)[MB_PF_ON]=1;
+            slot[MB_RS_BUSY]=1;
+          );
+        );
+        g[MB_PN_INTERVAL]=elapsed; g[MB_PN_LAST_TIME]=now; g[MB_PN_LAST_TARGET]=target;
+      );
+    );
+  );
+);
+
+function mb_pick_scrape_apply_requests()
+local(channel, selection)
+(
+  selection=mb_string_selection();
+  pick_scrape_cc_current!=pick_scrape_cc_request ||
+    pick_scrape_selection_seen!=selection || pick_scrape_mode_seen!=channel_mode_current ||
+    pick_scrape_scale_seen!=p_scale_length ? (
+    mb_pick_scrape_reset(-1,0);
+    pick_scrape_cc_current=pick_scrape_cc_request;
+    pick_scrape_selection_seen=selection; pick_scrape_mode_seen=channel_mode_current;
+    pick_scrape_scale_seen=p_scale_length;
+    pick_scrape_position_seen=pick_scrape_position_request;
+  );
+  pick_scrape_position_seen!=pick_scrape_position_request ? (
+    channel=channel_mode_current && selection>0 ?
+      mb_midi_string_channel(mb_routing_selection_index(selection)) : 0;
+    mb_pick_scrape_move(channel,pick_scrape_position_request);
+    pick_scrape_position_seen=pick_scrape_position_request;
+  );
+);
+
+function mb_pick_scrape_cc(channel, cc, value)
+global(pick_scrape_cc_current, p_pick_scrape_position, pick_scrape_position_request,
+       pick_scrape_position_seen, pick_scrape_display_dirty)
+(
+  mb_midi_cc_supported(cc) && cc==pick_scrape_cc_current ? (
+    // Display/controller feedback also works in Auto and on an unmapped channel;
+    // only the sound generator requires a selected string and matching channel.
+    p_pick_scrape_position=pick_scrape_position_request=pick_scrape_position_seen=value/127;
+    pick_scrape_display_dirty=1;
+    mb_pick_scrape_move(channel,value/127);
+  );
+);
+
+function mb_pick_scrape_notify()
+global(pick_scrape_display_dirty, p_pick_scrape_position)
+(
+  pick_scrape_display_dirty ? (pick_scrape_display_dirty=0; sliderchange(p_pick_scrape_position););
+);

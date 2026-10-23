@@ -1,0 +1,218 @@
+// Repluck approximation: passive q/v carry plus bounded triangular displacement.
+// Modal work is event-time O(modes); rendering reuses the existing bank fade.
+@init
+function mb_repluck_work_scale(linear, quadratic)
+global()
+(
+  linear>0 && quadratic>0 ?
+    2*quadratic/(linear+sqrt(linear*linear+4*quadratic*quadratic)) : 1;
+);
+
+// Read-only next-sample pickup value, including the live mask's next tick.
+function mb_repluck_bank_value(st, base, count, weights)
+local(l, masks, targets, flag, i, ptr, mask, value)
+(
+  l=st+MB_LIVE;
+  base==st+MB_BANK_A ? (
+    masks=st+MB_MASK_A; targets=st+MB_MASK_TARGET_A; flag=l[MB_L_FLAG_A];
+  ) : (
+    masks=st+MB_MASK_B; targets=st+MB_MASK_TARGET_B; flag=l[MB_L_FLAG_B];
+  );
+  value=i=0;
+  loop(count,
+    ptr=base+i*MB_MODE_STRIDE;
+    mask=flag ? masks[i]+(targets[i]-masks[i])*l[MB_L_MASK_SMOOTH] : 1;
+    value+=(-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I])*weights[i]*mask;
+    i+=1;
+  );
+  value;
+);
+
+function mb_repluck_tail_value(st)
+local(rp)
+global(MB_REPLUCK, MB_RP_CORRECTION, MB_RP_LEFT, MB_RP_TOTAL)
+(
+  rp=st+MB_REPLUCK;
+  rp[MB_RP_LEFT]>0 ? rp[MB_RP_CORRECTION]*
+    (0.5-0.5*cos($pi*rp[MB_RP_LEFT]/rp[MB_RP_TOTAL])) : 0;
+);
+
+function mb_repluck_response_tail_value(st)
+local(rp)
+global(MB_REPLUCK, MB_RP_RESPONSE_CORRECTION, MB_RP_LEFT, MB_RP_TOTAL)
+(
+  rp=st+MB_REPLUCK;
+  rp[MB_RP_LEFT]>0 ? rp[MB_RP_RESPONSE_CORRECTION]*
+    (0.5-0.5*cos($pi*rp[MB_RP_LEFT]/rp[MB_RP_TOTAL])) : 0;
+);
+
+function mb_repluck_response_bank_value(st, base, count, weights)
+local(b, l, masks, targets, flag, i, mask, value, ptr)
+(
+  mb_contact_lazy_flush(st,base);
+  b=mb_contact_ptr(st, base); l=st+MB_LIVE; value=i=0;
+  base==st+MB_BANK_A ? (
+    masks=st+MB_MASK_A; targets=st+MB_MASK_TARGET_A; flag=l[MB_L_FLAG_A];
+  ) : (
+    masks=st+MB_MASK_B; targets=st+MB_MASK_TARGET_B; flag=l[MB_L_FLAG_B];
+  );
+  b[MB_FP_RESPONSE_ACTIVE] ? loop(count,
+    mask=flag ? masks[i]+(targets[i]-masks[i])*l[MB_L_MASK_SMOOTH] : 1;
+    ptr=base+i*MB_MODE_STRIDE;
+    value+=(-ptr[MB_M_ALPHA]*(b+MB_FP_RESPONSE_Q)[i]-ptr[MB_M_OMEGA]*(b+MB_FP_RESPONSE_I)[i])*weights[i]*mask; i+=1;
+  );
+  value;
+);
+
+// A short output-domain correction preserves onset through an interrupted
+// span/pickup fade. It is not modal energy or extra excitation, and never feeds
+// back into the string. Subsequent replucks fold its current value, not copies.
+function mb_repluck_tail(st)
+local(value)
+global(MB_REPLUCK, MB_RP_LEFT, MB_RP_CORRECTION, MB_S_MUTE,
+       MB_CONTACT, MB_K_LEVEL, MB_RP_RESPONSE_CORRECTION)
+(
+  value=mb_repluck_tail_value(st);
+  abs((st+MB_CONTACT)[MB_K_LEVEL])>0 ?
+    value+=(st+MB_CONTACT)[MB_K_LEVEL]*mb_repluck_response_tail_value(st);
+  (st+MB_REPLUCK)[MB_RP_CORRECTION]*=st[MB_S_MUTE];
+  (st+MB_REPLUCK)[MB_RP_RESPONSE_CORRECTION]*=st[MB_S_MUTE];
+  (st+MB_REPLUCK)[MB_RP_LEFT]-=1;
+  value;
+);
+
+// Called before either bank is overwritten. Fold an in-flight fade into the
+// active span by mode index; this cannot reproduce two different spatial fields.
+// Include its actual blend, band masks and physical velocities. The energy cap
+// makes this lossy fold passive, including an interrupted fret/ghost transition.
+function mb_repluck_capture(st)
+local(rp, l, base, previous, count, pc, length, previous_length, a, b, fade,
+      masks, previous_masks, flag, previous_flag, i, ptr, pp, q, v, mask, raw, scale,
+      weights, previous_weights, observed, folded_output, correction, response_observed)
+(
+  rp=st+MB_REPLUCK; l=st+MB_LIVE;
+  correction=mb_repluck_tail_value(st);
+  response_observed=mb_repluck_response_tail_value(st);
+  memset(rp, 0, MB_RP_HEADER_WORDS);
+  base=st[MB_S_ACTIVE]; previous=st[MB_S_PREVIOUS]; count=st[MB_S_COUNT];
+  base==st+MB_BANK_A ? (
+    length=st[MB_S_LENGTH_A]; previous_length=st[MB_S_LENGTH_B];
+    masks=st+MB_MASK_A; previous_masks=st+MB_MASK_B;
+    flag=l[MB_L_FLAG_A]; previous_flag=l[MB_L_FLAG_B];
+    weights=st+MB_PICKUP_A; previous_weights=st+MB_PICKUP_B;
+  ) : (
+    length=st[MB_S_LENGTH_B]; previous_length=st[MB_S_LENGTH_A];
+    masks=st+MB_MASK_B; previous_masks=st+MB_MASK_A;
+    flag=l[MB_L_FLAG_B]; previous_flag=l[MB_L_FLAG_A];
+    weights=st+MB_PICKUP_B; previous_weights=st+MB_PICKUP_A;
+  );
+  a=1; b=pc=0;
+  st[MB_S_PREVIOUS_LEFT]>0 ? (
+    pc=st[MB_S_PREVIOUS_COUNT];
+    l[MB_L_FADE_KIND] ? (
+      fade=0.5-0.5*cos($pi*(1-st[MB_S_PREVIOUS_LEFT]/l[MB_L_FADE_TOTAL]));
+      a=fade; b=1-fade;
+    ) : b=st[MB_S_PREVIOUS_LEFT]/st[MB_S_TAIL_SAMPLES];
+  );
+  rp[MB_RP_BEFORE]=(a+b)*(a*mb_bank_energy(base, count, length)+
+    b*mb_bank_energy(previous, pc, previous_length));
+  rp[MB_RP_BEFORE]>0.000000000000000000000001 ? (
+    observed=correction+a*mb_repluck_bank_value(st, base, count, weights)+
+      b*mb_repluck_bank_value(st, previous, pc, previous_weights);
+    response_observed+=a*mb_repluck_response_bank_value(st, base, count, weights)+
+      b*mb_repluck_response_bank_value(st, previous, pc, previous_weights);
+    i=raw=0;
+    loop(count,
+      ptr=base+i*MB_MODE_STRIDE; mask=flag ? masks[i] : 1;
+      q=a*mask*ptr[MB_M_R];
+      v=a*mask*(-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I]);
+      i<pc ? (
+        pp=previous+i*MB_MODE_STRIDE; mask=previous_flag ? previous_masks[i] : 1;
+        q+=b*mask*pp[MB_M_R];
+        v+=b*mask*(-pp[MB_M_ALPHA]*pp[MB_M_R]-pp[MB_M_OMEGA]*pp[MB_M_I]);
+      );
+      rp[MB_RP_Q+i]=q; rp[MB_RP_V+i]=v;
+      raw+=v*v+(ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2)*q*q;
+      i+=1;
+    );
+    raw*=length;
+    scale=raw>rp[MB_RP_BEFORE] ? sqrt(rp[MB_RP_BEFORE]/raw) : 1;
+    rp[MB_RP_FOLD_SCALE]=scale; rp[MB_RP_FOLDED]=raw*scale*scale;
+    rp[MB_RP_COUNT]=count;
+    // One old bank now represents the current audible blend. Its band masks
+    // have already been folded in, so disable a second observation mask.
+    i=folded_output=0;
+    loop(count,
+      ptr=base+i*MB_MODE_STRIDE;
+      rp[MB_RP_Q+i]*=scale; rp[MB_RP_V+i]*=scale;
+      ptr[MB_M_R]=rp[MB_RP_Q+i];
+      ptr[MB_M_I]=-(rp[MB_RP_V+i]+ptr[MB_M_ALPHA]*ptr[MB_M_R])/ptr[MB_M_OMEGA];
+      folded_output+=(-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I])*weights[i];
+      i+=1;
+    );
+    mb_contact_response_fold(st, base, previous, count, pc, a, b, scale);
+    base==st+MB_BANK_A ? l[MB_L_FLAG_A]=0 : l[MB_L_FLAG_B]=0;
+    correction=observed-folded_output;
+    abs(correction)>0.000000000001 ? (
+      rp[MB_RP_CORRECTION]=correction;
+      rp[MB_RP_RESPONSE_CORRECTION]=response_observed-mb_repluck_response_bank_value(st, base, count, weights);
+      rp[MB_RP_LEFT]=rp[MB_RP_TOTAL]=st[MB_S_TAIL_SAMPLES];
+    );
+  );
+  rp[MB_RP_COUNT]>0;
+);
+
+// Called after fresh coefficients/pluck generation, before live state seeding.
+// Map physical q/v, never the old oscillator I; suppress unavailable destination
+// modes. Retuning/folding never boosts energy. Only the NEW displacement vector
+// is limited when phase alignment would inject more than its isolated energy.
+function mb_repluck_apply(st, grip)
+local(rp, length, i, ptr, q, v, dq, dv, stiffness, mapped, pluck, linear,
+      map_scale, retain, excite_scale, count)
+(
+  rp=st+MB_REPLUCK; length=(st+MB_GEOMETRY)[MB_G_LENGTH];
+  count=st[MB_S_COUNT]; mapped=0; i=0;
+  loop(count,
+    ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+    i<rp[MB_RP_COUNT] ? mapped+=rp[MB_RP_V+i]^2+
+      (ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2)*rp[MB_RP_Q+i]^2;
+    i+=1;
+  );
+  mapped*=length;
+  map_scale=mapped>rp[MB_RP_FOLDED] ? sqrt(rp[MB_RP_FOLDED]/mapped) : 1;
+  retain=1-grip;
+  rp[MB_RP_MAP_SCALE]=map_scale; rp[MB_RP_MAPPED]=mapped*map_scale*map_scale;
+  rp[MB_RP_GRIP]=grip; rp[MB_RP_CARRY]=rp[MB_RP_MAPPED]*retain*retain;
+  pluck=linear=i=0;
+  loop(count,
+    ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+    q=i<rp[MB_RP_COUNT] ? rp[MB_RP_Q+i]*map_scale*retain : 0;
+    v=i<rp[MB_RP_COUNT] ? rp[MB_RP_V+i]*map_scale*retain : 0;
+    dq=ptr[MB_M_R]; dv=-ptr[MB_M_ALPHA]*dq-ptr[MB_M_OMEGA]*ptr[MB_M_I];
+    stiffness=ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2;
+    pluck+=dv*dv+stiffness*dq*dq;
+    linear+=2*(v*dv+stiffness*q*dq);
+    i+=1;
+  );
+  pluck*=length; linear*=length;
+  excite_scale=mb_repluck_work_scale(linear, pluck);
+  rp[MB_RP_PLUCK]=pluck; rp[MB_RP_EXCITE_SCALE]=excite_scale;
+  rp[MB_RP_WORK]=excite_scale*linear+excite_scale*excite_scale*pluck;
+  rp[MB_RP_AFTER]=rp[MB_RP_CARRY]+rp[MB_RP_WORK];
+  mb_contact_response_transfer(st, st[MB_S_PREVIOUS], st[MB_S_ACTIVE], rp[MB_RP_COUNT],
+                               count, map_scale*retain);
+  i=0;
+  loop(count,
+    ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+    q=i<rp[MB_RP_COUNT] ? rp[MB_RP_Q+i]*map_scale*retain : 0;
+    v=i<rp[MB_RP_COUNT] ? rp[MB_RP_V+i]*map_scale*retain : 0;
+    dq=ptr[MB_M_R]; dv=-ptr[MB_M_ALPHA]*dq-ptr[MB_M_OMEGA]*ptr[MB_M_I];
+    // Full grip retains the exact approved fresh-pluck coordinates.
+    retain>0 ? (
+      ptr[MB_M_R]=q+excite_scale*dq;
+      ptr[MB_M_I]=-(v+excite_scale*dv+ptr[MB_M_ALPHA]*ptr[MB_M_R])/ptr[MB_M_OMEGA];
+      ptr[MB_M_INITIAL]=ptr[MB_M_R];
+    );
+    i+=1;
+  );
+);

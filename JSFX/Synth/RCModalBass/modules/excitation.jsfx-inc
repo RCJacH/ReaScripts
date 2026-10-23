@@ -1,0 +1,163 @@
+// Ordinary excitation and harmonic-touch shaping.
+@init
+
+// ---- excitation ----
+
+// Milliseconds. Full velocity retains the configured release; softer gestures
+// add up to 0.25 ms at full amount. This shapes excitation, not output filtering.
+function mb_excite_softness(softness, velocity)
+global(low_velocity_attack_softness_current)
+(
+  softness+0.25*low_velocity_attack_softness_current*(1-mb_clamp(velocity, 1, 127)/127);
+);
+
+function mb_excite_modes(st, velocity)
+local(cfg, g, i, n, ptr, freq, omega, alpha, amplitude, h, length, p, width, softness, taper)
+(
+  cfg=st+MB_CONFIG; g=st+MB_GEOMETRY;
+  length=g[MB_G_LENGTH]; p=g[MB_G_P]; width=g[MB_G_WIDTH];
+  softness=mb_excite_softness(cfg[MB_C_SOFTNESS], velocity);
+  h=cfg[MB_C_DISPLACEMENT]*0.001*(mb_clamp(velocity, 1, 127)/127)^velocity_curve_current;
+  h*=cfg[MB_C_DIRECTION]==0 ? 1 : -1;
+  i=0;
+  loop(st[MB_S_COUNT],
+    n=i+1; ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+    freq=ptr[MB_M_FREQ]; omega=ptr[MB_M_OMEGA]; alpha=ptr[MB_M_ALPHA];
+    amplitude=2*h*sin(n*$pi*p)/($pi*$pi*n*n*p*(1-p));
+    amplitude*=mb_sinc(n*$pi*width/(2*length));
+    amplitude*=exp(-0.5*(omega*softness*0.001)^2-g[MB_G_AGE]*freq/6000);
+    taper=freq>0.42*srate ? 0.5+0.5*cos($pi*(freq/srate-0.42)/0.06) : 1;
+    amplitude*=taper;
+    ptr[MB_M_R]=amplitude;
+    ptr[MB_M_I]=-alpha*amplitude/omega;
+    ptr[MB_M_INITIAL]=amplitude;
+    i+=1;
+  );
+);
+
+// pluck: 0=force-only seed, 1=Finger, 2=Pop, 3=Slap, 4=Pick contact/release.
+// An isolated pluck is unchanged. Repluck folds/carries the moving string and
+// crossfades over 3 ms; it never adds a duplicate old-bank pluck tail.
+function mb_engine_begin_gesture(st, velocity, note, channel, pluck)
+local(cfg, g, weights, repluck, i, ptr, duration)
+(
+  cfg=st+MB_CONFIG; g=st+MB_GEOMETRY;
+  mb_tension_preserve(st);
+  repluck=mb_repluck_capture(st);
+  st[MB_S_HARMONIC]=0;
+  st[MB_S_PREVIOUS]=st[MB_S_ACTIVE];
+  st[MB_S_PREVIOUS_COUNT]=st[MB_S_COUNT];
+  st[MB_S_PREVIOUS_LEFT]=st[MB_S_PREVIOUS_COUNT]>0 ? st[MB_S_TAIL_SAMPLES] : 0;
+  st[MB_S_ACTIVE]=st[MB_S_ACTIVE]==st+MB_BANK_A ? st+MB_BANK_B : st+MB_BANK_A;
+  mb_contact_response_clear(st, st[MB_S_ACTIVE]);
+  mb_modal_coefficients(st);
+  mb_slap_cancel(st);
+  mb_pick_cancel(st);
+  pluck==MB_EXCITATION_SLAP ? mb_excite_slap_modes(st, velocity) :
+    pluck && pluck!=MB_EXCITATION_PICK ? mb_excite_modes(st, velocity) : (
+    // Tap/Pick force arrives later; neither starts with a triangular RH pluck.
+    i=0;
+    loop(st[MB_S_COUNT],
+      ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+      ptr[MB_M_R]=ptr[MB_M_I]=ptr[MB_M_INITIAL]=0;
+      i+=1;
+    );
+  );
+  mb_pop_begin(st, pluck==MB_EXCITATION_POP ? MB_IMPACT_POP : pluck==MB_EXCITATION_SLAP ? MB_IMPACT_SLAP : 0);
+  mb_palm_coefficients(st, st[MB_S_ACTIVE], st[MB_S_COUNT], g[MB_G_LENGTH], 1);
+  mb_gesture_voice_begin(st, pluck==MB_EXCITATION_PICK);
+  mb_magnet_rebase(st, st[MB_S_ACTIVE], st[MB_S_COUNT], cfg, g, 1);
+  repluck ? mb_repluck_apply(st, pluck==MB_EXCITATION_FINGER ? repluck_grip_current : 0);
+  st[MB_S_ACTIVE]==st+MB_BANK_A ? (
+    weights=st+MB_PICKUP_A; st[MB_S_LENGTH_A]=g[MB_G_LENGTH];
+  ) : (
+    weights=st+MB_PICKUP_B; st[MB_S_LENGTH_B]=g[MB_G_LENGTH];
+  );
+  mb_pickup_capture(st, weights, st[MB_S_COUNT], g[MB_G_LENGTH], cfg);
+  st[MB_S_VELOCITY]=velocity;
+  st[MB_S_F1]=g[MB_G_F1];
+  st[MB_S_NOTE]=note; st[MB_S_CHANNEL]=channel;
+  st[MB_S_MUTE]=1;
+  mb_electronics_configure(st, cfg);
+  mb_live_seed(st);
+  mb_fret_response_level(st, !repluck);
+  pluck==MB_EXCITATION_SLAP ? mb_slap_arm(st);
+  pluck==MB_EXCITATION_PICK ? mb_pick_arm(st, velocity);
+  repluck ? (
+    (st+MB_LIVE)[MB_L_FADE_KIND]=1;
+    (st+MB_LIVE)[MB_L_FADE_TOTAL]=st[MB_S_TAIL_SAMPLES];
+    !pluck || pluck==MB_EXCITATION_PICK ? (
+      duration=max(1, ceil(MB_TAP_FADE_MS*0.001*srate));
+      st[MB_S_PREVIOUS_LEFT]=(st+MB_LIVE)[MB_L_FADE_TOTAL]=duration;
+      (st+MB_REPLUCK)[MB_RP_LEFT]>0 ?
+        (st+MB_REPLUCK)[MB_RP_LEFT]=(st+MB_REPLUCK)[MB_RP_TOTAL]=duration;
+    );
+  );
+  mb_tension_seed(st, repluck);
+);
+
+function mb_engine_excite(st, velocity, note, channel)
+global()
+( mb_engine_begin_gesture(st, velocity, note, channel, 1); );
+
+// Pop uses the shared lifecycle and passive q/v carry without Finger grip loss.
+function mb_engine_pop(st, velocity, note, channel)
+global(MB_EXCITATION_POP)
+( mb_engine_begin_gesture(st, velocity, note, channel, MB_EXCITATION_POP); );
+
+function mb_engine_slap(st, velocity, note, channel)
+global(MB_EXCITATION_SLAP)
+( mb_engine_begin_gesture(st, velocity, note, channel, MB_EXCITATION_SLAP); );
+
+function mb_engine_pick(st, velocity, note, channel)
+global(MB_EXCITATION_PICK)
+( mb_engine_begin_gesture(st, velocity, note, channel, MB_EXCITATION_PICK); );
+
+// Configure a quiet/continuing string for a finite finger pulse, without pluck.
+function mb_engine_seed_tap(st, velocity, note, channel)
+global()
+( mb_engine_begin_gesture(st, velocity, note, channel, 0); );
+
+// ---- harmonics ----
+// Ideal nodal touch, applied to a new gesture's speaking span. Keep the
+// original length, coefficients and pickup geometry; never transpose the fret.
+// Switch velocity / CC value chooses the NEXT gesture's partial. Zero releases
+// the articulation. Most of the range selects the familiar octave harmonic.
+function mb_harmonic_partial(value)
+global()
+(
+  value=floor(mb_clamp(value, 0, 127));
+  value<=0 ? 0 : value<=100 ? 2 : value<=114 ? 3 : value<=123 ? 4 : 5;
+);
+
+function mb_harmonic_excite(st, partial)
+local(i, ptr)
+global(MB_S_ACTIVE, MB_S_COUNT, MB_MODE_STRIDE, MB_M_R, MB_M_I, MB_M_INITIAL,
+       MB_S_HARMONIC, MB_PICK, MB_PK_LEFT)
+(
+  partial=mb_clamp(floor(partial), 2, 5);
+  // A touch at 1/partial of the span retains modes partial,2*partial,... .
+  // Removing other modes' q/v is passive; never normalize/boost the survivors.
+  i=0;
+  loop(st[MB_S_COUNT],
+    (i+1)%partial ? (
+      ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+      ptr[MB_M_R]=ptr[MB_M_I]=ptr[MB_M_INITIAL]=0;
+    );
+    i+=1;
+  );
+  st[MB_S_HARMONIC]=partial;
+  (st+MB_PICK)[MB_PK_LEFT]>0 ? mb_pick_project(st, partial);
+  mb_contact_response_project(st, st[MB_S_ACTIVE], st[MB_S_COUNT], partial);
+);
+
+// GUI telemetry only: the first surviving physical mode includes stiffness,
+// detuning and live bend. The engine's F1 remains the base-span fundamental.
+function mb_harmonic_frequency(st)
+local(partial)
+global(MB_S_HARMONIC, MB_S_F1, MB_S_COUNT, MB_S_ACTIVE, MB_MODE_STRIDE, MB_M_FREQ)
+(
+  partial=st[MB_S_HARMONIC];
+  partial ? (st[MB_S_COUNT]>=partial ?
+    (st[MB_S_ACTIVE]+(partial-1)*MB_MODE_STRIDE)[MB_M_FREQ] : 0) : st[MB_S_F1];
+);

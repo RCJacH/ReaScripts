@@ -1,0 +1,170 @@
+// Three representative physical frets, interleaved one site/audio sample.
+// The next site's exact q/v is observed during the existing modal advance.
+// This is a bounded collision approximation, not simultaneous distributed contact.
+@init
+function mb_pop_contact_init()
+local(fret, i, ratio, table)
+global(MB_POP_FRET_RATIOS, MB_POP_FRET_SHAPES, MB_MAX_MODES)
+(
+  fret=0; loop(24,
+    ratio=2^(-(fret+1)/12); MB_POP_FRET_RATIOS[fret]=ratio;
+    table=MB_POP_FRET_SHAPES+fret*MB_MAX_MODES;
+    i=0; loop(MB_MAX_MODES, table[i]=sin((i+1)*$pi*ratio); i+=1;);
+    fret+=1;
+  );
+);
+
+function mb_pop_contact_next(st)
+local(pc, cursor, b)
+global(MB_POP_CONTACT, MB_PCC_CURSOR, MB_PCC_COUNT, MB_PCC_NEXT, MB_PCC_HEADER, MB_PCC_POINT_WORDS)
+(
+  pc=st+MB_POP_CONTACT; cursor=pc[MB_PCC_CURSOR]; b=pc+MB_PCC_HEADER+cursor*MB_PCC_POINT_WORDS;
+  cursor+=1; cursor>=pc[MB_PCC_COUNT] ? cursor=0;
+  pc[MB_PCC_CURSOR]=cursor;
+  pc[MB_PCC_NEXT]=pc+MB_PCC_HEADER+cursor*MB_PCC_POINT_WORDS;
+  b;
+);
+
+function mb_pop_contact_rebuild(st, base, count)
+local(pc, primary, g, cfg, length, fret, last, rebuild, sites, site, b, target,
+      table, ratio, band, i, ptr, q, v, phi, norm, height, seating, drive, slap, anticipation, prefix)
+(
+  mb_contact_lazy_flush(st,base);
+  pc=st+MB_POP_CONTACT;
+  slap=(st+MB_POP)[MB_POP_STYLE]==MB_IMPACT_SLAP;
+  primary=st+MB_FRET_POINT+(base!=st+MB_BANK_A)*MB_FP_WORDS;
+  g=st+MB_GEOMETRY; cfg=st+MB_CONFIG;
+  length=g[MB_G_LENGTH]; fret=floor((st+MB_LIVE)[MB_L_FRET]+0.5);
+  height=2+(st+MB_ACTION)[MB_ACT_HEIGHT];
+  seating=fret>0 ? (st+MB_VARIATION)[MB_VA_SEATING] : 0;
+  last=base+max(0,count-1)*MB_MODE_STRIDE;
+  rebuild=!primary[MB_FP_READY] || primary[MB_FP_COUNT]!=count ||
+    pc[MB_PCC_HEIGHT]!=height || pc[MB_PCC_SEATING]!=seating ||
+    primary[MB_FP_LENGTH]!=length || primary[MB_FP_FRET]!=fret+1 ||
+    abs(primary[MB_FP_OMEGA]-base[MB_M_OMEGA])>0.000000000001 ||
+    abs(primary[MB_FP_ALPHA]-base[MB_M_ALPHA])>0.000000000001 ||
+    abs(primary[MB_FP_LAST_OMEGA]-last[MB_M_OMEGA])>0.000000000001 ||
+    abs(primary[MB_FP_LAST_ALPHA]-last[MB_M_ALPHA])>0.000000000001;
+  rebuild ? (
+    primary[MB_FP_READY]=1; primary[MB_FP_COUNT]=count;
+    primary[MB_FP_LENGTH]=length; primary[MB_FP_FRET]=fret+1;
+    primary[MB_FP_OMEGA]=base[MB_M_OMEGA]; primary[MB_FP_ALPHA]=base[MB_M_ALPHA];
+    primary[MB_FP_LAST_OMEGA]=last[MB_M_OMEGA]; primary[MB_FP_LAST_ALPHA]=last[MB_M_ALPHA];
+    primary[MB_FP_UPDATES]+=1;
+    // Estimate reach from up to 16 current modal amplitudes, only at a new pull
+    // or changed stopping fret. This selects sites, never triggers a collision.
+    pc[MB_PCC_SELECT] || pc[MB_PCC_FRET]!=fret || pc[MB_PCC_COUNT]<=0 ||
+      pc[MB_PCC_HEIGHT]!=height || pc[MB_PCC_SEATING]!=seating ? (
+      pc[MB_PCC_SELECT]=0; pc[MB_PCC_FRET]=fret; pc[MB_PCC_RANGE]=1;
+      site=1; loop(max(0,fret_count_current-fret),
+        table=MB_POP_FRET_SHAPES+(site-1)*MB_MAX_MODES;
+        q=i=0; loop(min(16,count),
+          ptr=base+i*MB_MODE_STRIDE;
+          v=-ptr[MB_M_ALPHA]*ptr[MB_M_R]/ptr[MB_M_OMEGA]-ptr[MB_M_I];
+          q+=table[i]^2*(ptr[MB_M_R]^2+v*v);
+          // A finite thumb pulse starts from near silence. Its precomputed
+          // remaining modal travel selects candidate sites; only actual q/v
+          // can produce a contact force at any of those sites.
+          slap && i<(st+MB_SLAP)[MB_SL_COUNT] ? (
+            anticipation=(st+MB_SLAP)[MB_SL_FORECAST+i];
+            q+=table[i]^2*(2*sqrt(ptr[MB_M_R]^2+v*v)*anticipation+anticipation*anticipation);
+          );
+          i+=1;
+        );
+        ratio=MB_POP_FRET_RATIOS[site-1];
+        sqrt(q)>mb_action_clearance(height,length,length*ratio)*(1-seating) ?
+          pc[MB_PCC_RANGE]=site;
+        site+=1;
+      );
+    );
+    sites=min(MB_POP_CONTACT_SITES,pc[MB_PCC_RANGE]); pc[MB_PCC_COUNT]=sites; pc[MB_PCC_CURSOR]=0;
+    prefix=0; site=0; loop(sites,
+      b=pc+MB_PCC_HEADER+site*MB_PCC_POINT_WORDS;
+      // Nearest, middle and farthest predicted reachable fret; deduplicate.
+      target=fret+(site==0 ? 1 : sites==2 || site==2 ? pc[MB_PCC_RANGE] :
+                   floor((pc[MB_PCC_RANGE]+1)*0.5+0.5));
+      ratio=MB_POP_FRET_RATIOS[target-fret-1];
+      table=MB_POP_FRET_SHAPES+(target-fret-1)*MB_MAX_MODES;
+      b[MB_FP_FRET]=target; b[MB_FP_POSITION]=length*ratio; b[MB_FP_LENGTH]=length;
+      b[MB_FP_MASS]=cfg[MB_C_TENSION]/(2*length*g[MB_G_F1])^2*length/2;
+      norm=q=v=i=drive=0;
+      loop(count,
+        ptr=base+i*MB_MODE_STRIDE;
+        // Each site runs at srate/sites. Smoothly exclude unresolved modes.
+        band=mb_clamp((0.48*srate/sites-ptr[MB_M_FREQ])/(0.12*srate/sites),0,1);
+        band=band*band*(3-2*band); phi=table[i]*band;
+        (b+MB_FP_PHI)[i]=phi; (b+MB_FP_VELOCITY_WEIGHT)[i]=phi/ptr[MB_M_OMEGA];
+        q+=phi*ptr[MB_M_R];
+        v+=phi*(-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I]);
+        slap && i<(st+MB_SLAP)[MB_SL_COUNT] && ptr[MB_M_FREQ]<0.48*srate ?
+          drive+=phi*(st+MB_SLAP)[MB_SL_WEIGHTS+i];
+        // EEL != uses an epsilon; micrometre-scale response must not be lost.
+        (abs(phi)>0 || (primary[MB_FP_RESPONSE_ACTIVE] &&
+          abs((primary+MB_FP_RESPONSE_Q)[i])+abs((primary+MB_FP_RESPONSE_I)[i])>0)) ? prefix=max(prefix,i+1);
+        norm+=phi*phi; i+=1;
+      );
+      b[MB_FP_Q]=q; b[MB_FP_V]=v; b[MB_FP_NORM]=norm;
+      pc[MB_PCC_DRIVE_DOT+site]=drive;
+      site+=1;
+    );
+    // Above this prefix every contact shape and carried response is exactly zero.
+    primary[MB_FP_RENDER_COUNT]=prefix;
+  );
+  rebuild || pc[MB_PCC_HEIGHT]!=height || pc[MB_PCC_SEATING]!=seating ? (
+    pc[MB_PCC_HEIGHT]=height; pc[MB_PCC_SEATING]=seating;
+    site=0; loop(pc[MB_PCC_COUNT],
+      b=pc+MB_PCC_HEADER+site*MB_PCC_POINT_WORDS;
+      b[MB_FP_GAP]=mb_action_clearance(height,length,b[MB_FP_POSITION])*(1-seating);
+      site+=1;
+    );
+  );
+  mb_pop_contact_next(st);
+);
+
+// Coefficient/state writers invalidate READY. Geometry is rebuilt only then;
+// the steady path just chooses the next representative physical fret.
+function mb_pop_contact_prepare(st, base, count)
+local(primary)
+global(MB_FP_READY, MB_FP_COUNT, MB_FRET_POINT, MB_BANK_A, MB_FP_WORDS, MB_FP_SLEEP)
+(
+  primary=st+MB_FRET_POINT+(base!=st+MB_BANK_A)*MB_FP_WORDS;
+  primary[MB_FP_SLEEP] ? (primary[MB_FP_READY]=0; primary[MB_FP_SLEEP]=0;);
+  primary[MB_FP_READY] && primary[MB_FP_COUNT]==count ? mb_pop_contact_next(st) : mb_pop_contact_rebuild(st,base,count);
+);
+
+// Same unilateral force/work limit as ordinary contact, integrated over the
+// site's update interval. K/C scale together to retain its damping ratio.
+// Every individual impulse is passive, so sequential sites cannot add energy.
+function mb_pop_contact_kick(st, b)
+local(k, primary, penetration, approach, amount, hardness, stiffness, damping, force, desired,
+      critical, restitution, limit, kick, work, fresh)
+(
+  k=st+MB_CONTACT;
+  primary=st+MB_FRET_POINT+(st[MB_S_ACTIVE]!=st+MB_BANK_A)*MB_FP_WORDS;
+  penetration=max(0,-b[MB_FP_Q]-b[MB_FP_GAP]); approach=max(0,-b[MB_FP_V]);
+  kick=0;
+  penetration>0 && approach>0 && b[MB_FP_NORM]>0 ? (
+    amount=k[MB_K_AMOUNT];
+    (st+MB_POP)[MB_POP_STYLE]==MB_IMPACT_SLAP ? amount*=1+(st+MB_SLAP)[MB_SL_CLANK];
+    hardness=1+(st+MB_POP)[MB_POP_HARDNESS];
+    stiffness=k[MB_K_STIFFNESS]*MB_POP_CONTACT_K_SCALE*hardness*hardness;
+    damping=k[MB_K_DAMPING]*MB_POP_CONTACT_C_SCALE*hardness;
+    force=amount*penetration/(penetration+MB_CONTACT_SOFT_DISTANCE)*
+      (stiffness*penetration+damping*approach);
+    desired=force*(st+MB_POP_CONTACT)[MB_PCC_COUNT]/(srate*b[MB_FP_MASS]);
+    critical=2*sqrt(stiffness*b[MB_FP_MASS]/b[MB_FP_NORM]);
+    restitution=1/(1+damping/max(0.000000001,critical));
+    limit=(1+restitution)*approach/b[MB_FP_NORM];
+    kick=limit*desired/(limit+desired);
+  );
+  work=b[MB_FP_LENGTH]*(2*kick*b[MB_FP_V]+kick*kick*b[MB_FP_NORM]);
+  primary[MB_FP_FORCE]=kick*b[MB_FP_MASS]*srate;
+  primary[MB_FP_PENETRATION]=penetration; primary[MB_FP_WORK]=work;
+  primary[MB_FP_LOSS]-=work;
+  fresh=kick>0 && !b[MB_FP_TOUCHING]; b[MB_FP_TOUCHING]=kick>0;
+  fresh ? (
+    b[MB_FP_HITS]+=1; primary[MB_FP_HITS]+=1;
+    primary[MB_FP_HITS]==1 ? primary[MB_FP_FIRST_SAMPLE]=instrument_sample_clock;
+  );
+  kick;
+);

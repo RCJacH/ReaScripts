@@ -1,0 +1,310 @@
+@init
+// The rack owns six stable slots; the instrument owns bus and GUI telemetry.
+// Event routing, gain/meter and UI mailboxes are not part of string modal RAM.
+// Read-only audio snapshots, once per block. @gfx sees scalars only.
+function mb_instrument_publish_status()
+local(index, st, slot)
+(
+  !memory_fault ? (
+    index=mb_routing_target();
+    st=mb_rack_string(index); slot=mb_rack_slot(index);
+    last_f1=st[MB_S_F1]; mode_count=st[MB_S_COUNT];
+    live_fret_current=(st+MB_LIVE)[MB_L_FRET];
+    live_bend_current=(st+MB_LIVE)[MB_L_BEND];
+    selected_string_current=index;
+    selected_note_current=mb_owner_ptr(index)[MB_O_PITCH];
+    selected_open_current=slot[MB_RS_OPEN]; selected_fine_current=slot[MB_RS_FINE];
+    selected_enabled_current=slot[MB_RS_ENABLED];
+    rack_count_current=MB_RACK[MB_R_COUNT]; rack_active_current=MB_RACK[MB_R_ACTIVE];
+    rack_pending_current=MB_RACK[MB_R_PENDING]; rack_preset_current=MB_RACK[MB_R_PRESET];
+    midi_records_current=MB_NOTES[MB_NH_USED]; midi_fault_current=MB_NOTES[MB_NH_FAULT];
+    midi_faults_current=MB_NOTES[MB_NH_FAULT_COUNT]; midi_rejected_current=MB_NOTES[MB_NH_REJECTED];
+  );
+);
+
+function mb_instrument_publish_strings()
+local(i, number, st, slot, owner, hp, view, display_until, frequency, note_active)
+(
+  mb_instrument_publish_status();
+  !memory_fault ? (
+    pub_audio_time=instrument_sample_clock/srate;
+    pub_fret_count=fret_count_current;
+    pub_output_gain=gain_current;
+    // Palm spans the strings; publish the selected string's smoothed hand state.
+    st=mb_rack_string(selected_string_current)+MB_PALM;
+    pub_palm_amount=st[MB_PM_AMOUNT]; pub_palm_position=st[MB_PM_POSITION];
+    pub_palm_width=st[MB_PM_WIDTH];
+    pub_forced_string=forced_string_current;
+    pub_hand_enabled=channel_mode_current==0;
+    pub_hand_start=MB_RACK[MB_R_HAND_START];
+    pub_hand_end=min(fret_count_current, pub_hand_start+hand_span_current);
+    pub_hand_low=MB_RACK[MB_R_HAND_LOW];
+    pub_hand_high=MB_RACK[MB_R_HAND_HIGH];
+    pub_hand_fretted=MB_RACK[MB_R_HAND_FRETTED];
+    pub_hand_open=MB_RACK[MB_R_HAND_OPEN];
+    pub_hand_conflict=MB_RACK[MB_R_HAND_CONFLICT];
+    bend_clipped_current=0;
+    slide_clipped_current=0;
+    i=0;
+    loop(MB_MAX_STRINGS,
+      st=mb_rack_string(i);
+      slot=mb_rack_slot(i);
+      owner=mb_owner_ptr(i);
+      hp=mb_hopo_ptr(i);
+      view=mb_fingers_view(i);
+      display_until=owner[MB_O_SERIAL]==hp[MB_HP_SERIAL] && owner[MB_O_KEY_DOWN] ?
+        hp[MB_HP_DISPLAY_UNTIL]/srate : 0;
+      bend_clipped_current=max(bend_clipped_current, owner[MB_O_BEND_CLIPPED]);
+      slide_clipped_current=max(slide_clipped_current, owner[MB_O_SLIDE_CLIPPED]);
+      // Rack busy also includes friction-only movement. Note markers need modes.
+      note_active=st[MB_S_COUNT]>0 || (st[MB_S_PREVIOUS_LEFT]>0 && st[MB_S_PREVIOUS_COUNT]>0);
+      frequency=mb_harmonic_frequency(st);
+      frequency=mb_magnet_frequency(st, frequency);
+      number=mb_string_number(i);
+      number==1 ? (
+        pub_s1_enabled=slot[MB_RS_ENABLED];
+        pub_s1_open=slot[MB_RS_OPEN];
+        pub_s1_winding=mb_winding_current(i);
+        pub_s1_gauge=mb_gauge_current(i);
+        pub_s1_fine=slot[MB_RS_FINE];
+        pub_s1_fret=(st+MB_LIVE)[MB_L_FRET];
+        pub_s1_freq=frequency;
+        pub_s1_a4=440+(st+MB_CONFIG)[MB_C_A4_OFFSET];
+        pub_s1_bend=mb_vibrato_display_bend(st);
+        pub_s1_note=owner[MB_O_PITCH];
+        pub_s1_level=slot[MB_RS_LEVEL];
+        pub_s1_busy=slot[MB_RS_BUSY];
+        pub_s1_note_active=note_active;
+        pub_s1_rh_finger=view[MB_FV_FINGER];
+        pub_s1_rh_position=view[MB_FV_POSITION];
+        pub_s1_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
+        pub_s1_harmonic=st[MB_S_HARMONIC];
+        pub_s1_pending=slot[MB_RS_PENDING];
+        pub_s1_ho_from=hp[MB_HP_DISPLAY_FROM];
+        pub_s1_ho_to=hp[MB_HP_TARGET];
+        pub_s1_ho_kind=hp[MB_HP_KIND];
+        pub_s1_ho_until=display_until;
+      );
+      number==2 ? (
+        pub_s2_enabled=slot[MB_RS_ENABLED];
+        pub_s2_open=slot[MB_RS_OPEN];
+        pub_s2_winding=mb_winding_current(i);
+        pub_s2_gauge=mb_gauge_current(i);
+        pub_s2_fine=slot[MB_RS_FINE];
+        pub_s2_fret=(st+MB_LIVE)[MB_L_FRET];
+        pub_s2_freq=frequency;
+        pub_s2_a4=440+(st+MB_CONFIG)[MB_C_A4_OFFSET];
+        pub_s2_bend=mb_vibrato_display_bend(st);
+        pub_s2_note=owner[MB_O_PITCH];
+        pub_s2_level=slot[MB_RS_LEVEL];
+        pub_s2_busy=slot[MB_RS_BUSY];
+        pub_s2_note_active=note_active;
+        pub_s2_rh_finger=view[MB_FV_FINGER];
+        pub_s2_rh_position=view[MB_FV_POSITION];
+        pub_s2_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
+        pub_s2_harmonic=st[MB_S_HARMONIC];
+        pub_s2_pending=slot[MB_RS_PENDING];
+        pub_s2_ho_from=hp[MB_HP_DISPLAY_FROM];
+        pub_s2_ho_to=hp[MB_HP_TARGET];
+        pub_s2_ho_kind=hp[MB_HP_KIND];
+        pub_s2_ho_until=display_until;
+      );
+      number==3 ? (
+        pub_s3_enabled=slot[MB_RS_ENABLED];
+        pub_s3_open=slot[MB_RS_OPEN];
+        pub_s3_winding=mb_winding_current(i);
+        pub_s3_gauge=mb_gauge_current(i);
+        pub_s3_fine=slot[MB_RS_FINE];
+        pub_s3_fret=(st+MB_LIVE)[MB_L_FRET];
+        pub_s3_freq=frequency;
+        pub_s3_a4=440+(st+MB_CONFIG)[MB_C_A4_OFFSET];
+        pub_s3_bend=mb_vibrato_display_bend(st);
+        pub_s3_note=owner[MB_O_PITCH];
+        pub_s3_level=slot[MB_RS_LEVEL];
+        pub_s3_busy=slot[MB_RS_BUSY];
+        pub_s3_note_active=note_active;
+        pub_s3_rh_finger=view[MB_FV_FINGER];
+        pub_s3_rh_position=view[MB_FV_POSITION];
+        pub_s3_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
+        pub_s3_harmonic=st[MB_S_HARMONIC];
+        pub_s3_pending=slot[MB_RS_PENDING];
+        pub_s3_ho_from=hp[MB_HP_DISPLAY_FROM];
+        pub_s3_ho_to=hp[MB_HP_TARGET];
+        pub_s3_ho_kind=hp[MB_HP_KIND];
+        pub_s3_ho_until=display_until;
+      );
+      number==4 ? (
+        pub_s4_enabled=slot[MB_RS_ENABLED];
+        pub_s4_open=slot[MB_RS_OPEN];
+        pub_s4_winding=mb_winding_current(i);
+        pub_s4_gauge=mb_gauge_current(i);
+        pub_s4_fine=slot[MB_RS_FINE];
+        pub_s4_fret=(st+MB_LIVE)[MB_L_FRET];
+        pub_s4_freq=frequency;
+        pub_s4_a4=440+(st+MB_CONFIG)[MB_C_A4_OFFSET];
+        pub_s4_bend=mb_vibrato_display_bend(st);
+        pub_s4_note=owner[MB_O_PITCH];
+        pub_s4_level=slot[MB_RS_LEVEL];
+        pub_s4_busy=slot[MB_RS_BUSY];
+        pub_s4_note_active=note_active;
+        pub_s4_rh_finger=view[MB_FV_FINGER];
+        pub_s4_rh_position=view[MB_FV_POSITION];
+        pub_s4_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
+        pub_s4_harmonic=st[MB_S_HARMONIC];
+        pub_s4_pending=slot[MB_RS_PENDING];
+        pub_s4_ho_from=hp[MB_HP_DISPLAY_FROM];
+        pub_s4_ho_to=hp[MB_HP_TARGET];
+        pub_s4_ho_kind=hp[MB_HP_KIND];
+        pub_s4_ho_until=display_until;
+      );
+      number==5 ? (
+        pub_s5_enabled=slot[MB_RS_ENABLED];
+        pub_s5_open=slot[MB_RS_OPEN];
+        pub_s5_winding=mb_winding_current(i);
+        pub_s5_gauge=mb_gauge_current(i);
+        pub_s5_fine=slot[MB_RS_FINE];
+        pub_s5_fret=(st+MB_LIVE)[MB_L_FRET];
+        pub_s5_freq=frequency;
+        pub_s5_a4=440+(st+MB_CONFIG)[MB_C_A4_OFFSET];
+        pub_s5_bend=mb_vibrato_display_bend(st);
+        pub_s5_note=owner[MB_O_PITCH];
+        pub_s5_level=slot[MB_RS_LEVEL];
+        pub_s5_busy=slot[MB_RS_BUSY];
+        pub_s5_note_active=note_active;
+        pub_s5_rh_finger=view[MB_FV_FINGER];
+        pub_s5_rh_position=view[MB_FV_POSITION];
+        pub_s5_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
+        pub_s5_harmonic=st[MB_S_HARMONIC];
+        pub_s5_pending=slot[MB_RS_PENDING];
+        pub_s5_ho_from=hp[MB_HP_DISPLAY_FROM];
+        pub_s5_ho_to=hp[MB_HP_TARGET];
+        pub_s5_ho_kind=hp[MB_HP_KIND];
+        pub_s5_ho_until=display_until;
+      );
+      number==6 ? (
+        pub_s6_enabled=slot[MB_RS_ENABLED];
+        pub_s6_open=slot[MB_RS_OPEN];
+        pub_s6_winding=mb_winding_current(i);
+        pub_s6_gauge=mb_gauge_current(i);
+        pub_s6_fine=slot[MB_RS_FINE];
+        pub_s6_fret=(st+MB_LIVE)[MB_L_FRET];
+        pub_s6_freq=frequency;
+        pub_s6_a4=440+(st+MB_CONFIG)[MB_C_A4_OFFSET];
+        pub_s6_bend=mb_vibrato_display_bend(st);
+        pub_s6_note=owner[MB_O_PITCH];
+        pub_s6_level=slot[MB_RS_LEVEL];
+        pub_s6_busy=slot[MB_RS_BUSY];
+        pub_s6_note_active=note_active;
+        pub_s6_rh_finger=view[MB_FV_FINGER];
+        pub_s6_rh_position=view[MB_FV_POSITION];
+        pub_s6_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
+        pub_s6_harmonic=st[MB_S_HARMONIC];
+        pub_s6_pending=slot[MB_RS_PENDING];
+        pub_s6_ho_from=hp[MB_HP_DISPLAY_FROM];
+        pub_s6_ho_to=hp[MB_HP_TARGET];
+        pub_s6_ho_kind=hp[MB_HP_KIND];
+        pub_s6_ho_until=display_until;
+      );
+      i+=1;
+    );
+  );
+);
+
+function mb_instrument_init()
+(
+  mb_layout_init();
+  mb_parameter_ids_init();
+  mb_instrument_cc_init();
+  mb_configuration_ids_init();
+  mb_pickup_profiles_init();
+  mb_fingers_init();
+  mb_impact_compress_init();
+  mb_variation_request();
+  mb_output_request();
+  mb_fret_response_init();
+  mb_action_request();
+  mb_pickup_request();
+  mb_magnet_request();
+  mb_palm_request();
+  mb_circuit_request();
+  mb_friction_request();
+  mb_pick_friction_request();
+  mb_pick_friction_publish();
+  mb_pick_scrape_request();
+  mb_fretting_request();
+  mb_fretting_apply();
+  instrument_sample_clock=0;
+  string0=0;
+  events=MB_EVENTS;
+  memory_fault=__memtop()<MB_MEMORY_WORDS;
+  mb_tuning_request();
+  !memory_fault ? (
+    mb_pop_contact_init();
+    mb_circuit_init();
+    mb_notes_reset(0);
+    mb_rack_init();
+    mb_variation_apply();
+    mb_variation_reset();
+    mb_rack_apply_requests();
+    mb_routing_init();
+    mb_midi_bend_init();
+    mb_vibrato_init();
+    mb_fingering_init();
+    mb_hand_init();
+    mb_art_init();
+    mb_ring_init();
+    mb_force_init();
+    mb_performance_init();
+    mb_passthrough_init();
+    memset(events, 0, MB_EVENT_LIMIT*MB_EVENT_STRIDE);
+  );
+  seen_rack_configuration_revision=rack_configuration_revision;
+  gain_smooth=1-exp(-1/(0.01*srate));
+  gain_request=gain_current=gain_target=10^(p_output_db/20);
+  velocity_curve_current=mb_clamp(p_velocity_curve, 0.25, 3);
+  low_velocity_attack_softness_current=mb_clamp(p_low_velocity_attack_softness*0.01, 0, 1);
+  repluck_grip_current=mb_clamp(p_repluck_grip*0.01, 0, 1);
+  ghost_decay_ms_current=mb_clamp(p_ghost_decay_ms, 20, 500);
+  rack_preset_current=0;
+  gui_parameter_requests=seen_gui_parameter_requests=0;
+  gui_panic_requests=seen_gui_panic_requests=0;
+  last_midi_reset_switch=p_midi_reset;
+  param_midi_resets=seen_param_midi_resets=midi_reset_pending=0;
+  midi_records_current=midi_fault_current=midi_faults_current=0;
+  rack_count_current=rack_count_request;
+  rack_active_current=rack_pending_current=0;
+  peak_hold=0;
+  meter_decay=exp(-1/(0.35*srate));
+  last_f1=mode_count=0;
+  selected_string_current=0;
+  selected_note_current=-1;
+  selected_open_current=28;
+  selected_fine_current=0;
+  selected_enabled_current=1;
+  midi_rejected_current=0;
+  bend_clipped_current=0;
+  slide_clipped_current=0;
+  sample_index=event_count=event_read=queue_overflow=0;
+  seen_fret_request=live_fret_current=p_capo;
+  live_bend_current=0;
+  seen_damping_request=p_bend_damping;
+  mb_instrument_publish_strings();
+);
+
+function mb_instrument_sample()
+local(signal)
+(
+  signal=0;
+  !memory_fault ? (
+    mb_events_sample();
+    mb_motion_tick();
+    signal=mb_rack_render();
+    mb_hopo_tick();
+  );
+  gain_current+=(gain_target-gain_current)*gain_smooth;
+  output_sample=signal*gain_current;
+  peak_hold=max(abs(output_sample), peak_hold*meter_decay);
+  sample_index+=1;
+  instrument_sample_clock+=1;
+  output_sample;
+);

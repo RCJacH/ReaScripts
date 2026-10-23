@@ -1,0 +1,534 @@
+// Style/performance inputs, instrument CC setters and native feedback.
+@init
+
+// ---- style control ----
+// Style CC groups. Event/block work only; never read or write physical strings.
+// Fixed selector order: Finger, Pick, Slap/Pop, Tapping. GUI may read these native
+// values; audio uses the separately captured mapping words below.
+function mb_style_input(index)
+global(p_finger_style_controller, p_pick_style_controller,
+       p_slap_pop_style_controller, p_tapping_style_controller, MB_NOTE_CC_MAX)
+(
+  mb_midi_mapping_index(index==0 ? p_finger_style_controller : index==1 ? p_pick_style_controller :
+    index==2 ? p_slap_pop_style_controller : p_tapping_style_controller, MB_NOTE_CC_MAX);
+);
+
+function mb_style_value(index)
+global(MB_STYLE_FINGER_AUTO, MB_STYLE_PICK_AUTO, MB_STYLE_SLAP_POP_AUTO, MB_STYLE_TAP)
+(
+  index==0 ? MB_STYLE_FINGER_AUTO : index==1 ? MB_STYLE_PICK_AUTO :
+    index==2 ? MB_STYLE_SLAP_POP_AUTO : MB_STYLE_TAP;
+);
+
+function mb_style_clear(channel)
+global(MB_SC_CHANNELS, MB_STYLE_COUNT, MB_CHANNELS)
+(
+  channel<0 ? memset(MB_SC_CHANNELS,-1,MB_STYLE_COUNT*MB_CHANNELS) :
+    memset(MB_SC_CHANNELS+channel*MB_STYLE_COUNT,-1,MB_STYLE_COUNT);
+);
+
+function mb_style_apply()
+local(i, mapping, changed)
+global(MB_STYLE_COUNT, MB_STYLE_CC_BASE)
+(
+  changed=i=0;
+  loop(MB_STYLE_COUNT,
+    mapping=mb_style_input(i);
+    MB_STYLE_CC_BASE[i]!=mapping ? (MB_STYLE_CC_BASE[i]=mapping; changed=1;);
+    i+=1;
+  );
+  changed ? mb_style_clear(-1);
+  changed;
+);
+
+function mb_style_init()
+global(MB_STYLE_CC_BASE, MB_STYLE_COUNT)
+(
+  memset(MB_STYLE_CC_BASE,-1,MB_STYLE_COUNT);
+  mb_style_apply();
+);
+
+// Receive-time filtering must include new native mappings before @block applies.
+function mb_style_selected(source)
+local(i, found, mapping)
+global(MB_STYLE_COUNT, MB_CTRL_CC_FIRST)
+(
+  i=found=0;
+  loop(MB_STYLE_COUNT,
+    mapping=mb_style_input(i);
+    mb_midi_cc_supported(source-MB_CTRL_CC_FIRST) && mapping>=128 &&
+      source==MB_CTRL_CC_FIRST+mapping-127 ? found=1;
+    i+=1;
+  );
+  found;
+);
+
+// Return the newly selected style, or -1 for rearming/unchanged/unassigned input.
+// A singleton fires on low->high (64). Shared groups select equal value bands.
+// History is independent of the active style: another CC/KS/slider can win until
+// this group actually changes selection again. System CCs keep their MIDI role.
+function mb_style_control(channel, source, value)
+local(mapping, i, count, first, band, state, rank, selected)
+global(MB_CTRL_CC_FIRST, MB_STYLE_COUNT, MB_STYLE_CC_BASE, MB_SC_CHANNELS)
+(
+  selected=-1;
+  mb_midi_cc_supported(source-MB_CTRL_CC_FIRST) ? (
+    mapping=source-MB_CTRL_CC_FIRST+127;
+    i=count=0; first=-1;
+    loop(MB_STYLE_COUNT,
+      MB_STYLE_CC_BASE[i]==mapping ? (first<0 ? first=i; count+=1;);
+      i+=1;
+    );
+    count>0 ? (
+      band=count==1 ? value>=64 : min(count-1,floor(value*count/128));
+      state=MB_SC_CHANNELS+channel*MB_STYLE_COUNT+first;
+      state[0]!=band ? (
+        state[0]=band;
+        count>1 || band==1 ? (
+          rank=count==1 ? 0 : band; i=0;
+          loop(MB_STYLE_COUNT,
+            MB_STYLE_CC_BASE[i]==mapping ? (
+              rank==0 ? selected=mb_style_value(i);
+              rank-=1;
+            );
+            i+=1;
+          );
+        );
+      );
+    );
+  );
+  selected;
+);
+
+// ---- performance ----
+// Event-only mapping/hold resolution. All setters run before the event's sample.
+// Additional holds are bounded; the ordinary FIFO still pairs every note-off.
+function mb_performance_mapping(kind)
+local(selection, last)
+(
+  selection=kind==0 ? p_finger_style_controller : kind==1 ? p_stroke_1_ks : kind==2 ? p_stroke_2_ks :
+    kind==3 ? p_muting_controller : kind==4 ? p_lh_pos_ks : kind==5 ? p_lh_pos_controller :
+    kind==6 ? p_slide_noise_controller : kind==7 ? p_rh_pluck_pos_controller :
+    kind==8 ? p_slap_pop_style_controller : kind==9 ? p_tapping_style_controller :
+    kind==10 ? p_pick_style_controller : p_chord_mode_controller;
+  last=kind==3 ? MB_MUTE_SELECTOR_MAX : kind==1 || kind==2 || kind==4 ? 127 : MB_NOTE_CC_MAX;
+  mb_midi_mapping_index(selection, last);
+);
+
+// Style selection and momentary stroke overrides have independent precedence.
+function mb_performance_style(kind)
+global(MB_PF_FINGER, MB_PF_SLAP_AUTO, MB_PF_TAP, MB_PF_PICK,
+       MB_STYLE_FINGER_AUTO, MB_STYLE_SLAP_POP_AUTO, MB_STYLE_TAP, MB_STYLE_PICK_AUTO)
+(
+  kind==MB_PF_FINGER ? MB_STYLE_FINGER_AUTO :
+    kind==MB_PF_SLAP_AUTO ? MB_STYLE_SLAP_POP_AUTO : kind==MB_PF_TAP ? MB_STYLE_TAP :
+    kind==MB_PF_PICK ? MB_STYLE_PICK_AUTO : -1;
+);
+
+function mb_performance_scope(channel)
+global(art_channel_current)
+( art_channel_current==0 || art_channel_current==channel+1; );
+
+function mb_performance_matches(channel, note)
+local(k, map, found)
+global(MB_PERF, MB_PERF_MAPS, MB_ROLE_PERF_FIRST, MB_PF_PICK, MB_PF_CHORD,
+       performance_chord_mapping, fret_count_current)
+(
+  found=0;
+  mb_performance_scope(channel) ? (
+    k=0;
+    loop(MB_PERF_MAPS,
+      map=MB_PERF[k];
+      !found && map>=0 && (k==0 ? map<128 && map==note :
+        k==3 ? map>=1 && map<=128 && note==map-1 :
+        k==4 ? note>=map && note<=min(127,map+fret_count_current) :
+        map<128 && note==map) ? found=MB_ROLE_PERF_FIRST+k;
+      k+=1;
+    );
+    map=mb_performance_mapping(MB_PF_PICK);
+    !found && map<128 && note==map ? found=MB_ROLE_PERF_FIRST+MB_PF_PICK;
+    map=performance_chord_mapping;
+    !found && map>=0 && map<128 && note==map ? found=MB_ROLE_PERF_FIRST+MB_PF_CHORD;
+  );
+  found;
+);
+
+// Receive-time filters use native values, including newly edited assignments.
+function mb_performance_selected(source)
+local(k, map, found)
+global(MB_PERF_MAPS, MB_CTRL_PRESSURE, MB_CTRL_CC_FIRST, MB_PF_CHORD)
+(
+  found=0; k=0;
+  loop(MB_PERF_MAPS,
+    map=mb_performance_mapping(k);
+    (k==3 && map==0 && source==MB_CTRL_PRESSURE) ||
+    (k==3 && map>=129 && source==MB_CTRL_CC_FIRST+map-128) ||
+    (k>=5 && k<=7 && map>=128 && source==MB_CTRL_CC_FIRST+map-127) ? found=1;
+    k+=1;
+  );
+  map=mb_performance_mapping(MB_PF_CHORD);
+  found || mb_style_selected(source) ||
+    (map>=128 && source==MB_CTRL_CC_FIRST+map-127);
+);
+
+function mb_performance_level(channel, kind)
+local(i, h, input, stamp, level, ch, newest)
+(
+  newest=0; level=0; ch=0;
+  loop(MB_CHANNELS,
+    channel_mode_current==0 || ch==channel ? (
+      input=MB_PERF_INPUTS+ch*MB_PI_WORDS;
+      stamp=input[kind==MB_PF_MUTE ? MB_PI_MUTE_STAMP : MB_PI_NOISE_STAMP];
+      stamp>newest ? (newest=stamp; level=input[kind==MB_PF_MUTE ? MB_PI_MUTE : MB_PI_NOISE];);
+    );
+    ch+=1;
+  );
+  i=0;
+  loop(MB_PF_HOLD_LIMIT,
+    h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
+    h[MB_PH_SERIAL]>0 && h[MB_PH_KIND]==kind &&
+    (channel_mode_current==0 || h[MB_PH_CHANNEL]==channel) && h[MB_PH_STAMP]>newest ? (
+      newest=h[MB_PH_STAMP]; level=h[MB_PH_VALUE];
+    );
+    i+=1;
+  );
+  level/127;
+);
+
+function mb_performance_refresh()
+local(i, p, ch, amount, h, newest, style, held_style, stroke_stamp, chord)
+(
+  style=performance_style_base; newest=performance_style_stamp; i=0;
+  chord=performance_chord_base;
+  stroke_override_current=stroke_stamp=0;
+  loop(MB_PF_HOLD_LIMIT,
+    h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
+    h[MB_PH_SERIAL]>0 && h[MB_PH_KIND]==MB_PF_CHORD ? chord=1;
+    held_style=mb_performance_style(h[MB_PH_KIND]);
+    h[MB_PH_SERIAL]>0 && held_style>=0 && h[MB_PH_STAMP]>newest ? (
+      newest=h[MB_PH_STAMP]; style=held_style;
+    );
+    h[MB_PH_SERIAL]>0 && (h[MB_PH_KIND]==MB_PF_STROKE_1 || h[MB_PH_KIND]==MB_PF_STROKE_2) &&
+    h[MB_PH_STAMP]>stroke_stamp ? (
+      stroke_stamp=h[MB_PH_STAMP]; stroke_override_current=h[MB_PH_KIND];
+    );
+    i+=1;
+  );
+  finger_style_current=finger_style_request=style;
+  p_excitation_style!=style ? (
+    p_excitation_style=style; performance_style_dirty=1;
+  );
+  performance_style_seen=style;
+  // Resolve momentary holds over the manual/CC base. Only future allocation
+  // reads this setting; switching it never refrets or releases existing owners.
+  chord_mode_current=chord_mode_request=chord;
+  p_chord_mode!=chord ? (p_chord_mode=chord; performance_chord_dirty=1;);
+  performance_chord_seen=chord;
+  i=0;
+  loop(MB_MAX_STRINGS,
+    p=mb_performance_string(mb_rack_string(i));
+    ch=channel_mode_current==0 ? 0 : mb_midi_string_channel(i);
+    amount=ch>=0 ? mb_performance_level(ch,MB_PF_MUTE) : 0;
+    p[MB_PS_DAMP_TARGET]=amount>0 ? exp(-log(1000)*amount/(max(1,p_mute_t60)*0.001*srate)) : 1;
+    amount>0 ? performance_damping_used=1;
+    p[MB_PS_LH] ? p[MB_PS_GAIN_TARGET]=mb_performance_level(p[MB_PS_CHANNEL],MB_PF_NOISE);
+    i+=1;
+  );
+);
+
+function mb_performance_clear(channel)
+local(i, h, p)
+(
+  mb_style_clear(channel);
+  i=0;
+  loop(MB_PF_HOLD_LIMIT,
+    h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
+    channel<0 || h[MB_PH_CHANNEL]==channel ? h[MB_PH_SERIAL]=0;
+    i+=1;
+  );
+  channel<0 ? memset(MB_PERF_INPUTS,0,MB_CHANNELS*MB_PI_WORDS) :
+    memset(MB_PERF_INPUTS+channel*MB_PI_WORDS,0,MB_PI_WORDS);
+  i=0;
+  loop(MB_MAX_STRINGS,
+    p=mb_performance_string(mb_rack_string(i));
+    p[MB_PS_LH] && (channel<0 || p[MB_PS_CHANNEL]==channel) ? (
+      mb_friction_stop(mb_rack_string(i)); p[MB_PS_GAIN_TARGET]=0;
+    );
+    i+=1;
+  );
+  mb_performance_refresh();
+);
+
+function mb_performance_init()
+local(i, p)
+(
+  memset(MB_PERF,0,MB_PERF_END-MB_PERF);
+  mb_style_init();
+  performance_gain_smooth=1-exp(-1/(0.002*srate));
+  performance_damp_smooth=1-exp(-1/(0.005*srate));
+  performance_damping_used=0;
+  stroke_override_current=0;
+  performance_style_base=performance_style_seen=mb_clamp(floor(p_excitation_style),0,MB_STYLE_TAP);
+  performance_style_stamp=performance_style_dirty=performance_rh_dirty=0;
+  performance_chord_base=performance_chord_seen=p_chord_mode>=0.5;
+  performance_chord_dirty=0;
+  performance_chord_mapping=mb_performance_mapping(MB_PF_CHORD);
+  performance_channel_seen=art_channel_current;
+  performance_mode_seen=channel_mode_current;
+  performance_count_seen=MB_RACK[MB_R_COUNT];
+  performance_mute_time_seen=p_mute_t60;
+  i=0; loop(MB_PERF_MAPS, MB_PERF[i]=mb_performance_mapping(i); i+=1;);
+  i=0; loop(MB_MAX_STRINGS,
+    p=mb_performance_string(mb_rack_string(i)); p[MB_PS_DAMP]=p[MB_PS_DAMP_TARGET]=1; i+=1;
+  );
+);
+
+function mb_performance_apply()
+local(i, map, changed, style_changed, chord_changed)
+(
+  changed=mb_style_apply() || performance_channel_seen!=art_channel_current ||
+    performance_mode_seen!=channel_mode_current || performance_count_seen!=MB_RACK[MB_R_COUNT];
+  map=mb_performance_mapping(MB_PF_CHORD);
+  map!=performance_chord_mapping ? (performance_chord_mapping=map; changed=1;);
+  i=0;
+  loop(MB_PERF_MAPS,
+    map=mb_performance_mapping(i);
+    map!=MB_PERF[i] ? (MB_PERF[i]=map; changed=1;);
+    i+=1;
+  );
+  performance_channel_seen=art_channel_current; performance_mode_seen=channel_mode_current;
+  performance_count_seen=MB_RACK[MB_R_COUNT];
+  style_changed=p_excitation_style!=performance_style_seen;
+  style_changed ? (
+    performance_style_base=mb_clamp(floor(p_excitation_style),0,MB_STYLE_TAP);
+    performance_style_stamp=mb_art_stamp();
+  );
+  chord_changed=p_chord_mode!=performance_chord_seen;
+  chord_changed ? performance_chord_base=p_chord_mode>=0.5;
+  changed ? mb_performance_clear(-1) :
+    style_changed || chord_changed || performance_mute_time_seen!=p_mute_t60 ? mb_performance_refresh();
+  performance_mute_time_seen=p_mute_t60;
+);
+
+// Choosing a window never retunes existing strings. Only explicitly requested
+// idle-hand travel produces friction, with its own gate, not a note-on gesture.
+function mb_performance_lh(channel, position, velocity, measured)
+local(start, index, i, held, st, p, gain, duration, previous_gain, continuing, cursor_start)
+(
+  start=MB_RACK[MB_R_HAND_START];
+  position=mb_clamp(max(live_fret_request,position),0,fret_count_current);
+  held=0; i=0;
+  loop(MB_MAX_STRINGS,
+    mb_owner_ptr(i)[MB_O_KEY_DOWN] ? held=1;
+    i+=1;
+  );
+  index=channel_mode_current>0 ? mb_midi_channel_string(channel) :
+    mb_string_selection()>0 ? mb_string_index(7-mb_string_selection()) : MB_RACK[MB_R_LAST_ROUTE];
+  gain=mb_performance_level(channel,MB_PF_NOISE);
+  // Auto already has a routed/displayed string, including its initial E slot.
+  // Friction needs movement and a held gate, not an earlier modal excitation.
+  !held && index>=0 && index<MB_MAX_STRINGS && gain>0 && mb_rack_slot(index)[MB_RS_ENABLED] ? (
+    st=mb_rack_string(index); p=mb_performance_string(st);
+    continuing=p[MB_PS_LH] && ((st+MB_FRICTION)[MB_FR_RUN] || (st+MB_FRICTION)[MB_FR_TAIL]>0);
+    previous_gain=continuing ? p[MB_PS_GAIN] : 0;
+    cursor_start=continuing ? -12*log(max(0.25,1-(st+MB_FRICTION)[MB_FR_X]/(st+MB_FRICTION)[MB_FR_SCALE]))/log(2) : start;
+    duration=measured ? MB_CONTROLLER_SMOOTH_MS*0.001*srate :
+      mb_clamp(abs(position-cursor_start)*legato_slide_ms_request*127/max(1,velocity),5,2000)*0.001*srate;
+    mb_friction_begin(st,start,position,duration,measured ? 2 : 1);
+    p[MB_PS_LH]=1; p[MB_PS_GAIN]=previous_gain; p[MB_PS_GAIN_TARGET]=gain; p[MB_PS_CHANNEL]=channel;
+    (st+MB_FRICTION)[MB_FR_CHANNEL]=channel;
+  );
+  mb_hand_position_store(position);
+);
+
+function mb_performance_rh(value)
+global(p_picking_position, performance_rh_dirty)
+(
+  p_picking_position=mb_clamp(value/127,0,1);
+  performance_rh_dirty=1;
+);
+
+function mb_performance_note_on(channel, note, velocity, role)
+local(record, kind, i, h, free, style)
+(
+  kind=role-MB_ROLE_PERF_FIRST;
+  style=mb_performance_style(kind);
+  record=mb_notes_begin(channel,note,velocity);
+  record>=0 ? (
+    mb_note_ptr(record)[MB_N_ROLE]=role; mb_note_ptr(record)[MB_N_ACTIVE]=1;
+    kind==MB_PF_LH_KEYS ? mb_performance_lh(channel,note-MB_PERF[kind],velocity,0) :
+    kind==MB_PF_LH_VALUE ? mb_performance_lh(channel,fret_count_current*velocity/127,velocity,0) :
+    kind==MB_PF_RH ? mb_performance_rh(velocity) :
+    style>=0 && velocity>=100 ? (
+      performance_style_base=style; performance_style_stamp=mb_art_stamp();
+    ) : (
+      free=-1; i=0;
+      loop(MB_PF_HOLD_LIMIT,
+        h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
+        !h[MB_PH_SERIAL] && free<0 ? free=h;
+        i+=1;
+      );
+      free>=0 ? (
+        free[MB_PH_SERIAL]=mb_note_ptr(record)[MB_N_SERIAL]; free[MB_PH_KIND]=kind;
+        free[MB_PH_CHANNEL]=channel; free[MB_PH_VALUE]=velocity; free[MB_PH_STAMP]=mb_art_stamp();
+      ) : mb_notes_fault(MB_FAULT_POOL);
+    );
+    mb_performance_refresh();
+  );
+);
+
+function mb_performance_note_off(channel, serial)
+local(i, h)
+global(MB_PERF_HOLDS, MB_PF_HOLD_LIMIT, MB_PF_HOLD_WORDS, MB_PH_SERIAL, MB_PH_CHANNEL)
+(
+  i=0;
+  loop(MB_PF_HOLD_LIMIT,
+    h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
+    h[MB_PH_SERIAL]==serial && h[MB_PH_CHANNEL]==channel ? h[MB_PH_SERIAL]=0;
+    i+=1;
+  );
+  mb_performance_refresh();
+);
+
+function mb_performance_control(channel, source, value)
+local(k, map, selected, input, touched, lh_pending, style)
+(
+  mb_performance_scope(channel) ? (
+    touched=lh_pending=0; k=0;
+    loop(MB_PERF_MAPS,
+      map=MB_PERF[k];
+      selected=(k==3 && ((map==0 && source==MB_CTRL_PRESSURE) || (map>=129 && source==MB_CTRL_CC_FIRST+map-128))) ||
+        (k>=5 && k<=7 && map>=128 && source==MB_CTRL_CC_FIRST+map-127);
+      selected && (source==MB_CTRL_PRESSURE || mb_midi_cc_supported(source-MB_CTRL_CC_FIRST)) ? (
+        touched=1; input=MB_PERF_INPUTS+channel*MB_PI_WORDS;
+        k==MB_PF_MUTE ? (input[MB_PI_MUTE]=value; input[MB_PI_MUTE_STAMP]=mb_art_stamp();) :
+        k==MB_PF_NOISE ? (input[MB_PI_NOISE]=value; input[MB_PI_NOISE_STAMP]=mb_art_stamp();) :
+        k==MB_PF_LH_VALUE ? lh_pending=1 :
+        k==MB_PF_RH ? mb_performance_rh(value);
+      );
+      k+=1;
+    );
+    style=mb_style_control(channel,source,value);
+    style>=0 ? (
+      performance_style_base=style; performance_style_stamp=mb_art_stamp(); touched=1;
+    );
+    map=performance_chord_mapping;
+    map>=128 && mb_midi_cc_supported(source-MB_CTRL_CC_FIRST) &&
+      source==MB_CTRL_CC_FIRST+map-127 ? (
+      performance_chord_base=value>=64; touched=1;
+    );
+    // A shared LH/noise CC applies its level before evaluating that move.
+    lh_pending ? mb_performance_lh(channel,fret_count_current*value/127,value,1);
+    touched ? mb_performance_refresh();
+  );
+);
+
+function mb_performance_playing()
+local(i, st, p)
+global(MB_MAX_STRINGS, MB_PS_LH, MB_PS_GAIN_TARGET)
+(
+  i=0;
+  loop(MB_MAX_STRINGS,
+    st=mb_rack_string(i); p=mb_performance_string(st);
+    p[MB_PS_LH] ? (mb_friction_stop(st); p[MB_PS_GAIN_TARGET]=0;);
+    i+=1;
+  );
+);
+
+function mb_performance_notify()
+global(performance_style_dirty, performance_rh_dirty, p_excitation_style, p_picking_position,
+       performance_chord_dirty, p_chord_mode)
+(
+  performance_style_dirty ? (performance_style_dirty=0; sliderchange(p_excitation_style););
+  performance_rh_dirty ? (performance_rh_dirty=0; sliderchange(p_picking_position););
+  performance_chord_dirty ? (performance_chord_dirty=0; sliderchange(p_chord_mode););
+);
+
+// ---- instrument controls ----
+// Global Palm/Volume/Tone/Blend MIDI inputs. Events edit native values only;
+// pickup/circuit preparation and host notifications remain block-rate.
+function mb_palm_cc_selected(cc)
+global(p_palm_controller)
+( mb_midi_cc_supported(cc) && cc==floor(p_palm_controller); );
+
+function mb_palm_cc(channel, cc, value)
+global(p_palm, palm_amount_request, palm_display_dirty, art_channel_current)
+(
+  mb_palm_cc_selected(cc) && (art_channel_current==0 || art_channel_current==channel+1) ? (
+    palm_amount_request=mb_clamp(value, 0, 127)/127;
+    p_palm=100*palm_amount_request;
+    palm_display_dirty=1;
+  );
+);
+
+function mb_palm_notify()
+global(p_palm, palm_display_dirty)
+(
+  palm_display_dirty ? (palm_display_dirty=0; sliderchange(p_palm););
+);
+
+function mb_instrument_cc_init()
+global(instrument_cc_pending, instrument_cc_volume_dirty, instrument_cc_tone_dirty, instrument_cc_mix_dirty)
+(
+  instrument_cc_pending=instrument_cc_volume_dirty=instrument_cc_tone_dirty=instrument_cc_mix_dirty=0;
+);
+
+function mb_instrument_cc_selected(cc)
+global(p_instrument_volume_controller, p_passive_tone_controller, p_pickup_mix_controller)
+(
+  mb_midi_cc_supported(cc) && (cc==floor(p_instrument_volume_controller) ||
+    cc==floor(p_passive_tone_controller) || cc==floor(p_pickup_mix_controller));
+);
+
+// Matching assignments all follow a shared CC. Single/string-channel modes
+// share these physical instrument knobs, subject to the performance-channel filter.
+function mb_instrument_cc(channel, cc, value)
+local(percent)
+global(art_channel_current, p_instrument_volume_controller, p_passive_tone_controller,
+       p_pickup_mix_controller, p_instrument_volume_position, p_passive_tone_position,
+       p_pickup_mix, instrument_cc_pending, instrument_cc_volume_dirty,
+       instrument_cc_tone_dirty, instrument_cc_mix_dirty)
+(
+  mb_midi_cc_supported(cc) && (art_channel_current==0 || art_channel_current==channel+1) ? (
+    percent=100*(mb_clamp(value, 0, 127)/127);
+    cc==floor(p_instrument_volume_controller) && p_instrument_volume_position!=percent ? (
+      p_instrument_volume_position=percent;
+      instrument_cc_pending=instrument_cc_volume_dirty=1;
+    );
+    cc==floor(p_passive_tone_controller) && p_passive_tone_position!=percent ? (
+      p_passive_tone_position=percent;
+      instrument_cc_pending=instrument_cc_tone_dirty=1;
+    );
+    cc==floor(p_pickup_mix_controller) && p_pickup_mix!=percent ? (
+      p_pickup_mix=percent;
+      instrument_cc_pending=instrument_cc_mix_dirty=1;
+    );
+  );
+);
+
+// Capture the final values before existing block-rate preparation. Reuse the
+// knob path, including pickup/noise observation and electrical state fades.
+function mb_instrument_cc_apply()
+global(instrument_cc_pending, instrument_cc_mix_dirty)
+(
+  instrument_cc_pending ? (
+    instrument_cc_mix_dirty ? mb_pickup_request();
+    mb_circuit_request();
+    instrument_cc_pending=0;
+  );
+);
+
+function mb_instrument_cc_notify()
+global(p_instrument_volume_position, p_passive_tone_position, p_pickup_mix,
+       instrument_cc_volume_dirty, instrument_cc_tone_dirty, instrument_cc_mix_dirty)
+(
+  instrument_cc_volume_dirty ? (
+    instrument_cc_volume_dirty=0; sliderchange(p_instrument_volume_position);
+  );
+  instrument_cc_tone_dirty ? (
+    instrument_cc_tone_dirty=0; sliderchange(p_passive_tone_position);
+  );
+  instrument_cc_mix_dirty ? (
+    instrument_cc_mix_dirty=0; sliderchange(p_pickup_mix);
+  );
+);

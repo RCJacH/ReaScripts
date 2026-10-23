@@ -1,0 +1,33 @@
+// Small audio-thread overlays. No modal coordinates or pickup weights live here.
+@init
+function mb_performance_string(st)
+global(MB_PERF_STRINGS, MB_PS_WORDS, MB_STRING_WORDS)
+( MB_PERF_STRINGS+floor(st/MB_STRING_WORDS)*MB_PS_WORDS; );
+
+function mb_performance_friction_normal(st)
+global(MB_PS_LH)
+( mb_performance_string(st)[MB_PS_LH]=0; );
+
+function mb_performance_friction_gain(st)
+local(p)
+global(MB_PS_LH, MB_PS_GAIN, MB_PS_GAIN_TARGET, performance_gain_smooth)
+(
+  p=mb_performance_string(st);
+  p[MB_PS_LH] ? (
+    p[MB_PS_GAIN]+=(p[MB_PS_GAIN_TARGET]-p[MB_PS_GAIN])*performance_gain_smooth;
+    abs(p[MB_PS_GAIN])<0.000000001 && p[MB_PS_GAIN_TARGET]==0 ? p[MB_PS_GAIN]=0;
+    p[MB_PS_GAIN];
+  ) : 1;
+);
+
+function mb_performance_damping(st)
+local(p)
+global(MB_PS_DAMP, MB_PS_DAMP_TARGET, performance_damp_smooth, performance_damping_used)
+(
+  performance_damping_used ? (
+    p=mb_performance_string(st);
+    p[MB_PS_DAMP]+=(p[MB_PS_DAMP_TARGET]-p[MB_PS_DAMP])*performance_damp_smooth;
+    abs(p[MB_PS_DAMP]-1)<0.000000000001 && p[MB_PS_DAMP_TARGET]==1 ? p[MB_PS_DAMP]=1;
+    p[MB_PS_DAMP];
+  ) : 1;
+);

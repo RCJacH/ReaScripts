@@ -1,0 +1,223 @@
+// Audio-thread pitch allocation. Selection 0 = Auto; 1..6 list Strings 6..1.
+// Minimum fret is a hard Auto floor. Single-channel reach follows hand state.
+@init
+function mb_routing_selection_index(selection)
+global()
+( mb_string_index(7-selection); );
+
+function mb_routing_init()
+global(MB_MAX_STRINGS, MB_R_LAST_ROUTE, MB_RACK, p_string_selection, string_selection_current,
+       string_selection_request)
+(
+  string_selection_request=string_selection_current=mb_clamp(floor(p_string_selection), 0, MB_MAX_STRINGS);
+  MB_RACK[MB_R_LAST_ROUTE]=0;
+);
+
+function mb_routing_target()
+local(selection)
+global(MB_R_LAST_ROUTE, MB_RACK)
+(
+  selection=mb_string_selection();
+  selection>0 ? mb_routing_selection_index(selection) : MB_RACK[MB_R_LAST_ROUTE];
+);
+
+// Ghosts and direct taps require a stopped span. A continuing tap may pull off
+// to an open string; it must belong to a held, previously fretted note.
+function mb_routing_attack_allowed(index, note, fret)
+local(owner, kind)
+global(MB_ARTICULATION, MB_A_KIND, MB_ROLE_GHOST, MB_ROLE_TAP, MB_O_KEY_DOWN,
+       MB_O_FRET_ANCHOR, MB_O_PITCH, MB_RS_PENDING)
+(
+  owner=mb_owner_ptr(index); kind=mb_art_tap_value()>0 ? MB_ROLE_TAP : MB_ARTICULATION[MB_A_KIND];
+  fret=mb_engine_fret_position(mb_rack_string(index), fret);
+  kind==MB_ROLE_GHOST ? fret>0.000000001 : kind==MB_ROLE_TAP ?
+    (fret>0.000000001 || (owner[MB_O_KEY_DOWN] && owner[MB_O_FRET_ANCHOR]>0 &&
+      note<owner[MB_O_PITCH] && !mb_rack_slot(index)[MB_RS_PENDING])) : 1;
+);
+
+// Is an unshifted open alternative actually available for this attack?
+// This six-slot probe avoids imposing a fretted-first range limit on notes
+// which cannot be played open. It never scans modes or changes ownership.
+function mb_routing_has_open(note, slide, minimum)
+local(i, slot, found)
+global(MB_MAX_STRINGS, MB_RS_ENABLED, MB_RS_OPEN)
+(
+  found=0;
+  minimum<=0 && abs(slide)<=0.000000001 ? (
+    i=0;
+    loop(MB_MAX_STRINGS,
+      slot=mb_rack_slot(i);
+      slot[MB_RS_ENABLED] && mb_midi_playing_pitch(note)==slot[MB_RS_OPEN] &&
+        mb_routing_attack_allowed(i, note, 0) ? found=1;
+      i+=1;
+    );
+  );
+  found;
+);
+
+// At most six candidates. Ordinary plucks prefer a physically fitting span;
+// when none fits, Off chooses by suitability and releases unreachable fretted peers.
+// Tap favors free strings and may exceed LH span. Chord Mode requires room
+// for every held/pedal-sustained note; matching channel/pitch replucks its owner.
+// Explicit assignments bypass this Auto policy. No lookahead or revoicing.
+function mb_routing_select_for_channel(note, prefer_free, channel)
+local(index, chosen, slot, fret, minimum, maximum, distance, rank, best_rank,
+      best_open, start, slide, played_fret, fit, best_fit, priority, best_priority, drone,
+      best_drone, owner, selection, cost, best_cost, tie, best_tie, best_fret, better, has_open,
+      chord, occupied, repeated)
+(
+  chosen=-1;
+  chord=chord_mode_current && channel_mode_current==0;
+  selection=mb_string_selection();
+  slide=mb_midi_note_input(0, MB_CTRL_SLIDE)*midi_slide_range_current;
+  selection>0 ? (
+    index=mb_routing_selection_index(selection);
+    slot=mb_rack_slot(index);
+    fret=mb_midi_playing_pitch(note)-slot[MB_RS_OPEN];
+    slot[MB_RS_ENABLED] && fret>=0 && fret<=fret_count_current &&
+    mb_routing_attack_allowed(index, note, mb_clamp(fret+slide, 0, fret_count_current)) ? chosen=index;
+  ) : (
+    minimum=mb_clamp(live_fret_request, 0, fret_count_current);
+    start=MB_RACK[MB_R_HAND_START];
+    maximum=min(fret_count_current, start+hand_span_current);
+    has_open=mb_routing_has_open(note, slide, minimum);
+    best_rank=4;
+    best_open=128;
+    best_fit=-1;
+    index=0;
+    best_priority=-1;
+    best_drone=2;
+    best_cost=best_tie=1000000; best_fret=128;
+    loop(MB_MAX_STRINGS,
+      slot=mb_rack_slot(index);
+      fret=mb_midi_playing_pitch(note)-slot[MB_RS_OPEN];
+      slot[MB_RS_ENABLED] && fret>=minimum && fret<=fret_count_current &&
+      mb_fingering_reachable(mb_clamp(fret+slide, 0, fret_count_current)) &&
+      mb_routing_attack_allowed(index, note, mb_clamp(fret+slide, 0, fret_count_current)) ? (
+        played_fret=mb_hand_fret(mb_clamp(fret+slide, 0, fret_count_current));
+        fit=mb_hand_measure(index, played_fret);
+        played_fret<=0.000000001 ? fit=1;
+        owner=mb_owner_ptr(index);
+        occupied=mb_hand_occupied(index);
+        repeated=occupied && owner[MB_O_PITCH]==note && owner[MB_O_SOURCE_CHANNEL]==channel;
+        // Open strings need no fretting hand. Measure movement and string
+        // availability before applying the selected strategy's preferences.
+        distance=played_fret>0.000000001 ? max(0, max(start-played_fret, played_fret-maximum)) : 0;
+        // Selected open pitches win regardless of LH position. Other open
+        // pitches yield to a fitting fretted choice within one hand shift;
+        // they remain the fallback instead of forcing a remote high fret.
+        priority=has_open ? (fret==0 && played_fret<=0.000000001 ?
+          (mb_fingering_open_preferred(index) ? 3 : 1) :
+          (fit && distance<=hand_span_current ? 2 : 0)) : 0;
+        drone=owner[MB_O_PITCH]!=note && mb_fingering_open_drone(index);
+        rank=prefer_free ? (slot[MB_RS_BUSY] ?
+          (mb_owner_ptr(index)[MB_O_KEY_DOWN] ? 2 : 1) : 0) : 0;
+        chord && repeated ? rank=-1;
+        cost=mb_fingering_cost(index,played_fret,distance,
+          hand_fretted>1 ? hand_high-hand_low : 0);
+        tie=fingering_strategy_current==MB_FINGERING_NEAREST ||
+          fingering_strategy_current==MB_FINGERING_LOCK_POSITION ? 1-mb_fingering_same(index) : distance;
+        better=cost<best_cost || (cost==best_cost && (tie<best_tie ||
+          (tie==best_tie && (played_fret<best_fret ||
+            (played_fret==best_fret && slot[MB_RS_OPEN]<best_open)))));
+        // Apply shared priorities from lowest to highest significance.
+        fit!=best_fit ? better=fit>best_fit;
+        priority!=best_priority ? better=priority>best_priority;
+        drone!=best_drone ? better=drone<best_drone;
+        (prefer_free || chord) && rank!=best_rank ? better=rank<best_rank;
+        !prefer_free && fit!=best_fit ? better=fit>best_fit;
+        better && (!chord || ((prefer_free || fit) && (!occupied || repeated))) ? (
+          chosen=index;
+          best_fit=fit;
+          best_rank=rank;
+          best_open=slot[MB_RS_OPEN];
+          best_priority=priority;
+          best_drone=drone;
+          best_cost=cost; best_tie=tie; best_fret=played_fret;
+        );
+      );
+      index+=1;
+    );
+  );
+  chosen;
+);
+
+// Compatibility query for channel 1. MIDI allocation passes its actual channel.
+function mb_routing_select(note, prefer_free)
+global()
+( mb_routing_select_for_channel(note, prefer_free, 0); );
+
+// Ordinary excitation is separate from the legato path above it.
+function mb_routing_pluck(record, index, channel, note, velocity)
+local(slot, fret, bend, played_fret, accepted, allowed)
+global(MB_CTRL_BEND, MB_CTRL_SLIDE, MB_R_LAST_ROUTE, MB_RACK, MB_REJECT_DISABLED, MB_RS_OPEN,
+       midi_bend_range_current, midi_slide_range_current, MB_ARTICULATION, MB_A_KIND, MB_ROLE_GHOST,
+       MB_REJECT_ROUTING, MB_ROLE_HARMONIC, MB_A_VALUE, fret_count_current)
+(
+  slot = mb_rack_slot(index);
+  fret = mb_midi_playing_pitch(note) - slot[MB_RS_OPEN];
+  bend = mb_midi_note_input(channel, MB_CTRL_BEND) * midi_bend_range_current;
+  played_fret = mb_clamp(fret + mb_midi_note_input(channel, MB_CTRL_SLIDE) * midi_slide_range_current, 0, fret_count_current);
+  allowed = mb_routing_attack_allowed(index, note, played_fret);
+  accepted = allowed ? mb_rack_excite_tuned(index, velocity, played_fret, bend, note, channel) : 0;
+  accepted ? (
+    MB_ARTICULATION[MB_A_KIND] == MB_ROLE_GHOST ? mb_ghost_excite(mb_rack_string(index));
+    MB_ARTICULATION[MB_A_KIND] == MB_ROLE_HARMONIC ?
+      mb_harmonic_excite(mb_rack_string(index), mb_harmonic_partial(MB_ARTICULATION[MB_A_VALUE]));
+    mb_notes_bind(record, index);
+    mb_midi_bend_bind(index, channel, fret);
+    mb_hand_release_unreachable(index, played_fret);
+    mb_hand_follow(played_fret);
+    MB_RACK[MB_R_LAST_ROUTE] = index;
+  ) : mb_notes_reject(record, allowed ? MB_REJECT_DISABLED : MB_REJECT_ROUTING);
+  accepted;
+);
+
+function mb_routing_tap(record, index, channel, note, velocity)
+local(fret, played, accepted)
+global(MB_RS_OPEN, MB_CTRL_SLIDE, midi_slide_range_current, MB_REJECT_ROUTING, fret_count_current)
+(
+  fret=mb_midi_playing_pitch(note)-mb_rack_slot(index)[MB_RS_OPEN];
+  played=mb_clamp(fret+mb_midi_note_input(channel, MB_CTRL_SLIDE)*midi_slide_range_current, 0, fret_count_current);
+  accepted=mb_routing_attack_allowed(index, note, played) ?
+    mb_hopo_apply(record, index, channel, fret, velocity) : 0;
+  !accepted ? mb_notes_reject(record, MB_REJECT_ROUTING);
+  accepted;
+);
+
+// Allocate one FIFO record even for rejected notes. First try legato; otherwise
+// select a physical string, then perform an ordinary pluck or record rejection.
+function mb_routing_note_on(channel, note, velocity)
+local(record, index, fret, accepted, reason)
+(
+  accepted = 0;
+  record = mb_notes_begin(channel, note, velocity);
+  record >= 0 ? (
+    mb_hopo_try(record, channel, note, velocity) || mb_legato_try(record, channel, note, velocity) ? accepted = 1 : (
+      reason = MB_REJECT_ROUTING;
+      channel_mode_current == 0 ? (
+        index = mb_routing_select_for_channel(note, mb_art_tap_value()>0, channel);
+      ) : (
+        // Mapped channels lock their string and use its full configured fret range.
+        index = mb_midi_channel_string(channel);
+        index < 0 ? reason = MB_REJECT_CHANNEL : (
+          fret = mb_midi_playing_pitch(note) - mb_rack_slot(index)[MB_RS_OPEN];
+          fret < 0 || fret > fret_count_current ? index = -1;
+        );
+      );
+
+      index >= 0 ? (
+        accepted = mb_art_tap_value()>0 ?
+          mb_routing_tap(record, index, channel, note, velocity) :
+          mb_routing_pluck(record, index, channel, note, velocity);
+      ) : (
+        channel_mode_current == 0 && mb_string_selection() > 0 &&
+        !mb_rack_slot(mb_routing_selection_index(mb_string_selection()))[MB_RS_ENABLED] ?
+          reason = MB_REJECT_DISABLED;
+        mb_notes_reject(record, reason);
+      );
+    );
+  );
+  mb_midi_enforce_fault();
+  accepted;
+);

@@ -1,0 +1,155 @@
+// Gesture/string trims and shared Slap/Pop peak reduction.
+@init
+
+// ---- output ----
+// Gesture trim before electronics; per-string calibration before rack sum/meters.
+// Requests are scalars. Audio-owned gain offsets keep neutral reserved RAM zero.
+// Pick/Tap share one output ramp. New ordinary gestures restore unity without
+// scaling modal vibration; a style switch alone leaves ringing strings alone.
+function mb_gesture_voice_begin(st, kind)
+local(b)
+global(MB_PICK, MB_PK_VOICE, MB_PK_GAIN, MB_PK_GAIN_TARGET, MB_S_PREVIOUS_COUNT,
+       MB_S_PREVIOUS_LEFT, MB_TRIM_PICK, MB_TRIM_TAP, pick_gain_current, tap_gain_current)
+(
+  b=st+MB_PICK;
+  b[MB_PK_VOICE]=kind;
+  b[MB_PK_GAIN_TARGET]=kind==MB_TRIM_PICK ? pick_gain_current : kind==MB_TRIM_TAP ? tap_gain_current : 0;
+  st[MB_S_PREVIOUS_COUNT]<=0 && st[MB_S_PREVIOUS_LEFT]<=0 ? b[MB_PK_GAIN]=b[MB_PK_GAIN_TARGET];
+);
+
+function mb_gesture_voice_render(st, signal)
+local(b, h, gain)
+global(MB_PICK, MB_PK_GAIN, MB_PK_GAIN_TARGET, MB_PICK_GAIN_SMOOTH,
+       circuit_observe_current, MB_CIR_PICKUP, MB_CP_OUTPUT1, MB_CP_OUTPUT2)
+(
+  b=st+MB_PICK;
+  b[MB_PK_GAIN]+=(b[MB_PK_GAIN_TARGET]-b[MB_PK_GAIN])*MB_PICK_GAIN_SMOOTH;
+  abs(b[MB_PK_GAIN]-b[MB_PK_GAIN_TARGET])<0.000000000001 ? b[MB_PK_GAIN]=b[MB_PK_GAIN_TARGET];
+  gain=1+b[MB_PK_GAIN];
+  circuit_observe_current ? (
+    h=st+MB_CIR_PICKUP; h[MB_CP_OUTPUT1]*=gain; h[MB_CP_OUTPUT2]*=gain;
+  );
+  signal*gain;
+);
+
+function mb_output_request()
+(
+  tap_gain_request=10^(mb_clamp(p_tap_level, -24, 12)/20)-1;
+  trim6_request=10^(mb_clamp(p_string_6_output_trim, -24, 24)/20)-1;
+  trim5_request=10^(mb_clamp(p_string_5_output_trim, -24, 24)/20)-1;
+  trim4_request=10^(mb_clamp(p_string_4_output_trim, -24, 24)/20)-1;
+  trim3_request=10^(mb_clamp(p_string_3_output_trim, -24, 24)/20)-1;
+  trim2_request=10^(mb_clamp(p_string_2_output_trim, -24, 24)/20)-1;
+  trim1_request=10^(mb_clamp(p_string_1_output_trim, -24, 24)/20)-1;
+);
+
+function mb_output_requested(index)
+global(trim1_request, trim2_request, trim3_request, trim4_request, trim5_request, trim6_request)
+(
+  index==0 ? trim5_request : index==1 ? trim4_request : index==2 ? trim3_request :
+    index==3 ? trim2_request : index==4 ? trim6_request : trim1_request;
+);
+
+// Immediate only for an idle/cleared string; live gain changes retain their ramp.
+function mb_output_configure(st, index, immediate)
+local(out, target, voice)
+global(MB_OUTPUT, MB_OUT_CURRENT, MB_OUT_TARGET, output_smooth, srate,
+       MB_PICK, MB_PK_VOICE, MB_PK_GAIN_TARGET, MB_TRIM_TAP, tap_gain_current)
+(
+  output_smooth=1-exp(-1/(0.005*srate));
+  out=st+MB_OUTPUT; target=mb_output_requested(index);
+  out[MB_OUT_TARGET]=target;
+  immediate ? out[MB_OUT_CURRENT]=target;
+  voice=st+MB_PICK;
+  voice[MB_PK_VOICE]==MB_TRIM_TAP ? voice[MB_PK_GAIN_TARGET]=tap_gain_current;
+);
+
+function mb_output_render(st, signal)
+local(out, current, target)
+global(MB_OUTPUT, MB_OUT_CURRENT, MB_OUT_TARGET, output_smooth)
+(
+  out=st+MB_OUTPUT; current=out[MB_OUT_CURRENT]; target=out[MB_OUT_TARGET];
+  current!=0 || target!=0 ? (
+    current+=(target-current)*output_smooth;
+    abs(current-target)<0.000000000001 ? current=target;
+    out[MB_OUT_CURRENT]=current;
+    signal*=1+current;
+  );
+  mb_fret_response_render(st, signal);
+);
+
+// ---- impact compress ----
+// Optional Slap/Pop peak reduction after pickup observation/Body/Level,
+// before electronics and slide noise. No modal feedback or makeup gain.
+function mb_impact_compress_request()
+global(p_slap_pop_compress, impact_compress_request)
+( impact_compress_request=mb_clamp(p_slap_pop_compress*0.01, 0, 1); );
+
+function mb_impact_compress_init()
+global(impact_compress_current, impact_compress_target, impact_compress_request,
+       impact_compress_running, impact_compress_next_running)
+(
+  mb_impact_compress_request();
+  impact_compress_current=impact_compress_target=impact_compress_request;
+  impact_compress_running=impact_compress_next_running=impact_compress_current>0;
+);
+
+function mb_impact_compress_apply()
+global(impact_compress_target, impact_compress_request, impact_compress_running, impact_compress_detect1,
+       impact_compress_detect2, circuit_en1_request, circuit_en2_request, circuit_mix_request)
+(
+  impact_compress_target=impact_compress_request;
+  impact_compress_target>0 ? impact_compress_running=1;
+  impact_compress_detect1=circuit_en1_request ? min(1,2*(1-circuit_mix_request)) : 0;
+  impact_compress_detect2=circuit_en2_request ? min(1,2*circuit_mix_request) : 0;
+);
+
+// One shared control ramp per sample, only while its amount is changing.
+function mb_impact_compress_tick()
+global(impact_compress_current, impact_compress_target, impact_compress_next_running, MB_IPC_SMOOTH)
+(
+  abs(impact_compress_target-impact_compress_current)>0 ?
+    impact_compress_current+=(impact_compress_target-impact_compress_current)*MB_IPC_SMOOTH;
+  abs(impact_compress_target-impact_compress_current)<0.000000000001 ?
+    impact_compress_current=impact_compress_target;
+  impact_compress_next_running=impact_compress_current>0 || impact_compress_target>0;
+);
+
+function mb_impact_compress_clear(st)
+global(MB_IMPACT_COMP, MB_IPC_WORDS)
+( memset(st+MB_IMPACT_COMP,0,MB_IPC_WORDS); );
+
+// Independent peak detector per physical string. A soft amplitude-domain knee
+// and smoothed reduction replace logarithms, powers, clipping and lookahead.
+// The same gain links both pickup buses, preserving their blend and polarity.
+function mb_impact_compress_render(st, signal)
+local(c, h, network, peak, envelope, over, target, reduction, gain)
+(
+  c=st+MB_IMPACT_COMP; target=0;
+  (st+MB_POP)[MB_POP_STYLE] && impact_compress_current>0 ? (
+    peak=abs(signal);
+    circuit_observe_current ? (
+      h=st+MB_CIR_PICKUP; network=MB_CIRCUIT;
+      peak=max(peak,abs(h[MB_CP_OUTPUT1]*network[MB_CI_GAIN1])*impact_compress_detect1);
+      peak=max(peak,abs(h[MB_CP_OUTPUT2]*network[MB_CI_GAIN2])*impact_compress_detect2);
+    );
+    envelope=max(peak,c[MB_IPC_ENVELOPE]*MB_IPC_ENV_RELEASE);
+    c[MB_IPC_ENVELOPE]=envelope;
+    over=envelope-MB_IPC_THRESHOLD;
+    over>0 ? (
+      over=over<MB_IPC_KNEE ? over*over/(2*MB_IPC_KNEE) : over-0.5*MB_IPC_KNEE;
+      target=impact_compress_current*MB_IPC_STRENGTH*over/envelope;
+    );
+  ) : c[MB_IPC_ENVELOPE]=0;
+  reduction=c[MB_IPC_REDUCTION];
+  reduction+=(target-reduction)*(target>reduction ? MB_IPC_ATTACK : MB_IPC_RELEASE);
+  reduction<0.000000000001 ? reduction=0;
+  c[MB_IPC_REDUCTION]=reduction;
+  reduction>0 ? impact_compress_next_running=1;
+  gain=1-reduction;
+  circuit_observe_current ? (
+    h=st+MB_CIR_PICKUP;
+    h[MB_CP_OUTPUT1]*=gain; h[MB_CP_OUTPUT2]*=gain;
+  );
+  signal*gain;
+);

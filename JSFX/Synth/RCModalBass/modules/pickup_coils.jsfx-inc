@@ -1,0 +1,212 @@
+@init
+// Physical mounting area: bridge to the instrument's last fret, in mm.
+// Reserve half the sensing aperture at each end; point observers stay >=1 mm.
+// Independent of the played fret and of each string's captured scale length.
+function mb_pickup_position(position, width, scale)
+local(half_width, minimum, maximum)
+global(p_fret_count)
+(
+  half_width=0.5*mb_clamp(width, 0, 80);
+  minimum=max(1, half_width);
+  maximum=mb_clamp(scale, 600, 1000)*2^(-mb_clamp(floor(p_fret_count),12,24)/12)-half_width;
+  mb_clamp(position, minimum, max(minimum, maximum));
+);
+
+// Fraction of the original sensing aperture overlapping a captured span.
+function mb_pickup_coverage(position_mm, width_mm, length)
+local(position, width)
+global()
+(
+  position=position_mm*0.001; width=width_mm*0.001;
+  width>0 ? (
+    position-0.5*width>=0 && position+0.5*width<=length ? 1 :
+      mb_clamp((min(length, position+0.5*width)-max(0, position-0.5*width))/width, 0, 1);
+  ) : position>0 && position<length;
+);
+
+// Fixed pickup mounting, referenced to the open string at 2-mm fret-12 action.
+// Flat fret plane, straight string; x starts at the bridge. All gaps are mm.
+// A negative geometric gap is retained for diagnostics, not a collision model.
+function mb_pickup_gap(distance, action, length, open_length, position)
+global()
+(
+  distance+2*max(0, action)*mb_clamp(1-position/length, 0, 1)
+    -4*mb_clamp(1-position/open_length, 0, 1);
+);
+
+// Small-signal velocity sensitivity, calibrated at the same span/position with
+// 3-mm reference distance and 2-mm action. This preserves approved fret levels.
+// Finite-field inverse-square approximation; below zero gap it stops growing.
+// Retained reference law; no displacement nonlinearity or measured field fit.
+function mb_pickup_height_gain(gap, reference_gap)
+local(ratio)
+global(MB_PICKUP_FIELD_DEPTH, MB_PICKUP_MAX_HEIGHT_GAIN)
+(
+  ratio=(MB_PICKUP_FIELD_DEPTH+max(0, reference_gap))/(MB_PICKUP_FIELD_DEPTH+max(0, gap));
+  min(ratio*ratio, MB_PICKUP_MAX_HEIGHT_GAIN);
+);
+
+// Effective source depth, not a literal pole radius. The 6-mm reference gives
+// the approved 2-mm falloff length. Width is across strings, not along the span.
+function mb_field_source_depth(width)
+global(MB_PICKUP_FIELD_DEPTH, MB_PICKUP_REFERENCE_FIELD_WIDTH)
+(
+  MB_PICKUP_FIELD_DEPTH*mb_clamp(width, 0.5, 30)/MB_PICKUP_REFERENCE_FIELD_WIDTH;
+);
+
+// Centered, small-signal field proxy: localized poles use inverse-square gap
+// sensitivity; a long rail uses slower inverse-linear falloff. Normalize at
+// the same captured reference span, preserving its fret-level calibration.
+// This is a voicing approximation, not a Maxwell solution or lateral bend model.
+function mb_pickup_field_gain(gap, reference_gap, geometry, width)
+local(depth, ratio)
+global(MB_POLE_POLES, MB_POLE_RAIL, MB_PICKUP_REFERENCE_FIELD_WIDTH, MB_PICKUP_MAX_HEIGHT_GAIN)
+(
+  geometry==MB_POLE_POLES && width==MB_PICKUP_REFERENCE_FIELD_WIDTH ?
+    mb_pickup_height_gain(gap, reference_gap) : (
+    depth=mb_field_source_depth(width);
+    ratio=(depth+max(0, reference_gap))/(depth+max(0, gap));
+    min(geometry==MB_POLE_RAIL ? ratio : ratio*ratio, MB_PICKUP_MAX_HEIGHT_GAIN);
+  );
+);
+
+// Stacked (2) is unimplemented; it and unsupported values observe as Single.
+function mb_coil_mode(mode)
+global(MB_COIL_SINGLE, MB_COIL_SPLIT, MB_COIL_SERIES, MB_COIL_PARALLEL)
+(
+  mode=floor(mode);
+  mode==MB_COIL_SPLIT || mode==MB_COIL_SERIES || mode==MB_COIL_PARALLEL ? mode : MB_COIL_SINGLE;
+);
+
+function mb_coil_spread(mode, spacing, stagger)
+global(MB_COIL_SPLIT, MB_COIL_SERIES, MB_COIL_PARALLEL)
+(
+  mode==MB_COIL_SPLIT ? abs(mb_clamp(stagger, -40, 40)) :
+    mode==MB_COIL_SERIES || mode==MB_COIL_PARALLEL ? mb_clamp(spacing, 0, 40) : 0;
+);
+
+// Limit the whole assembly; never squeeze the two sensing centers together.
+function mb_coil_mount(position, width, mode, spacing, stagger, scale)
+local(spread, half_width, minimum, maximum)
+global(p_fret_count)
+(
+  spread=0.5*mb_coil_spread(mb_coil_mode(mode), spacing, stagger);
+  half_width=0.5*mb_clamp(width, 0, 80);
+  minimum=max(1, half_width)+spread;
+  maximum=mb_clamp(scale, 600, 1000)*2^(-mb_clamp(floor(p_fret_count),12,24)/12)-half_width-spread;
+  mb_clamp(position, minimum, max(minimum, maximum));
+);
+
+// Stable physical order B/E/A/D/G/C, not sorted by the editable MIDI tuning.
+// An odd string count gives the bass half the extra string. +1 is nutward.
+function mb_coil_split_side(index, count)
+local(rank)
+global()
+(
+  count=mb_clamp(floor(count), 1, 6);
+  rank=index==4 ? 0 : index<4 ? index+(count>=5) : 5;
+  rank<ceil(count/2) ? 1 : -1;
+);
+
+function mb_coil_center(position, mode, spacing, stagger, side, coil)
+global(MB_COIL_SPLIT, MB_COIL_SERIES, MB_COIL_PARALLEL)
+(
+  mode==MB_COIL_SPLIT ? position+0.5*side*stagger :
+    mode==MB_COIL_SERIES || mode==MB_COIL_PARALLEL ? position+(coil==0 ? -0.5 : 0.5)*spacing : position;
+);
+
+// Common flat pickup face. Distance is measured at the assembly midpoint in
+// the open/2-mm reference setup; displaced coils share that mounting height.
+function mb_coil_gap(distance, action, length, open_length, anchor, position)
+global()
+(
+  distance+2*max(0, action)*mb_clamp(1-position/length, 0, 1)
+    -4*mb_clamp(1-anchor/open_length, 0, 1);
+);
+
+// Event/block preparation only. No coil geometry or trigonometry at audio rate.
+function mb_coil_prepare(c, position, width, length, open_length, distance, action, anchor, wire_gain, geometry, field_width)
+local(x, w, lo, hi, coverage, gap, reference)
+global(MB_CO_POSITION, MB_CO_Q, MB_CO_WIDTH, MB_CO_COVERAGE, MB_CO_GAP, MB_CO_HEIGHT, MB_CO_GAIN)
+(
+  c[MB_CO_POSITION]=position;
+  x=position*0.001; w=width*0.001; coverage=1;
+  gap=mb_coil_gap(distance, action, length, open_length, anchor*0.001, x);
+  reference=mb_coil_gap(3, 2, length, open_length, anchor*0.001, x);
+  c[MB_CO_GAP]=gap; c[MB_CO_HEIGHT]=mb_pickup_field_gain(gap, reference, geometry, field_width);
+  w>0 ? (
+    x-0.5*w<0 || x+0.5*w>length ? (
+      lo=max(0, x-0.5*w); hi=min(length, x+0.5*w);
+      coverage=max(0, hi-lo)/w; w=max(0, hi-lo); x=mb_clamp(0.5*(lo+hi), 0, length);
+    );
+  ) : coverage=x>0 && x<length;
+  c[MB_CO_Q]=x/length; c[MB_CO_WIDTH]=w/(2*length);
+  c[MB_CO_COVERAGE]=coverage;
+  c[MB_CO_GAIN]=wire_gain*coverage*c[MB_CO_HEIGHT];
+);
+
+function mb_coil_weight(c, n)
+global(MB_CO_Q, MB_CO_WIDTH, MB_CO_GAIN)
+(
+  c[MB_CO_GAIN]>0 ? sin(n*$pi*c[MB_CO_Q])*mb_sinc(n*$pi*c[MB_CO_WIDTH])*c[MB_CO_GAIN] : 0;
+);
+
+// Four coil records per bank: Pickup 1 near/far, then Pickup 2 near/far.
+function mb_coils_prepare_into(st, length, open_length, bank)
+local(p, h, settings, field, c, index, side, pickup, mode, spacing, stagger,
+      position, width, distance, action, wire1, wire2, x1, x2, geometry, field_width)
+(
+  p=st+MB_PICKUP_STATE; h=st+MB_PICKUP_HEIGHT; settings=st+MB_PICKUP_COILS;
+  field=st+MB_PICKUP_FIELD;
+  index=floor(st/MB_STRING_WORDS); side=mb_coil_split_side(index, settings[MB_PC_STRINGS]);
+  action=max(0, 2+h[MB_PH_ACTION]); pickup=0;
+  loop(2,
+    mode=settings[pickup==0 ? MB_PC_MODE1 : MB_PC_MODE2];
+    spacing=settings[pickup==0 ? MB_PC_SPACING1 : MB_PC_SPACING2];
+    stagger=settings[pickup==0 ? MB_PC_STAGGER1 : MB_PC_STAGGER2];
+    position=p[pickup==0 ? MB_PU_POSITION1 : MB_PU_POSITION2];
+    width=p[pickup==0 ? MB_PU_WIDTH1 : MB_PU_WIDTH2];
+    distance=3+h[pickup==0 ? MB_PH_DISTANCE1 : MB_PH_DISTANCE2];
+    geometry=field[pickup==0 ? MB_PF_GEOMETRY1 : MB_PF_GEOMETRY2];
+    field_width=MB_PICKUP_REFERENCE_FIELD_WIDTH+field[pickup==0 ? MB_PF_WIDTH1 : MB_PF_WIDTH2];
+    wire1=1; wire2=0;
+    mode==MB_COIL_SERIES ? wire2=1;
+    mode==MB_COIL_PARALLEL ? wire1=wire2=0.5;
+    x1=mb_coil_center(position, mode, spacing, stagger, side, 0);
+    x2=mb_coil_center(position, mode, spacing, stagger, side, 1);
+    c=bank+2*pickup*MB_COIL_WORDS;
+    mb_coil_prepare(c, x1, width, length, open_length, distance, action, position, wire1, geometry, field_width);
+    mb_coil_prepare(c+MB_COIL_WORDS, x2, width, length, open_length, distance, action, position, wire2, geometry, field_width);
+    pickup+=1;
+  );
+);
+
+function mb_coils_prepare(st, weights, length, open_length)
+global(MB_PICKUP_COILS, MB_PICKUP_A, MB_PC_A, MB_PC_B)
+(
+  mb_coils_prepare_into(st, length, open_length,
+    st+MB_PICKUP_COILS+(weights==st+MB_PICKUP_A ? MB_PC_A : MB_PC_B));
+);
+
+function mb_coils_weights(st, weights, count, length, open_length)
+local(p, bank, target, pickup1, pickup2, i, n)
+(
+  mb_coils_prepare(st, weights, length, open_length);
+  p=st+MB_PICKUP_STATE;
+  weights==st+MB_PICKUP_A ? (
+    bank=st+MB_PICKUP_COILS+MB_PC_A;
+    target=st+MB_PU_TARGET_A; pickup1=st+MB_PU_1_A; pickup2=st+MB_PU_2_A;
+  ) : (
+    bank=st+MB_PICKUP_COILS+MB_PC_B;
+    target=st+MB_PU_TARGET_B; pickup1=st+MB_PU_1_B; pickup2=st+MB_PU_2_B;
+  );
+  i=0; loop(count,
+    n=i+1;
+    pickup1[i]=mb_coil_weight(bank, n)+mb_coil_weight(bank+MB_COIL_WORDS, n);
+    pickup2[i]=mb_coil_weight(bank+2*MB_COIL_WORDS, n)+mb_coil_weight(bank+3*MB_COIL_WORDS, n);
+    target[i]=(1-p[MB_PU_MIX])*pickup1[i]*p[MB_PU_GAIN1]
+      +p[MB_PU_MIX]*p[MB_PU_POLARITY]*pickup2[i]*p[MB_PU_GAIN2];
+    i+=1;
+  );
+);
+

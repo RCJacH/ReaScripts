@@ -1,0 +1,164 @@
+// Generic linear onboard preamp: finite input/output resistance, three-band
+// boost/cut and post-EQ master volume. No battery, clipping or op-amp emulation.
+@init
+function mb_active_request()
+local(input, output, gain, bass, mid, treble, bass_frequency, mid_frequency, treble_frequency, mid_q)
+(
+  active_voicing_request=mb_clamp(floor(p_active_eq_voicing+0.5), 0, 3);
+  input=mb_clamp(p_active_preamp_input_resistance, 100, 20000);
+  output=mb_clamp(p_active_preamp_output_resistance, 1, 2000);
+  gain=mb_clamp(p_active_preamp_gain_db, -18, 18);
+  bass=mb_clamp(p_active_bass_db, -18, 18);
+  mid=mb_clamp(p_active_mid_db, -18, 18);
+  treble=mb_clamp(p_active_treble_db, -18, 18);
+  bass_frequency=mb_clamp(p_active_bass_frequency, 30, 300);
+  mid_frequency=mb_clamp(p_active_mid_frequency, 150, 3000);
+  mid_q=mb_clamp(p_active_mid_q, 0.25, 4);
+  treble_frequency=mb_clamp(p_active_treble_frequency, 1500, 10000);
+  input!=active_input_request || output!=active_output_request || gain!=active_gain_request ||
+    bass!=active_bass_request || mid!=active_mid_request || treble!=active_treble_request ||
+    bass_frequency!=active_bass_frequency_request || mid_frequency!=active_mid_frequency_request ||
+    treble_frequency!=active_treble_frequency_request || mid_q!=active_mid_q_request ? active_revision_request+=1;
+  active_input_request=input; active_output_request=output; active_gain_request=gain;
+  active_bass_request=bass; active_mid_request=mid; active_treble_request=treble;
+  active_bass_frequency_request=bass_frequency; active_mid_frequency_request=mid_frequency;
+  active_treble_frequency_request=treble_frequency;
+  active_mid_q_request=mid_q;
+);
+
+// Generic frequency voicings, not manufacturer circuit emulations.
+function mb_active_voicing_frequency(voicing, band)
+global()
+(
+  band==0 ? (voicing==1 ? 40 : 100) :
+  band==1 ? (voicing==1 ? 400 : voicing==2 ? 500 : 800) :
+            (voicing==3 ? 4500 : 6500);
+);
+
+// Audio thread only: load once on selection, preserve gains, and mark manual
+// frequency edits Custom. A new preset wins simultaneous frequency requests.
+function mb_active_voicing_apply()
+local(changed, publish, bass, mid, treble)
+(
+  publish=0;
+  changed=!active_voicing_initialized || active_voicing_request!=active_voicing_applied;
+  changed && active_voicing_request>0 ? (
+    bass=mb_active_voicing_frequency(active_voicing_request, 0);
+    mid=mb_active_voicing_frequency(active_voicing_request, 1);
+    treble=mb_active_voicing_frequency(active_voicing_request, 2);
+    p_active_bass_frequency!=bass ? (p_active_bass_frequency=bass; sliderchange(p_active_bass_frequency););
+    p_active_mid_frequency!=mid ? (p_active_mid_frequency=mid; sliderchange(p_active_mid_frequency););
+    p_active_treble_frequency!=treble ? (p_active_treble_frequency=treble; sliderchange(p_active_treble_frequency););
+    publish=1;
+  ) : (
+    !changed && active_voicing_request>0 &&
+      (active_bass_frequency_request!=active_voicing_bass_seen ||
+       active_mid_frequency_request!=active_voicing_mid_seen ||
+       active_treble_frequency_request!=active_voicing_treble_seen) ? (
+      p_active_eq_voicing=0; sliderchange(p_active_eq_voicing); publish=1;
+    );
+  );
+  publish ? mb_active_request();
+  active_voicing_initialized=1; active_voicing_applied=active_voicing_request;
+  active_voicing_bass_seen=active_bass_frequency_request;
+  active_voicing_mid_seen=active_mid_frequency_request;
+  active_voicing_treble_seen=active_treble_frequency_request;
+  publish;
+);
+
+function mb_active_ptr(bank)
+global(MB_ACTIVE, MB_CIRCUIT, MB_CI_A, MB_ACTIVE_BANK_WORDS)
+( MB_ACTIVE+(bank==MB_CIRCUIT+MB_CI_A ? 0 : MB_ACTIVE_BANK_WORDS); );
+
+// RBJ/W3C low shelf, peaking EQ and high shelf. Shelf slope S=1; independent mid Q.
+// Coefficients change only on the audio thread; paired network fades handle edits.
+function mb_active_eq_configure(eq, kind, db, frequency)
+local(a, omega, cosine, alpha, beta, a0, a1, a2, b0, b1, b2)
+global(MB_EQ_B0, MB_EQ_B1, MB_EQ_B2, MB_EQ_A1, MB_EQ_A2, srate, active_mid_q_request)
+(
+  db==0 ? (
+    eq[MB_EQ_B0]=1; eq[MB_EQ_B1]=eq[MB_EQ_B2]=eq[MB_EQ_A1]=eq[MB_EQ_A2]=0;
+  ) : (
+    omega=2*$pi*min(frequency, 0.4*srate)/srate;
+    a=10^(db/40); cosine=cos(omega);
+    alpha=sin(omega)/(kind==1 ? 2*active_mid_q_request : sqrt(2)); beta=2*sqrt(a)*alpha;
+    kind==0 ? (
+      b0=a*((a+1)-(a-1)*cosine+beta); b1=2*a*((a-1)-(a+1)*cosine);
+      b2=a*((a+1)-(a-1)*cosine-beta);
+      a0=(a+1)+(a-1)*cosine+beta; a1=-2*((a-1)+(a+1)*cosine); a2=(a+1)+(a-1)*cosine-beta;
+    ) : kind==1 ? (
+      b0=1+alpha*a; b1=-2*cosine; b2=1-alpha*a;
+      a0=1+alpha/a; a1=-2*cosine; a2=1-alpha/a;
+    ) : (
+      b0=a*((a+1)+(a-1)*cosine+beta); b1=-2*a*((a-1)+(a+1)*cosine);
+      b2=a*((a+1)+(a-1)*cosine-beta);
+      a0=(a+1)-(a-1)*cosine+beta; a1=2*((a-1)-(a+1)*cosine); a2=(a+1)-(a-1)*cosine-beta;
+    );
+    eq[MB_EQ_B0]=b0/a0; eq[MB_EQ_B1]=b1/a0; eq[MB_EQ_B2]=b2/a0;
+    eq[MB_EQ_A1]=a1/a0; eq[MB_EQ_A2]=a2/a0;
+  );
+);
+
+function mb_active_eq_render(eq, signal)
+local(value)
+(
+  value=eq[MB_EQ_B0]*signal+eq[MB_EQ_B1]*eq[MB_EQ_X1]+eq[MB_EQ_B2]*eq[MB_EQ_X2]
+       -eq[MB_EQ_A1]*eq[MB_EQ_Y1]-eq[MB_EQ_A2]*eq[MB_EQ_Y2];
+  eq[MB_EQ_X2]=eq[MB_EQ_X1]; eq[MB_EQ_X1]=signal;
+  eq[MB_EQ_Y2]=eq[MB_EQ_Y1]; eq[MB_EQ_Y1]=value;
+);
+
+function mb_active_configure(bank)
+local(a, volume, resistance)
+(
+  a=mb_active_ptr(bank); a[MB_AC_GAIN]=10^(active_gain_request/20);
+  mb_active_eq_configure(a+MB_AC_BASS, 0, active_bass_request, active_bass_frequency_request);
+  mb_active_eq_configure(a+MB_AC_MID, 1, active_mid_request, active_mid_frequency_request);
+  mb_active_eq_configure(a+MB_AC_TREBLE, 2, active_treble_request, active_treble_frequency_request);
+  volume=circuit_volume_request; resistance=1000*circuit_rv_request;
+  a[MB_AC_GS]=1/(active_output_request+max(1, resistance*(1-volume)));
+  a[MB_AC_GROUND]=1/max(1, resistance*volume)+1/(1000*circuit_load_request);
+  a[MB_AC_GC]=2*srate*circuit_cable_request*0.000000000001;
+  a[MB_AC_INV]=1/(a[MB_AC_GS]+a[MB_AC_GROUND]+a[MB_AC_GC]);
+  a[MB_AC_MUTED]=volume<=0;
+  a[MB_AC_GC]<=0 ? a[MB_AC_CURRENT]=0;
+);
+
+function mb_active_render(a, signal)
+local(value, voltage)
+(
+  value=mb_active_eq_render(a+MB_AC_BASS, signal*a[MB_AC_GAIN]);
+  value=mb_active_eq_render(a+MB_AC_MID, value);
+  value=mb_active_eq_render(a+MB_AC_TREBLE, value);
+  voltage=(a[MB_AC_GS]*value+a[MB_AC_GC]*a[MB_AC_VOLTAGE]+a[MB_AC_CURRENT])*a[MB_AC_INV];
+  a[MB_AC_CURRENT]=a[MB_AC_GC]*(voltage-a[MB_AC_VOLTAGE])-a[MB_AC_CURRENT];
+  a[MB_AC_VOLTAGE]=voltage;
+  a[MB_AC_MUTED] ? 0 : voltage;
+);
+
+function mb_active_clear_bank(a)
+local(i, eq)
+global(MB_AC_BASS, MB_AC_EQ_STRIDE, MB_EQ_X1, MB_AC_VOLTAGE, MB_AC_CURRENT)
+(
+  i=0; loop(3, eq=a+MB_AC_BASS+i*MB_AC_EQ_STRIDE; memset(eq+MB_EQ_X1, 0, 4); i+=1;);
+  a[MB_AC_VOLTAGE]=a[MB_AC_CURRENT]=0;
+);
+
+function mb_active_clear()
+global(MB_ACTIVE, MB_ACTIVE_BANK_WORDS)
+( mb_active_clear_bank(MB_ACTIVE); mb_active_clear_bank(MB_ACTIVE+MB_ACTIVE_BANK_WORDS); );
+
+function mb_active_init()
+global(MB_ACTIVE, MB_ACTIVE_BANK_WORDS)
+( memset(MB_ACTIVE, 0, 2*MB_ACTIVE_BANK_WORDS); );
+
+// Active edits coalesce until the previous fade finishes. Keep the old complete
+// filter as the shadow; a passive -> active edit starts the new EQ at rest.
+function mb_active_transition()
+local(a)
+global(MB_ACTIVE, MB_ACTIVE_BANK_WORDS, MB_CIRCUIT, MB_CI_A, MB_CN_ACTIVE)
+(
+  a=MB_ACTIVE;
+  !(MB_CIRCUIT+MB_CI_A)[MB_CN_ACTIVE] ? mb_active_clear_bank(a);
+  memcpy(a+MB_ACTIVE_BANK_WORDS, a, MB_ACTIVE_BANK_WORDS);
+);

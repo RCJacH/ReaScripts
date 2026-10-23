@@ -1,0 +1,119 @@
+// Explicit left-hand excitation. The shared pulse in hopo is the only
+// actuator; ordinary notes, passive releases and slide crossings never call it.
+@init
+function mb_fretting_request()
+global(p_lh_impact_amount, p_lh_attack_sharpness, p_pull_off_strength,
+       fretting_amount_request, fretting_attack_request, pull_strength_request)
+(
+  fretting_amount_request=mb_clamp(p_lh_impact_amount*0.01, 0, 1);
+  fretting_attack_request=mb_clamp(p_lh_attack_sharpness*0.01, 0, 1);
+  pull_strength_request=mb_clamp(p_pull_off_strength*0.01, 0, 1);
+);
+
+function mb_fretting_apply()
+global(fretting_amount_request, fretting_attack_request, pull_strength_request,
+       fretting_amount_current, fretting_attack_current, pull_strength_current)
+(
+  fretting_amount_current=fretting_amount_request;
+  fretting_attack_current=fretting_attack_request;
+  pull_strength_current=pull_strength_request;
+);
+
+function mb_fretting_capture(st)
+local(ft)
+global(MB_FRETTING, MB_FT_ON, MB_FT_AMOUNT, MB_FT_ATTACK, MB_FT_PULL,
+       fretting_amount_current, fretting_attack_current, pull_strength_current,
+       MB_CONTACT, MB_K_SURFACE)
+(
+  ft=st+MB_FRETTING;
+  ft[MB_FT_ON]=fretting_amount_current>0 && !(st+MB_CONTACT)[MB_K_SURFACE];
+  ft[MB_FT_AMOUNT]=fretting_amount_current;
+  ft[MB_FT_ATTACK]=fretting_attack_current;
+  ft[MB_FT_PULL]=pull_strength_current-1; // Zero RAM retains the existing pulse.
+);
+
+// Called once, on the committed span. Proxy units match mb_bank_energy, not J.
+// Charge the entire new allowance even if a later gesture cancels this pulse.
+// At most half a reference-note energy is available, refilling over 100 ms.
+function mb_fretting_prepare(st, hp, length)
+local(ft, ptr, reference, capacity, elapsed, desired, extra, placement)
+(
+  ft=st+MB_FRETTING;
+  ft[MB_FT_EXTRA]=0;
+  hp[MB_HP_KIND]<0 ? hp[MB_HP_BUDGET]*=(1+ft[MB_FT_PULL])^2;
+  ft[MB_FT_ON] ? (
+    ptr=st[MB_S_ACTIVE];
+    reference=length*(ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2)*
+      ((st+MB_CONFIG)[MB_C_DISPLACEMENT]*0.001)^2;
+    capacity=0.5*reference;
+    elapsed=max(0, instrument_sample_clock-ft[MB_FT_CLOCK])/srate;
+    ft[MB_FT_POOL]=ft[MB_FT_READY] ? min(capacity, ft[MB_FT_POOL]+elapsed*capacity/0.100) : capacity;
+    ft[MB_FT_READY]=1; ft[MB_FT_CLOCK]=instrument_sample_clock;
+    placement=hp[MB_HP_KIND]==MB_PLACEMENT_KIND;
+    desired=reference*ft[MB_FT_AMOUNT]^2*hp[MB_HP_AMOUNT]^2;
+    placement ? desired*=0.025*hp[MB_HP_AMOUNT]^2;
+    hp[MB_HP_KIND]<0 ? desired*=0.5*(1+ft[MB_FT_PULL])^2;
+    extra=min(ft[MB_FT_POOL], desired); ft[MB_FT_POOL]-=extra;
+    hp[MB_HP_BUDGET]+=extra; hp[MB_HP_CEILING]+=extra;
+    ft[MB_FT_EXTRA]=extra; ft[MB_FT_REFERENCE]=reference;
+    ft[MB_FT_GRANTED]+=extra;
+    ft[MB_FT_EVENTS]+=1; ft[MB_FT_START]=instrument_sample_clock;
+  );
+);
+
+// A still-held, latched string remains a HO/PO candidate after its modes retire.
+// Pure slides keep their existing routing; no ordinary note is inferred as HO/PO.
+function mb_fretting_quiet_candidate(index, channel, note)
+local(slot, owner, st, target, played, allowed)
+(
+  slot=mb_rack_slot(index); owner=mb_owner_ptr(index); st=mb_rack_string(index);
+  allowed=fretting_amount_current>0 && slot[MB_RS_ENABLED] && !slot[MB_RS_RETIRING] &&
+    slot[MB_RS_LATCHED] && owner[MB_O_KEY_DOWN] && st[MB_S_COUNT]<=0 &&
+    !(st+MB_CONTACT)[MB_K_SURFACE];
+  channel_mode_current>0 ? allowed=allowed && index==mb_midi_channel_string(channel) : (
+    mb_string_selection()>0 ? allowed=allowed && index==mb_string_index(7-mb_string_selection()) : (
+      mb_fingering_open_drone(index) ? allowed=0;
+    );
+  );
+  target=mb_midi_playing_pitch(note)-slot[MB_RS_LATCH_OPEN];
+  played=target+mb_midi_note_input(channel, MB_CTRL_SLIDE)*midi_slide_range_current;
+  channel_mode_current==0 && mb_string_selection()==0 && target<live_fret_request ? allowed=0;
+  allowed && target>=0 && target<=fret_count_current && played>=0 && played<=fret_count_current ? target : -1;
+);
+
+// Audio-thread placement API: intensity 0..1 is explicit LH force, not pluck
+// velocity. Configure/commit the desired stopped span first. No MIDI inference.
+// An ongoing finger pulse is retained; this API never stacks/restarts it.
+function mb_fretting_place(index, intensity)
+local(st, hp, l, owner, length, accepted, mute, bend)
+(
+  accepted=0; intensity=mb_clamp(intensity, 0, 1);
+  index>=0 && index<MB_MAX_STRINGS && index==floor(index) ? (
+    st=mb_rack_string(index); hp=MB_HOPO+index*MB_HOPO_WORDS; l=st+MB_LIVE;
+    mb_rack_slot(index)[MB_RS_ENABLED] && !MB_NOTES[MB_NH_FAULT] &&
+    fretting_amount_current>0 && !(st+MB_CONTACT)[MB_K_SURFACE] &&
+    l[MB_L_HAS_CONFIG] && l[MB_L_FRET]>0 && !l[MB_L_JOB] &&
+    abs(l[MB_L_FRET_TARGET]-l[MB_L_FRET])<0.000000001 &&
+    !hp[MB_HP_STATE] && intensity>0 ? (
+      st[MB_S_COUNT]<=0 ? (
+        mute=st[MB_S_MUTE]; bend=l[MB_L_BEND];
+        mb_engine_seed_tap(st, 127, st[MB_S_NOTE], st[MB_S_CHANNEL]);
+        mb_live_pluck_bend(st, bend); st[MB_S_MUTE]=mute;
+      );
+      owner=mb_owner_ptr(index);
+      length=st[MB_S_ACTIVE]==st+MB_BANK_A ? st[MB_S_LENGTH_A] : st[MB_S_LENGTH_B];
+      hp[MB_HP_SERIAL]=owner[MB_O_SERIAL]; hp[MB_HP_KIND]=MB_PLACEMENT_KIND;
+      hp[MB_HP_TARGET]=l[MB_L_FRET]; hp[MB_HP_SOURCE_LENGTH]=length;
+      mb_variation_begin(st, st+MB_CONFIG, 0, l[MB_L_FRET]);
+      hp[MB_HP_AMOUNT]=mb_variation_strength(st, intensity);
+      hp[MB_HP_WIDTH]=mb_variation_width(st, mb_clamp(p_finger_contact_width, 0, 30)*0.001);
+      hp[MB_HP_BUDGET]=hp[MB_HP_WORK]=hp[MB_HP_LEFT]=0;
+      hp[MB_HP_DISPLAY_UNTIL]=0;
+      hp[MB_HP_CEILING]=mb_bank_energy(st[MB_S_ACTIVE], min(MB_HOPO_MODES, st[MB_S_COUNT]), length);
+      mb_fretting_capture(st); hp[MB_HP_STATE]=1;
+      MB_ARTICULATION[MB_A_HO_RUNNING]=1;
+      mb_rack_wake(st, 1); accepted=1;
+    );
+  );
+  accepted;
+);

@@ -1,0 +1,150 @@
+// Quasistatic, phase-averaged stretching. No axial waves or modal coupling.
+// Bank records retain nominal (manually bent) configuration, never compounded T.
+@init
+function mb_tension_ptr(st, base)
+global(MB_TENSION, MB_BANK_A, MB_AT_WORDS)
+(
+  st+MB_TENSION+(base!=st+MB_BANK_A)*MB_AT_WORDS;
+);
+
+function mb_tension_preserve(st)
+local(at)
+global(MB_S_ACTIVE, MB_AT_AMOUNT, MB_AT_GHOST, MB_LIVE, MB_L_GHOST_AMOUNT)
+(
+  at=mb_tension_ptr(st, st[MB_S_ACTIVE]);
+  at[MB_AT_AMOUNT] ? at[MB_AT_GHOST]=(st+MB_LIVE)[MB_L_GHOST_AMOUNT];
+);
+
+// Only explicitly added finger work can reopen the freely decaying envelope.
+function mb_tension_work(st)
+local(at)
+global(MB_S_ACTIVE, MB_AT_AMOUNT, MB_AT_WORK_PENDING)
+(
+  mb_vibrato_work(st);
+  at=mb_tension_ptr(st, st[MB_S_ACTIVE]);
+  at[MB_AT_AMOUNT] ? at[MB_AT_WORK_PENDING]=1;
+);
+
+// Envelope amplitudes in metres; mean added length/L = pi^2 sum(n*A)^2/(8L^2).
+function mb_tension_strain(base, count, length)
+local(i, ptr, sum)
+global(MB_MODE_STRIDE, MB_M_R, MB_M_I)
+(
+  i=sum=0;
+  loop(count,
+    ptr=base+i*MB_MODE_STRIDE;
+    sum+=(i+1)^2*(ptr[MB_M_R]^2+ptr[MB_M_I]^2);
+    i+=1;
+  );
+  $pi*$pi*sum/(8*length*length);
+);
+
+// One bounded coefficient job. Preserve physical q/v; only positive extra work
+// beyond 'allowed' invokes uniform passive attenuation. No normalization gain.
+function mb_tension_update(st, base, count, at, allowed)
+local(cfg, g, length, nominal, strain, delta, before, after, scale, i, ptr, ghost, active)
+(
+  cfg=at+MB_AT_CFG; g=at+MB_AT_G; nominal=cfg[MB_C_TENSION];
+  length=cfg[MB_C_SCALE]*0.001*2^(-cfg[MB_C_FRET]/12);
+  strain=mb_tension_strain(base, count, length);
+  !at[MB_AT_WORK_PENDING] ? strain=min(strain, at[MB_AT_STRAIN]);
+  at[MB_AT_WORK_PENDING]=0; at[MB_AT_STRAIN]=strain;
+  delta=min(MB_TENSION_MAX_RATIO*nominal, at[MB_AT_AMOUNT]*at[MB_AT_EA]*strain);
+  at[MB_AT_LIMITED]=delta<at[MB_AT_AMOUNT]*at[MB_AT_EA]*strain;
+  before=mb_bank_energy(base, count, length);
+  cfg[MB_C_TENSION]=nominal+delta;
+  mb_geometry_calculate(cfg, g);
+  ghost=(st+MB_LIVE)[MB_L_GHOST_AMOUNT];
+  (st+MB_LIVE)[MB_L_GHOST_AMOUNT]=at[MB_AT_GHOST];
+  mb_live_coefficients(st, base, count, count, cfg, g);
+  (st+MB_LIVE)[MB_L_GHOST_AMOUNT]=ghost;
+  mb_contact_invalidate(st);
+  after=mb_bank_energy(base, count, length);
+  scale=after>allowed && after>0 ? sqrt(max(0, allowed)/after) : 1;
+  scale<1 ? (
+    mb_contact_response_scale(st, base, count, scale);
+    i=0;
+    loop(count,
+      ptr=base+i*MB_MODE_STRIDE;
+      ptr[MB_M_R]*=scale; ptr[MB_M_I]*=scale;
+      i+=1;
+    );
+    at[MB_AT_STRAIN]*=scale*scale;
+  );
+  at[MB_AT_DELTA]=delta;
+  at[MB_AT_BEFORE]=before; at[MB_AT_AFTER]=after*scale*scale;
+  at[MB_AT_WORK]=at[MB_AT_AFTER]-before; at[MB_AT_SCALE]=scale;
+  at[MB_AT_UPDATES]+=1;
+  active=base==st[MB_S_ACTIVE];
+  active ? (
+    memcpy(st+MB_CONFIG, cfg, MB_CONFIG_WORDS);
+    memcpy(st+MB_GEOMETRY, g, MB_GEOMETRY_WORDS);
+    st[MB_S_F1]=g[MB_G_F1];
+  );
+  cfg[MB_C_TENSION]=nominal;
+);
+
+// Capture once per explicit pluck/tap. Default zero does not touch spare RAM.
+function mb_tension_seed(st, repluck)
+local(at, cfg, diameter, allowed)
+(
+  at=mb_tension_ptr(st, st[MB_S_ACTIVE]);
+  vibration_pitch_rise_current>0 || at[MB_AT_AMOUNT] ? memset(at, 0, MB_AT_WORDS);
+  vibration_pitch_rise_current>0 ? (
+    cfg=at+MB_AT_CFG;
+    memcpy(cfg, st+MB_CONFIG, MB_CONFIG_WORDS);
+    at[MB_AT_AMOUNT]=vibration_pitch_rise_current;
+    diameter=mb_ref_gauge(cfg[MB_C_REFERENCE])*MB_GAUGE_METERS;
+    cfg[MB_C_GAUGE]>0 ? diameter=cfg[MB_C_GAUGE]*MB_GAUGE_METERS;
+    cfg[MB_C_WINDING]+MB_WINDING_ROUND!=MB_WINDING_PLAIN ?
+      diameter*=MB_WOUND_CORE_RATIO;
+    at[MB_AT_EA]=MB_STEEL_MODULUS*$pi*diameter*diameter/4;
+    at[MB_AT_WORK_PENDING]=1;
+    allowed=(1+MB_TENSION_MAX_RATIO)*mb_bank_energy(st[MB_S_ACTIVE], st[MB_S_COUNT],
+      (st+MB_GEOMETRY)[MB_G_LENGTH]);
+    repluck ? allowed=(st+MB_REPLUCK)[MB_RP_BEFORE]+(1+MB_TENSION_MAX_RATIO)*(st+MB_REPLUCK)[MB_RP_PLUCK];
+    mb_tension_update(st, st[MB_S_ACTIVE], st[MB_S_COUNT], at, allowed);
+    // First render rechecks harmonic projection/ghost shaping done after excite.
+    at[MB_AT_CLOCK]=0;
+  );
+);
+
+function mb_tension_bank_tick(st, base, count, active)
+local(at, cfg, current, nominal, changed, energy)
+(
+  at=mb_tension_ptr(st, base);
+  at[MB_AT_AMOUNT]>0 ? (
+    at[MB_AT_CLOCK]-=1;
+    at[MB_AT_CLOCK]<=0 && (!mb_tension_budgeted || count<=mb_tension_allowance) ? (
+      mb_tension_budgeted ? mb_tension_allowance-=count;
+      active ? (
+        // Wheel bend and fret transfers supply nominal geometry, separately from
+        // stretching. A changed span can reopen strain, never its energy budget.
+        cfg=at+MB_AT_CFG; current=st+MB_CONFIG;
+        nominal=current[MB_C_TENSION]-at[MB_AT_DELTA];
+        changed=abs(nominal-cfg[MB_C_TENSION])>0.000000001 || current[MB_C_FRET]!=cfg[MB_C_FRET];
+        changed ? (
+          current[MB_C_FRET]!=cfg[MB_C_FRET] ? at[MB_AT_WORK_PENDING]=1;
+          memcpy(cfg, current, MB_CONFIG_WORDS); cfg[MB_C_TENSION]=nominal;
+          at[MB_AT_REBASE]+=1;
+        );
+        at[MB_AT_GHOST]=(st+MB_LIVE)[MB_L_GHOST_AMOUNT];
+      );
+      cfg=at+MB_AT_CFG;
+      energy=mb_bank_energy(base, count, cfg[MB_C_SCALE]*0.001*2^(-cfg[MB_C_FRET]/12));
+      mb_tension_update(st, base, count, at, energy);
+      at[MB_AT_CLOCK]=MB_TENSION_INTERVAL;
+    );
+  );
+);
+
+function mb_tension_tick(st)
+global(MB_S_ACTIVE, MB_S_COUNT, MB_S_PREVIOUS_LEFT, MB_S_PREVIOUS, MB_S_PREVIOUS_COUNT,
+       MB_TENSION, MB_AT_AMOUNT, MB_AT_WORDS)
+(
+  (st+MB_TENSION)[MB_AT_AMOUNT] || (st+MB_TENSION+MB_AT_WORDS)[MB_AT_AMOUNT] ? (
+    mb_tension_bank_tick(st, st[MB_S_ACTIVE], st[MB_S_COUNT], 1);
+    st[MB_S_PREVIOUS_LEFT]>0 ?
+      mb_tension_bank_tick(st, st[MB_S_PREVIOUS], st[MB_S_PREVIOUS_COUNT], 0);
+  );
+);

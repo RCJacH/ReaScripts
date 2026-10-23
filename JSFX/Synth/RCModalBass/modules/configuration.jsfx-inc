@@ -1,0 +1,206 @@
+// Instrument configuration, math helpers and action geometry.
+@init
+
+// ---- configuration ----
+// Host IDs are in parameter_ids.jsfx-inc; stable p_* names bind host values.
+// MB_C_* configuration offsets retain the independent RAM ABI.
+function mb_configuration_ids_init()
+(
+  MB_C_WINDING=0; // Kind minus Roundwound; zero preserves legacy RAM.
+  MB_C_REFERENCE=1;
+  MB_C_FRET=2;
+  MB_C_SCALE=3;
+  MB_C_GAUGE=4;
+  MB_C_TENSION=5;
+  MB_C_PLUCK_POSITION=6;
+  MB_C_DISPLACEMENT=7;
+  MB_C_CONTACT_WIDTH=8;
+  MB_C_SOFTNESS=9;
+  MB_C_DIRECTION=10;
+  MB_C_PICKUP1=11;
+  MB_C_PICKUP_WIDTH=12;
+  MB_C_PICKUP2=13;
+  MB_C_PICKUP_MIX=14;
+  MB_C_PICKUP_POLARITY=15;
+  MB_C_STIFFNESS=16;
+  MB_C_T60=17;
+  MB_C_HF_LOSS=18;
+  MB_C_LOSS_EXPONENT=19;
+  MB_C_AGE=20;
+  MB_C_PALM=21;
+  MB_C_ENDPOINT=22; // Captured fretted-endpoint or fretless-finger loss (%).
+  MB_C_MODES=23;
+  MB_C_A4_OFFSET=24; // Captured Hz relative to 440; zero retains legacy RAM.
+  MB_C_STIFFNESS_TRIM=25; // Captured multiplier minus 1; zero preserves legacy RAM.
+  MB_C_ELECTRICAL=26;
+  MB_C_RESONANCE=27;
+  MB_C_Q=28;
+);
+
+function mb_sinc(x)
+global()
+( abs(x)<0.0000001 ? 1 : sin(x)/x; );
+function mb_clamp(x, lo, hi)
+global()
+( min(hi, max(lo, x)); );
+
+// Mapping bounds reject obsolete saved values instead of changing their target.
+function mb_midi_mapping_index(selection, last)
+local(index)
+global()
+(
+  index=floor(selection);
+  index>=0 && index<=last ? index : -1;
+);
+
+function mb_midi_cc_supported(cc)
+global(MB_MIDI_CC_MIN, MB_MIDI_CC_MAX)
+( cc>=MB_MIDI_CC_MIN && cc<=MB_MIDI_CC_MAX; );
+
+function mb_ref_frequency(index)
+global()
+(
+  index==0 ? 41.203444614 : index==1 ? 55 : index==2 ? 73.416191979 :
+  index==3 ? 97.998858995 : index==4 ? 30.867706329 : 130.812782650;
+);
+function mb_ref_gauge(index)
+global()
+(
+  index==0 ? 105 : index==1 ? 85 : index==2 ? 65 :
+  index==3 ? 45 : index==4 ? 130 : 32;
+);
+
+// Construction profiles: Roundwound is the approved calibrated reference.
+// Plain is solid steel; Flat/Tape factors are first-order relative estimates.
+function mb_winding_mass(reference, kind)
+local(diameter, calibrated_mass)
+global(MB_WINDING_PLAIN, MB_WINDING_FLAT, MB_WINDING_TAPE,
+       MB_GAUGE_METERS, MB_STEEL_DENSITY, MB_STRING_CALIBRATION_TENSION,
+       MB_STRING_CALIBRATION_LENGTH, MB_FLAT_MASS, MB_TAPE_MASS)
+(
+  kind==MB_WINDING_PLAIN ? (
+    diameter=mb_ref_gauge(reference)*MB_GAUGE_METERS;
+    calibrated_mass=MB_STRING_CALIBRATION_TENSION/
+      (2*MB_STRING_CALIBRATION_LENGTH*mb_ref_frequency(reference))^2;
+    MB_STEEL_DENSITY*$pi*diameter^2/(4*calibrated_mass);
+  ) : kind==MB_WINDING_FLAT ? MB_FLAT_MASS :
+      kind==MB_WINDING_TAPE ? MB_TAPE_MASS : 1;
+);
+
+function mb_winding_rigidity(reference, kind)
+local(diameter)
+global(MB_WINDING_PLAIN, MB_WINDING_FLAT, MB_WINDING_TAPE,
+       MB_GAUGE_METERS, MB_STEEL_MODULUS, MB_STRING_CALIBRATION_RIGIDITY,
+       MB_FLAT_RIGIDITY, MB_TAPE_RIGIDITY)
+(
+  kind==MB_WINDING_PLAIN ? (
+    diameter=mb_ref_gauge(reference)*MB_GAUGE_METERS;
+    MB_STEEL_MODULUS*$pi*diameter^4/(64*MB_STRING_CALIBRATION_RIGIDITY);
+  ) : kind==MB_WINDING_FLAT ? MB_FLAT_RIGIDITY :
+      kind==MB_WINDING_TAPE ? MB_TAPE_RIGIDITY : 1;
+);
+
+function mb_winding_loss(kind)
+global(MB_WINDING_PLAIN, MB_WINDING_FLAT, MB_WINDING_TAPE,
+       MB_PLAIN_HF_LOSS, MB_FLAT_HF_LOSS, MB_TAPE_HF_LOSS)
+(
+  kind==MB_WINDING_PLAIN ? MB_PLAIN_HF_LOSS :
+  kind==MB_WINDING_FLAT ? MB_FLAT_HF_LOSS :
+  kind==MB_WINDING_TAPE ? MB_TAPE_HF_LOSS : 1;
+);
+
+// Requested saddle-relative distance in mm. The existing span-relative geometry
+// guard below keeps endpoint requests inside the vibrating string.
+function mb_picking_distance(position, maximum)
+global()
+( mb_clamp(position, 0, 1)*maximum; );
+
+// Audio thread only. Configuration snapshot is distinct from oscillator state.
+function mb_capture_configuration(cfg, reference)
+(
+  cfg[MB_C_WINDING]=0;
+  cfg[MB_C_REFERENCE]=reference; cfg[MB_C_FRET]=mb_clamp(p_capo, 0, fret_count_current);
+  cfg[MB_C_SCALE]=p_scale_length; cfg[MB_C_GAUGE]=0; // reference gauge; rack applies per-string diameter
+  cfg[MB_C_TENSION]=180;
+  cfg[MB_C_A4_OFFSET]=tuning_a4_current-440;
+  cfg[MB_C_PLUCK_POSITION]=mb_picking_distance(p_picking_position, p_max_excitation_distance_from_bridge);
+  cfg[MB_C_DISPLACEMENT]=p_pluck_displacement; cfg[MB_C_CONTACT_WIDTH]=p_finger_contact_width;
+  cfg[MB_C_SOFTNESS]=p_finger_softness; cfg[MB_C_DIRECTION]=0; // Default phase; Pick owns its stroke.
+  cfg[MB_C_PICKUP1]=p_pickup_1_distance_from_bridge; cfg[MB_C_PICKUP_WIDTH]=p_pickup_1_sensing_width;
+  cfg[MB_C_PICKUP2]=p_pickup_2_distance_from_bridge; cfg[MB_C_PICKUP_MIX]=p_pickup_mix;
+  cfg[MB_C_PICKUP_POLARITY]=p_pickup_polarity; cfg[MB_C_STIFFNESS]=reference_inharmonicity_current;
+  cfg[MB_C_STIFFNESS_TRIM]=0;
+  cfg[MB_C_T60]=p_t60; cfg[MB_C_HF_LOSS]=p_hf_loss;
+  cfg[MB_C_LOSS_EXPONENT]=p_loss_exponent; cfg[MB_C_AGE]=0; // Rack applies per-string age.
+  cfg[MB_C_PALM]=0; // Retired uniform palm loss; live spatial state owns damping.
+  cfg[MB_C_ENDPOINT]=p_contact_surface>=0.5 ? mb_clamp(p_fretless_finger_damping, 0, 100) : p_endpoint;
+  cfg[MB_C_MODES]=p_max_modes; cfg[MB_C_ELECTRICAL]=p_electronics_model==1;
+  cfg[MB_C_RESONANCE]=p_resonance; cfg[MB_C_Q]=p_q;
+);
+
+function mb_geometry_calculate(cfg, g)
+local(ref, ratio, mu, wave, length, p, width)
+(
+  length=cfg[MB_C_SCALE]*0.001*2^(-cfg[MB_C_FRET]/12);
+  p=mb_clamp(cfg[MB_C_PLUCK_POSITION]*0.001/length, 0.002, 0.998);
+  width=min(cfg[MB_C_CONTACT_WIDTH]*0.001, 2*length*min(p, 1-p));
+  ref=mb_ref_frequency(cfg[MB_C_REFERENCE]);
+  ratio=(cfg[MB_C_GAUGE]>0 ? cfg[MB_C_GAUGE] : mb_ref_gauge(cfg[MB_C_REFERENCE]))
+        /mb_ref_gauge(cfg[MB_C_REFERENCE]);
+  mu=180/(2*0.8636*ref)^2*ratio^2;
+  mu*=mb_winding_mass(cfg[MB_C_REFERENCE], cfg[MB_C_WINDING]+MB_WINDING_ROUND);
+  wave=sqrt(cfg[MB_C_TENSION]/mu);
+  g[MB_G_F1]=wave/(2*length);
+  g[MB_G_STIFFNESS]=cfg[MB_C_STIFFNESS]*ratio^4*(180/cfg[MB_C_TENSION])*(0.8636/length)^2;
+  g[MB_G_STIFFNESS]*=mb_winding_rigidity(cfg[MB_C_REFERENCE], cfg[MB_C_WINDING]+MB_WINDING_ROUND);
+  g[MB_G_LENGTH]=length; g[MB_G_P]=p; g[MB_G_WIDTH]=width;
+  g[MB_G_AGE]=cfg[MB_C_AGE]*0.01; g[MB_G_PALM]=cfg[MB_C_PALM]*0.01;
+  g[MB_G_END_LOSS]=cfg[MB_C_FRET]>0 ? cfg[MB_C_ENDPOINT]*0.01 : 0;
+);
+
+// Stage geometry for the NEXT excitation; existing modal RAM is untouched.
+function mb_engine_configure(st, cfg)
+global(MB_CONFIG, MB_CONFIG_WORDS, MB_GEOMETRY)
+(
+  cfg!=st+MB_CONFIG ? memcpy(st+MB_CONFIG, cfg, MB_CONFIG_WORDS);
+  mb_geometry_calculate(st+MB_CONFIG, st+MB_GEOMETRY);
+);
+
+// ---- action ----
+// Action is clearance above the fret crowns, not above the fingerboard.
+// Flat fret plane/straight span; shared by pickup rest geometry and fret contact.
+function mb_action_request()
+(
+  action_height_request=mb_clamp(p_action_height_open_string_above_fret_12, 0, 10);
+  action6_request=p_string_6_action_clearance_offset;
+  action5_request=p_string_5_action_clearance_offset;
+  action4_request=p_string_4_action_clearance_offset;
+  action3_request=p_string_3_action_clearance_offset;
+  action2_request=p_string_2_action_clearance_offset;
+  action1_request=p_string_1_action_clearance_offset;
+);
+
+function mb_action_requested(index)
+local(offset)
+global(action_height_request, action1_request, action2_request, action3_request,
+       action4_request, action5_request, action6_request)
+(
+  offset=index==0 ? action5_request : index==1 ? action4_request : index==2 ? action3_request :
+    index==3 ? action2_request : index==4 ? action6_request : action1_request;
+  max(0, action_height_request+offset);
+);
+
+function mb_action_configure(st, index)
+global(MB_ACTION, MB_ACT_HEIGHT)
+(
+  // mm relative to 2 mm; default configuration leaves reserved RAM zero.
+  (st+MB_ACTION)[MB_ACT_HEIGHT]=mb_action_requested(index)-2;
+);
+
+// Engine x is measured from the bridge. The nut/selected fret is at x=span.
+// With nut/fret crowns on y=0, y_bridge=2*open_action measured above fret 12.
+function mb_action_clearance(height_mm, span, x)
+global()
+(
+  0.002*max(0, height_mm)*mb_clamp(1-x/span, 0, 1);
+);

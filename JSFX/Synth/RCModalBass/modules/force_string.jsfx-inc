@@ -1,0 +1,150 @@
+// Independent momentary routing override. No excitation or articulation change.
+@init
+function mb_force_channel(channel, role)
+global(MB_FORCE_CHANNELS, MB_ROLE_FORCE_FIRST, MB_CHANNELS, MB_ART_CHANNEL_WORDS)
+(
+  MB_FORCE_CHANNELS+((role-MB_ROLE_FORCE_FIRST)*MB_CHANNELS+channel)*MB_ART_CHANNEL_WORDS;
+);
+
+// Native selection indices run 6->1; forced_string_current is the string number.
+function mb_string_selection()
+global(channel_mode_current, forced_string_current, string_selection_current)
+(
+  channel_mode_current==0 && forced_string_current>0 ? 7-forced_string_current : string_selection_current;
+);
+
+// A temporary display value must not become the saved manual selection when
+// another slider changes. Native edits still update the background request.
+function mb_force_selection_request()
+local(value)
+global(p_string_selection, string_selection_display_ready, string_selection_display_value,
+       string_selection_request, MB_MAX_STRINGS)
+(
+  value=mb_clamp(floor(p_string_selection),0,MB_MAX_STRINGS);
+  !string_selection_display_ready || value!=string_selection_display_value ? string_selection_request=value;
+);
+
+function mb_force_selection_display()
+local(value)
+global(p_string_selection, string_selection_display_ready, string_selection_display_value,
+       string_selection_display_dirty)
+(
+  value=mb_string_selection();
+  string_selection_display_ready=1; string_selection_display_value=value;
+  p_string_selection!=value ? (
+    p_string_selection=value; string_selection_display_dirty=1;
+  );
+);
+
+function mb_force_notify()
+global(p_string_selection, string_selection_display_dirty)
+(
+  string_selection_display_dirty ? (
+    string_selection_display_dirty=0; sliderchange(p_string_selection);
+  );
+);
+
+function mb_force_mapping(number)
+global(force_c_current, force_g_current, force_d_current, force_a_current,
+       force_e_current, force_b_current)
+(
+  number==1 ? force_c_current : number==2 ? force_g_current : number==3 ? force_d_current :
+  number==4 ? force_a_current : number==5 ? force_e_current : force_b_current;
+);
+
+// At most 96 held entries, scanned only on switch/release/configuration events.
+function mb_force_refresh()
+local(number, channel, entry, newest)
+global(forced_string_current, MB_MAX_STRINGS, MB_CHANNELS, MB_ROLE_FORCE_FIRST,
+       MB_AC_VALUE, MB_AC_STAMP, channel_mode_current)
+(
+  forced_string_current=newest=0;
+  number=1;
+  loop(channel_mode_current==0 ? MB_MAX_STRINGS : 0,
+    channel=0;
+    loop(MB_CHANNELS,
+      entry=mb_force_channel(channel, MB_ROLE_FORCE_FIRST+number-1);
+      entry[MB_AC_VALUE]>0 && entry[MB_AC_STAMP]>newest ? (
+        newest=entry[MB_AC_STAMP];
+        forced_string_current=number;
+      );
+      channel+=1;
+    );
+    number+=1;
+  );
+  mb_force_selection_display();
+);
+
+function mb_force_clear()
+global(MB_FORCE_CHANNELS, MB_MAX_STRINGS, MB_CHANNELS, MB_ART_CHANNEL_WORDS,
+       forced_string_current)
+(
+  memset(MB_FORCE_CHANNELS, 0, MB_MAX_STRINGS*MB_CHANNELS*MB_ART_CHANNEL_WORDS);
+  forced_string_current=0;
+  mb_force_selection_display();
+);
+
+function mb_force_request()
+(
+  force_c_request=mb_clamp(floor(p_force_c_string), 0, 127);
+  force_g_request=mb_clamp(floor(p_force_g_string), 0, 127);
+  force_d_request=mb_clamp(floor(p_force_d_string), 0, 127);
+  force_a_request=mb_clamp(floor(p_force_a_string), 0, 127);
+  force_e_request=mb_clamp(floor(p_force_e_string), 0, 127);
+  force_b_request=mb_clamp(floor(p_force_b_string), 0, 127);
+);
+
+function mb_force_apply_requests()
+(
+  force_channel_current!=art_channel_current || force_mode_current!=channel_mode_current ||
+  force_c_current!=force_c_request || force_g_current!=force_g_request ||
+  force_d_current!=force_d_request || force_a_current!=force_a_request ||
+  force_e_current!=force_e_request || force_b_current!=force_b_request ? (
+    force_channel_current=art_channel_current;
+    force_mode_current=channel_mode_current;
+    force_c_current=force_c_request; force_g_current=force_g_request;
+    force_d_current=force_d_request; force_a_current=force_a_request;
+    force_e_current=force_e_request; force_b_current=force_b_request;
+    mb_force_clear();
+  );
+  mb_force_selection_display();
+);
+
+function mb_force_init()
+global(force_c_current, force_g_current, force_d_current, force_a_current,
+       force_e_current, force_b_current, string_selection_display_ready, string_selection_display_dirty)
+(
+  string_selection_display_ready=string_selection_display_dirty=0;
+  force_c_current=force_g_current=force_d_current=force_a_current=force_e_current=force_b_current=-1;
+  mb_force_request();
+  mb_force_apply_requests();
+);
+
+// The outer articulation matcher checks the Keyswitch MIDI channel. With
+// identical force bindings, the first native slot (String 1/C) wins.
+function mb_force_matches(note)
+local(number, role)
+global(channel_mode_current, MB_MAX_STRINGS, MB_ROLE_FORCE_FIRST)
+(
+  role=0;
+  channel_mode_current==0 ? (
+    number=1;
+    loop(MB_MAX_STRINGS,
+      !role && note==mb_force_mapping(number) ? role=MB_ROLE_FORCE_FIRST+number-1;
+      number+=1;
+    );
+  );
+  role;
+);
+
+function mb_force_release_channel(channel)
+local(number)
+global(MB_MAX_STRINGS, MB_ROLE_FORCE_FIRST, MB_ART_CHANNEL_WORDS)
+(
+  number=1;
+  loop(MB_MAX_STRINGS,
+    memset(mb_force_channel(channel, MB_ROLE_FORCE_FIRST+number-1), 0, MB_ART_CHANNEL_WORDS);
+    number+=1;
+  );
+  mb_force_refresh();
+);

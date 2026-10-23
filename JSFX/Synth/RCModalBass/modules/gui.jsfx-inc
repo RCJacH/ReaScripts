@@ -1,0 +1,101 @@
+// Title, Panic request and fretboard. Parameters remain on native slider pages.
+@init
+// Mapping summary uses native inputs only; GUI never reads style-CC audio RAM.
+// Rebuild on mapping edits, keeping ordinary draw frames inexpensive.
+function mb_gui_style_groups()
+local(i, j, mapping, duplicate, count, rank, low, high)
+(
+  !ui_style_groups_ready || ui_style_finger_seen!=p_finger_style_controller ||
+  ui_style_pick_seen!=p_pick_style_controller || ui_style_slap_seen!=p_slap_pop_style_controller ||
+  ui_style_tap_seen!=p_tapping_style_controller ? (
+    ui_style_groups_ready=1;
+    ui_style_finger_seen=p_finger_style_controller; ui_style_pick_seen=p_pick_style_controller;
+    ui_style_slap_seen=p_slap_pop_style_controller; ui_style_tap_seen=p_tapping_style_controller;
+    strcpy(#ui_style_groups,""); ui_style_group_count=0; i=0;
+    loop(MB_STYLE_COUNT,
+      mapping=mb_style_input(i); duplicate=j=0;
+      loop(i, mb_style_input(j)==mapping ? duplicate=1; j+=1;);
+      mapping>=128 && !duplicate ? (
+        ui_style_group_count>0 ? sprintf(#ui_style_groups,"%s | ",#ui_style_groups);
+        sprintf(#ui_style_groups,"%sCC%d: ",#ui_style_groups,mapping-127);
+        mapping==247 || mapping==248 || mapping==250 ?
+          sprintf(#ui_style_groups,"%sMIDI system",#ui_style_groups) : (
+          count=j=0;
+          loop(MB_STYLE_COUNT, mb_style_input(j)==mapping ? count+=1; j+=1;);
+          rank=j=0;
+          loop(MB_STYLE_COUNT,
+            mb_style_input(j)==mapping ? (
+              strcpy(#ui_style_name,j==0 ? "Finger" : j==1 ? "Pick" : j==2 ? "Slap/Pop" : "Tap");
+              rank>0 ? sprintf(#ui_style_groups,"%s / ",#ui_style_groups);
+              count==1 ? sprintf(#ui_style_groups,"%s%s rise64",#ui_style_groups,#ui_style_name) : (
+                low=ceil(rank*128/count); high=ceil((rank+1)*128/count)-1;
+                sprintf(#ui_style_groups,"%s%s %d-%d",#ui_style_groups,#ui_style_name,low,high);
+              );
+              rank+=1;
+            );
+            j+=1;
+          );
+        );
+        ui_style_group_count+=1;
+      );
+      i+=1;
+    );
+  );
+);
+
+function mb_gui_init()
+(
+  gfx_ext_retina=1;
+  MB_UI_BOARD_INSET=8;
+  MB_UI_METER_FLOOR=0.000001; // Hide near-zero levels at/below -120 dBFS.
+  mb_gui_color_constants();
+  ui_memory_fault=__memtop()<MB_UI_BASE+MB_UI_WORDS;
+  ui_tab=0; ui_page_applied=-1; ui_colors_ready=0;
+  ui_audio_seen=-1; ui_audio_seen_time=ui_audio_clock=0;
+  ui_style_groups_ready=ui_style_group_count=0;
+  ui_panic_down=0;
+  mb_native_sliders_update();
+);
+
+function mb_gui_draw()
+local(theme, group_width, header_height, summary_width)
+(
+  !ui_colors_ready ? mb_gui_colors_init();
+  mb_native_sliders_update();
+  gfx_mode=0; gfx_clear=$x0C0E10; gfx_getchar();
+  mb_gui_audio_time();
+  ui_scale=max(1, min(1.5, gfx_w/960));
+  ui_page_applied==MB_PAGE_MAPPING ? mb_gui_style_groups();
+  header_height=(ui_page_applied==MB_PAGE_MAPPING ? 24 : 28)*ui_scale;
+  ui_board_y=header_height+4*ui_scale;
+  // Keep the fret marker accent inside the six allocated palettes.
+  ui_tab=ui_page_applied==MB_PAGE_INSTRUMENT ? 0 :
+    ui_page_applied==MB_PAGE_PICKUPS || ui_page_applied==MB_PAGE_ELECTRONICS ? 2 :
+    ui_page_applied==MB_PAGE_VARIATION ? 3 : ui_page_applied==MB_PAGE_MAPPING ? 4 :
+    ui_page_applied==MB_PAGE_DIAGNOSTICS ? 5 : 1;
+  gfx_setfont(1, "Arial", 12*ui_scale);
+  !ui_memory_fault ? (
+    theme=MB_UI_BASE+5*MB_UI_THEME_STRIDE;
+    mb_gui_color(theme+MB_UI_SCREEN, 1); gfx_rect(0, 0, gfx_w, gfx_h, 1);
+    mb_gui_color(theme+MB_UI_PANEL, 1); gfx_rect(0, 0, gfx_w, header_height, 1);
+    ui_panic_w=64*ui_scale; ui_panic_h=18*ui_scale;
+    ui_panic_x=gfx_w-16*ui_scale-ui_panic_w; ui_panic_y=(header_height-ui_panic_h)*0.5;
+    mb_gui_color(theme+MB_UI_PANEL_TEXT, 1);
+    ui_page_applied!=MB_PAGE_MAPPING ? (
+      gfx_setfont(1, "Arial", 14*ui_scale);
+      mb_gui_text("RCModalBass", 16*ui_scale, 4*ui_scale, 160*ui_scale, 20*ui_scale, 0);
+      gfx_setfont(1, "Arial", 12*ui_scale);
+    ) : ui_style_group_count>0 ? (
+      group_width=mb_gui_text_width(#ui_style_groups);
+      summary_width=max(1,ui_panic_x-28*ui_scale);
+      gfx_setfont(1,"Arial",12*ui_scale*min(1,summary_width/max(1,group_width)));
+      mb_gui_text(#ui_style_groups,16*ui_scale,2*ui_scale,summary_width,20*ui_scale,0);
+      gfx_setfont(1,"Arial",12*ui_scale);
+    );
+    mb_gui_panic_button(ui_panic_x, ui_panic_y, ui_panic_w, ui_panic_h, theme);
+    mb_gui_fretboard(16*ui_scale, ui_board_y, gfx_w-32*ui_scale, max(30*ui_scale, gfx_h-ui_board_y-8*ui_scale), theme);
+  ) : (
+    gfx_set(0.94, 0.88, 0.78, 1); gfx_x=16; gfx_y=16;
+    gfx_drawstr("RCModalBass: insufficient GUI memory. Native controls remain available.");
+  );
+);

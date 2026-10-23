@@ -1,0 +1,184 @@
+// Note-owner release, damping and Let Ring.
+@init
+
+// ---- release ----
+// Event-only hand release policy. Deferred gestures belong to the current owner;
+// retire/bind clears this record before a newer note can occupy the string.
+function mb_release_capture(index)
+global(MB_RELEASE, MB_REL_KIND, MB_REL_APPLIED, p_note_off_gesture)
+(
+  (mb_rack_string(index)+MB_RELEASE)[MB_REL_KIND]=mb_clamp(floor(p_note_off_gesture), 0, 2);
+  (mb_rack_string(index)+MB_RELEASE)[MB_REL_APPLIED]=0;
+);
+
+function mb_release_apply(index)
+local(st, release, owner, l, kind, duration, slot)
+(
+  st=mb_rack_string(index); release=st+MB_RELEASE; owner=mb_owner_ptr(index);
+  !release[MB_REL_APPLIED] ? (
+    kind=release[MB_REL_KIND];
+    owner[MB_O_STATE]=kind==1 ? MB_VOICE_RINGING : MB_VOICE_DAMPING;
+    kind!=1 ? mb_engine_damp(st, p_mute_t60);
+    kind>0 ? (
+      mb_friction_stop(st);
+      release[MB_REL_APPLIED]=1;
+      // The left hand no longer controls this tail. Preserve source identity
+      // for channel panic, but stop old legato/wheel targets from re-fretting it.
+      memset(MB_MOTIONS+index*MB_MOTION_WORDS, 0, MB_MOTION_WORDS);
+      owner[MB_O_BEND_CHANNEL]=-1;
+      owner[MB_O_MIDI_BEND]=owner[MB_O_WHEEL_NORMAL]=owner[MB_O_BEND_CLIPPED]=0;
+      owner[MB_O_FRET_ANCHOR]=owner[MB_O_MIDI_SLIDE]=owner[MB_O_SLIDE_CLIPPED]=0;
+      slot=mb_rack_slot(index); slot[MB_RS_BEND_INPUT]=slot[MB_RS_SLIDE_INPUT]=0;
+      st[MB_S_NOTE]=st[MB_S_CHANNEL]=-1;
+      st[MB_S_HARMONIC]=0; // Lifting cannot restore partials already dissipated.
+      l=st+MB_LIVE; duration=ceil(MB_FRET_TRANSITION_MS*0.001*srate);
+      mb_engine_bend(st, 0, duration);
+      // Passive corresponding-mode q/v mapping, not an exact release/contact
+      // simulation. Newly exposed span supplies no independent stored motion.
+      (st[MB_S_COUNT]>0 || st[MB_S_PREVIOUS_COUNT]>0) &&
+        (l[MB_L_FRET]!=0 || l[MB_L_FRET_TARGET]!=0) ?
+        mb_engine_fret_gesture(st, 0, duration);
+    );
+  );
+);
+
+// ---- let ring ----
+// Independent release gate, not an excitation or articulation override.
+// All writes/scans are audio-thread, on MIDI/configuration events only.
+function mb_ring_channel(channel)
+global(MB_LET_RING_CHANNELS, MB_LR_WORDS)
+( MB_LET_RING_CHANNELS+channel*MB_LR_WORDS; );
+
+function mb_ring_active(channel)
+global(channel_mode_current, let_ring_shared, MB_LR_HELD)
+(
+  channel>=0 && (channel_mode_current==0 ? let_ring_shared : mb_ring_channel(channel)[MB_LR_HELD]);
+);
+
+// Native status follows the MIDI gates, never supplies a second hold source.
+function mb_ring_display()
+global(p_let_ring, let_ring_shared, let_ring_display_dirty)
+(
+  p_let_ring!=let_ring_shared ? (p_let_ring=let_ring_shared; let_ring_display_dirty=1;);
+);
+
+function mb_ring_notify()
+global(let_ring_display_dirty, p_let_ring)
+(
+  mb_ring_display();
+  let_ring_display_dirty ? (let_ring_display_dirty=0; sliderchange(p_let_ring););
+);
+
+// Ownership is the deferred-off record. Reuse/kill/quiet removes it naturally;
+// pedal-up cannot act on an older note after the string has acquired a new owner.
+function mb_ring_flush()
+local(i, owner)
+global(MB_MAX_STRINGS, MB_O_KEY_DOWN, MB_O_STATE, MB_VOICE_RINGING,
+       MB_O_SOURCE_CHANNEL)
+(
+  i=0; loop(MB_MAX_STRINGS,
+    owner=mb_owner_ptr(i);
+    !owner[MB_O_KEY_DOWN] && owner[MB_O_STATE]==MB_VOICE_RINGING &&
+      !mb_ring_active(owner[MB_O_SOURCE_CHANNEL]) ? (
+      mb_release_apply(i);
+    );
+    i+=1;
+  );
+);
+
+function mb_ring_set(channel, token, held)
+local(entry, changed, i)
+global(MB_LR_TOKEN, MB_LR_HELD, let_ring_shared, MB_CHANNELS)
+(
+  entry=mb_ring_channel(channel); changed=entry[MB_LR_HELD]!=held;
+  entry[MB_LR_TOKEN]=token; entry[MB_LR_HELD]=held;
+  changed ? (
+    let_ring_shared=0; i=0;
+    loop(MB_CHANNELS,
+      let_ring_shared=max(let_ring_shared, mb_ring_channel(i)[MB_LR_HELD]); i+=1;
+    );
+    mb_ring_display();
+    mb_ring_flush();
+  );
+);
+
+function mb_ring_clear()
+global(MB_LET_RING_CHANNELS, MB_CHANNELS, MB_LR_WORDS, let_ring_shared)
+(
+  memset(MB_LET_RING_CHANNELS, 0, MB_CHANNELS*MB_LR_WORDS); let_ring_shared=0;
+  mb_ring_display();
+);
+
+function mb_ring_request()
+global(p_let_ring_controller, p_keyswitch_channel, let_ring_mapping_request, let_ring_channel_request,
+       MB_NOTE_CC_MAX)
+(
+  let_ring_mapping_request=mb_midi_mapping_index(p_let_ring_controller, MB_NOTE_CC_MAX);
+  let_ring_channel_request=mb_clamp(floor(p_keyswitch_channel), 0, 16);
+);
+
+function mb_ring_init()
+global(let_ring_mapping_current, let_ring_mapping_request, let_ring_channel_current,
+       let_ring_channel_request, let_ring_mode_current, channel_mode_current,
+       let_ring_display_dirty)
+(
+  mb_ring_request();
+  let_ring_mapping_current=let_ring_mapping_request;
+  let_ring_channel_current=let_ring_channel_request;
+  let_ring_mode_current=channel_mode_current;
+  let_ring_display_dirty=1;
+  mb_ring_clear();
+);
+
+function mb_ring_apply_requests()
+global(let_ring_mapping_current, let_ring_mapping_request, let_ring_channel_current,
+       let_ring_channel_request, let_ring_mode_current, channel_mode_current)
+(
+  let_ring_mapping_current!=let_ring_mapping_request || let_ring_channel_current!=let_ring_channel_request ||
+    let_ring_mode_current!=channel_mode_current ? (
+    let_ring_mapping_current=let_ring_mapping_request;
+    let_ring_channel_current=let_ring_channel_request;
+    let_ring_mode_current=channel_mode_current;
+    mb_ring_clear(); mb_ring_flush();
+  );
+);
+
+// Menu: Note 0..127, CC1..119. Default 191 = CC64.
+function mb_ring_cc_selected(controller)
+global(p_let_ring_controller)
+( mb_midi_cc_supported(controller) && p_let_ring_controller>=128 && controller==floor(p_let_ring_controller)-127; );
+
+function mb_ring_matches(channel, note)
+global(let_ring_mapping_current, let_ring_channel_current)
+(
+  (let_ring_channel_current==0 || let_ring_channel_current==channel+1) &&
+    let_ring_mapping_current<128 && note==let_ring_mapping_current;
+);
+
+function mb_ring_note_on(channel, note, velocity)
+local(record, rec)
+global(MB_N_ROLE, MB_ROLE_LET_RING, MB_N_ACTIVE, MB_N_SERIAL)
+(
+  record=mb_notes_begin(channel, note, velocity);
+  record>=0 ? (
+    rec=mb_note_ptr(record); rec[MB_N_ROLE]=MB_ROLE_LET_RING; rec[MB_N_ACTIVE]=1;
+    mb_ring_set(channel, rec[MB_N_SERIAL], 1);
+  );
+);
+
+function mb_ring_note_off(channel, token)
+global(MB_LR_TOKEN)
+(
+  mb_ring_channel(channel)[MB_LR_TOKEN]==token ? mb_ring_set(channel, 0, 0);
+);
+
+function mb_ring_controller(channel, controller, value)
+global(MB_LR_TOKEN, let_ring_channel_current, let_ring_mapping_current)
+(
+  controller==120 || controller==121 ||
+    (controller==123 && mb_ring_channel(channel)[MB_LR_TOKEN]>0) ? mb_ring_set(channel, 0, 0);
+  mb_midi_cc_supported(controller) &&
+    (let_ring_channel_current==0 || let_ring_channel_current==channel+1) &&
+    let_ring_mapping_current>=128 && controller==let_ring_mapping_current-127 ?
+    mb_ring_set(channel, -1, value>=64);
+);

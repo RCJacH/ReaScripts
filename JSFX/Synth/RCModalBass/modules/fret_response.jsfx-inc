@@ -1,0 +1,100 @@
+// Fret-dependent voicing, independent of bend and harmonic partial.
+// Gain is output calibration. Sustain is a passive contraction of q/v, using
+// the renderer's existing damping multiplier; no additional modal traversal.
+@init
+function mb_fret_response_curve(fret)
+global()
+( (mb_clamp(fret, 0, 24)/24)^2; );
+
+function mb_fret_response_request()
+global(p_fret_level_taper, p_fret_sustain_taper, fret_level_request, fret_sustain_request)
+(
+  fret_level_request=mb_clamp(p_fret_level_taper, -18, 0);
+  fret_sustain_request=mb_clamp(p_fret_sustain_taper*0.01, 0.25, 1);
+);
+
+function mb_fret_response_controls()
+global(fret_level_current, fret_sustain_current, fret_level_request, fret_sustain_request)
+( fret_level_current=fret_level_request; fret_sustain_current=fret_sustain_request; );
+
+function mb_fret_response_init()
+global(fret_level_smooth, srate)
+(
+  mb_fret_response_request(); mb_fret_response_controls();
+  fret_level_smooth=1-exp(-1/(0.005*srate));
+);
+
+function mb_fret_response_bank(st, base)
+global(MB_FRET_RESPONSE, MB_UF_HEADER, MB_UFB_WORDS, MB_BANK_A)
+( st+MB_FRET_RESPONSE+MB_UF_HEADER+(base!=st+MB_BANK_A)*MB_UFB_WORDS; );
+
+function mb_fret_response_decay(b)
+local(ratio, loss)
+global(fret_sustain_current, MB_UFB_FRET, MB_UFB_ALPHA, MB_UFB_DAMP, MB_UFB_SUSTAIN, srate)
+(
+  ratio=1-(1-fret_sustain_current)*mb_fret_response_curve(b[MB_UFB_FRET]);
+  loss=b[MB_UFB_ALPHA]*(1/ratio-1);
+  b[MB_UFB_DAMP]=loss>0 ? exp(-loss/srate)-1 : 0;
+  b[MB_UFB_SUSTAIN]=fret_sustain_current;
+);
+
+// Capture each bank's geometry/nominal fundamental loss at coefficient updates.
+// Stored alpha excludes palm/contact/mute loss; those remain independent.
+function mb_fret_response_coefficients(st, base, cfg, g)
+local(b)
+global(MB_UFB_FRET, MB_UFB_ALPHA, MB_C_FRET, MB_G_F1)
+(
+  b=mb_fret_response_bank(st, base);
+  b[MB_UFB_FRET]=cfg[MB_C_FRET]; b[MB_UFB_ALPHA]=mb_modal_alpha(g[MB_G_F1], cfg, g);
+  mb_fret_response_decay(b);
+);
+
+function mb_fret_response_level(st, immediate)
+local(h, fret)
+global(MB_FRET_RESPONSE, MB_LIVE, MB_L_FRET, MB_UF_FRET, MB_UF_LEVEL,
+       MB_UF_TARGET, MB_UF_CURRENT, fret_level_current)
+(
+  h=st+MB_FRET_RESPONSE; fret=(st+MB_LIVE)[MB_L_FRET];
+  h[MB_UF_FRET]!=fret || h[MB_UF_LEVEL]!=fret_level_current ? (
+    h[MB_UF_FRET]=fret; h[MB_UF_LEVEL]=fret_level_current;
+    h[MB_UF_TARGET]=10^(fret_level_current*mb_fret_response_curve(fret)/20)-1;
+  );
+  immediate ? h[MB_UF_CURRENT]=h[MB_UF_TARGET];
+);
+
+// At most two cached scalar updates per string, only when sustain changes.
+function mb_fret_response_apply(st)
+local(bank, b)
+global(MB_FRET_RESPONSE, MB_UF_HEADER, MB_UFB_WORDS, MB_UFB_ALPHA, MB_UFB_SUSTAIN,
+       fret_sustain_current, MB_S_COUNT, MB_S_PREVIOUS_LEFT)
+(
+  mb_fret_response_level(st, st[MB_S_COUNT]==0 && st[MB_S_PREVIOUS_LEFT]<=0);
+  bank=0; loop(2,
+    b=st+MB_FRET_RESPONSE+MB_UF_HEADER+bank*MB_UFB_WORDS;
+    b[MB_UFB_ALPHA]>0 && b[MB_UFB_SUSTAIN]!=fret_sustain_current ? mb_fret_response_decay(b);
+    bank+=1;
+  );
+);
+
+function mb_fret_response_damper(st, base, mute)
+local(loss)
+global(MB_UFB_DAMP)
+(
+  loss=mb_fret_response_bank(st, base)[MB_UFB_DAMP];
+  abs(loss)>0 ? mute*(1+loss) : mute;
+);
+
+// Shared per-string gain: 5-ms ramp through live fret/level changes, immediate
+// on an isolated new gesture. It never scales modal energy or excitation work.
+function mb_fret_response_render(st, signal)
+local(h, gain)
+global(MB_FRET_RESPONSE, MB_UF_CURRENT, MB_UF_TARGET, fret_level_smooth)
+(
+  h=st+MB_FRET_RESPONSE; gain=h[MB_UF_CURRENT];
+  abs(gain)>0 || abs(h[MB_UF_TARGET])>0 ? (
+    gain+=(h[MB_UF_TARGET]-gain)*fret_level_smooth;
+    abs(gain-h[MB_UF_TARGET])<0.000000000001 ? gain=h[MB_UF_TARGET];
+    h[MB_UF_CURRENT]=gain; signal*=1+gain;
+  );
+  signal;
+);

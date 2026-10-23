@@ -1,0 +1,326 @@
+// Live one-string mechanics. No function in this file performs excitation.
+@init
+// Fretted endpoints use the nearest crown; fretless spans retain fractions.
+// Tension bend is independent and is never quantized here.
+function mb_engine_fret_position(st, fret)
+global(MB_CONTACT, MB_K_SURFACE, fret_count_current)
+(
+  fret=mb_clamp(fret, 0, fret_count_current);
+  (st+MB_CONTACT)[MB_K_SURFACE] ? fret : floor(fret+0.5);
+);
+
+function mb_band_taper(freq)
+global(srate)
+(
+  freq>=0.48*srate ? 0 : freq>0.42*srate ?
+    0.5+0.5*cos($pi*(freq/srate-0.42)/0.06) : 1;
+);
+
+function mb_live_seed(st)
+local(l, cfg, base, masks, targets, tapers, i, ptr, flag_a, flag_b, damp_db)
+(
+  mb_contact_rebase(st, st[MB_S_ACTIVE]);
+  l=st+MB_LIVE; cfg=st+MB_CONFIG; base=st[MB_S_ACTIVE];
+  mb_vibrato_seed(st);
+  // Preserve the old bank's rendering policy during the approved pluck tail.
+  flag_a=l[MB_L_FLAG_A]; flag_b=l[MB_L_FLAG_B];
+  damp_db=l[MB_L_DAMP_DB];
+  memset(l, 0, MB_LIVE_WORDS);
+  l[MB_L_FLAG_A]=flag_a; l[MB_L_FLAG_B]=flag_b;
+  l[MB_L_DAMP_DB]=damp_db;
+  l[MB_L_MASK_SMOOTH]=1-exp(-1/(0.001*srate));
+  l[MB_L_FRET]=l[MB_L_FRET_TARGET]=cfg[MB_C_FRET];
+  l[MB_L_HAS_CONFIG]=1;
+  memcpy(st+MB_L_CFG, cfg, MB_CONFIG_WORDS);
+  base==st+MB_BANK_A ? (
+    masks=st+MB_MASK_A; targets=st+MB_MASK_TARGET_A; tapers=st+MB_TAPER_A;
+    l[MB_L_FLAG_A]=0;
+  ) : (
+    masks=st+MB_MASK_B; targets=st+MB_MASK_TARGET_B; tapers=st+MB_TAPER_B;
+    l[MB_L_FLAG_B]=0;
+  );
+  memset(masks, 1, MB_MAX_MODES); memset(targets, 1, MB_MAX_MODES);
+  memset(tapers, 1, MB_MAX_MODES);
+  base==st+MB_BANK_A ? memset(st+MB_BEND_DAMP_A, 1, MB_MAX_MODES)
+                       : memset(st+MB_BEND_DAMP_B, 1, MB_MAX_MODES);
+  i=0; loop(st[MB_S_COUNT],
+    ptr=base+i*MB_MODE_STRIDE;
+    tapers[i]=mb_band_taper(ptr[MB_M_FREQ]); i+=1;
+  );
+);
+
+// Adapter calls this only immediately after a pluck configured at this bend.
+function mb_live_pluck_bend(st, bend)
+local(l, cfg)
+global(MB_C_TENSION, MB_L_BEND, MB_L_BEND_TARGET, MB_L_CFG, MB_LIVE)
+(
+  l=st+MB_LIVE; cfg=st+MB_L_CFG;
+  l[MB_L_BEND]=l[MB_L_BEND_TARGET]=bend;
+  cfg[MB_C_TENSION]/=2^(bend/6);
+);
+
+function mb_live_geometry(st, cfg, g, fret, bend)
+global(MB_C_FRET, MB_C_SCALE, MB_C_TENSION, MB_CONFIG_WORDS, MB_L_CFG,
+       MB_TENSION, MB_BANK_A, MB_AT_WORDS, MB_AT_DELTA, MB_S_ACTIVE)
+(
+  memcpy(cfg, st+MB_L_CFG, MB_CONFIG_WORDS);
+  cfg[MB_C_FRET]=mb_variation_fret(st, fret, cfg[MB_C_SCALE]);
+  cfg[MB_C_TENSION]*=2^(bend/6);
+  cfg[MB_C_TENSION]+=(st+MB_TENSION+(st[MB_S_ACTIVE]!=st+MB_BANK_A)*MB_AT_WORDS)[MB_AT_DELTA];
+  mb_geometry_calculate(cfg, g);
+);
+
+// Preserve q and v, NOT the old imaginary coordinate. Rotations never exceed
+// 0.48*srate. Above-band states become a capped-frequency proxy during a short
+// output fade, then are dissipated; they never run at an aliased frequency.
+function mb_live_coefficients(st, base, old_count, count, cfg, g)
+local(i, n, ptr, freq, omega, alpha, radius, angle, q, v, tapers, targets, damping, l)
+(
+  l=st+MB_LIVE;
+  base==st+MB_BANK_A ? (
+    tapers=st+MB_TAPER_A; targets=st+MB_MASK_TARGET_A;
+    damping=st+MB_BEND_DAMP_A;
+    (st+MB_LIVE)[MB_L_FLAG_A]=1;
+  ) : (
+    tapers=st+MB_TAPER_B; targets=st+MB_MASK_TARGET_B;
+    damping=st+MB_BEND_DAMP_B;
+    (st+MB_LIVE)[MB_L_FLAG_B]=1;
+  );
+  i=0; loop(count,
+    n=i+1; ptr=base+i*MB_MODE_STRIDE;
+    i<old_count ? (
+      q=ptr[MB_M_R]; v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*ptr[MB_M_I];
+    ) : (q=v=0; ptr[MB_M_INITIAL]=0; tapers[i]=1;);
+    freq=n*g[MB_G_F1]*sqrt((1+g[MB_G_STIFFNESS]*n*n)/(1+g[MB_G_STIFFNESS]));
+    omega=2*$pi*min(freq, 0.48*srate);
+    alpha=mb_modal_alpha(freq, cfg, g);
+    radius=exp(-alpha/srate); angle=omega/srate;
+    ptr[MB_M_R]=q; ptr[MB_M_I]=-(v+alpha*q)/omega;
+    ptr[MB_M_ROT_R]=radius*cos(angle); ptr[MB_M_ROT_I]=radius*sin(angle);
+    ptr[MB_M_ALPHA]=alpha; ptr[MB_M_OMEGA]=omega; ptr[MB_M_FREQ]=freq;
+    // The approved pluck already has its initial band taper in displacement.
+    // A relative mask avoids double tapering or amplifying it on a bend return.
+    targets[i]=min(1, mb_band_taper(freq)/max(0.000000000001, tapers[i]));
+    // Contact-loss proxy per semitone travelled. Prepared every control tick;
+    // applied to R/I AFTER observation/advancement, never during q/v retuning.
+    damping[i]=l[MB_L_DAMP_LEFT]>0 && l[MB_L_DAMP_DB]>0 ?
+      exp(-log(10)/20*l[MB_L_DAMP_DB]*l[MB_L_MOTION_RATE]*(1+sqrt(freq/1000))) : 1;
+    i+=1;
+  );
+  mb_ghost_coefficients(st, base, count, g[MB_G_LENGTH]);
+  mb_palm_coefficients(st, base, count, g[MB_G_LENGTH], 1);
+  mb_magnet_rebase(st, base, count, cfg, g, 0);
+  mb_vibrato_capture(st, base, cfg);
+  mb_contact_rebase(st, base);
+  mb_fret_response_coefficients(st, base, cfg, g);
+);
+
+function mb_live_render(st, base, weights, count, damper)
+local(l, masks, targets, damping, i, ptr, q, im, v, nr, ni, sum, mode_damper)
+(
+  l=st+MB_LIVE;
+  base==st+MB_BANK_A ? (
+    masks=st+MB_MASK_A; targets=st+MB_MASK_TARGET_A; damping=st+MB_BEND_DAMP_A;
+  ) : (
+    masks=st+MB_MASK_B; targets=st+MB_MASK_TARGET_B; damping=st+MB_BEND_DAMP_B;
+  );
+  sum=0; i=0;
+  loop(count,
+    ptr=base+i*MB_MODE_STRIDE; q=ptr[MB_M_R]; im=ptr[MB_M_I];
+    masks[i]+=(targets[i]-masks[i])*l[MB_L_MASK_SMOOTH];
+    v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;
+    sum+=v*weights[i]*masks[i];
+    mode_damper=l[MB_L_DAMP_LEFT]>0 ? damper*damping[i] : damper;
+    nr=(q*ptr[MB_M_ROT_R]-im*ptr[MB_M_ROT_I])*mode_damper;
+    ni=(q*ptr[MB_M_ROT_I]+im*ptr[MB_M_ROT_R])*mode_damper;
+    ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
+    ptr[MB_M_FREQ]>=0.48*srate && masks[i]<0.000000001 ?
+      (ptr[MB_M_R]=ptr[MB_M_I]=0;);
+    i+=1;
+  );
+  sum;
+);
+
+function mb_string_render_bank(st, base, weights, count)
+local(flag)
+global(MB_BANK_A, MB_L_FLAG_A, MB_L_FLAG_B, MB_LIVE, MB_S_MUTE, circuit_observe_current)
+(
+  circuit_observe_current ? mb_circuit_bank(st, base, weights, count);
+  flag=base==st+MB_BANK_A ? (st+MB_LIVE)[MB_L_FLAG_A] : (st+MB_LIVE)[MB_L_FLAG_B];
+  flag ? mb_live_render(st, base, weights, count, st[MB_S_MUTE])
+       : mb_modal_render(base, weights, count, st[MB_S_MUTE]);
+);
+
+// Request functions only change live scheduling metadata; no pluck/reset.
+// Return 1 = accepted (possibly queued); caller must observe current fret/bend
+// to detect completion. Calls are audio-thread only, including idle strings.
+function mb_engine_fret_transition(st, target_fret, duration_samples)
+local(l)
+global(MB_L_DURATION, MB_L_FRET_TARGET, MB_L_GESTURE_REQUEST, MB_LIVE, mb_rack_prepare_pending, srate)
+(
+  l=st+MB_LIVE;
+  l[MB_L_FRET_TARGET]=mb_engine_fret_position(st, target_fret);
+  l[MB_L_DURATION]=max(ceil(0.005*srate), floor(duration_samples));
+  l[MB_L_GESTURE_REQUEST]=0;
+  mb_rack_prepare_pending=1;
+  1;
+);
+
+// Discrete finger gesture: same passive q/v mapping, short fade and no new
+// event-noise trigger. In-flight fades still finish before bank reuse.
+// Cancel obsolete preparation now, so a fast return cannot commit a stale fret.
+function mb_engine_fret_gesture(st, target_fret, duration_samples)
+local(l)
+global(MB_LIVE, MB_L_FRET_TARGET, MB_L_DURATION, MB_L_GESTURE_REQUEST,
+       MB_L_JOB, mb_rack_prepare_pending)
+(
+  l=st+MB_LIVE;
+  l[MB_L_FRET_TARGET]=mb_engine_fret_position(st, target_fret);
+  l[MB_L_DURATION]=max(1, floor(duration_samples));
+  l[MB_L_GESTURE_REQUEST]=1;
+  l[MB_L_JOB]=0;
+  mb_rack_prepare_pending=1;
+  1;
+);
+
+function mb_engine_bend(st, semitones, duration_samples)
+local(l, target)
+global(MB_L_BEND_LEFT, MB_L_BEND_TARGET, MB_LIVE, srate)
+(
+  l=st+MB_LIVE; target=mb_clamp(semitones, -12, 12);
+  abs(target-l[MB_L_BEND_TARGET])>0.000000001 ? (
+    l[MB_L_BEND_TARGET]=target;
+    l[MB_L_BEND_LEFT]=max(ceil(0.005*srate), floor(duration_samples));
+  );
+  1;
+);
+
+// Independent audio-thread loss control. Setting 0 disables this proxy.
+function mb_engine_bend_damping(st, db_per_semitone)
+global(MB_L_DAMP_DB, MB_LIVE)
+(
+  (st+MB_LIVE)[MB_L_DAMP_DB]=mb_clamp(db_per_semitone, 0, 3);
+);
+
+function mb_live_start_fret(st)
+local(l, cfg, g)
+(
+  l=st+MB_LIVE; cfg=st+MB_L_STAGE_CFG; g=st+MB_L_STAGE_G;
+  l[MB_L_JOB_FRET]=l[MB_L_FRET_TARGET];
+  l[MB_L_JOB_DURATION]=l[MB_L_DURATION];
+  l[MB_L_JOB_GESTURE]=l[MB_L_GESTURE_REQUEST];
+  mb_live_geometry(st, cfg, g, l[MB_L_JOB_FRET], l[MB_L_BEND]);
+  // A bend can expand the logical bank while preparation is in flight.
+  // Prepare all latched source slots, even if some currently contain no mode.
+  l[MB_L_JOB_SOURCE_COUNT]=st[MB_S_COUNT]>0 ? min(MB_MAX_MODES, floor(cfg[MB_C_MODES])) : 0;
+  l[MB_L_JOB_COUNT]=st[MB_S_COUNT]>0 ? min(MB_MAX_MODES, floor(cfg[MB_C_MODES])) : 0;
+  l[MB_L_JOB_LENGTH]=g[MB_G_LENGTH];
+  l[MB_L_JOB]=1;
+);
+
+// Mode mapping retains each corresponding mode's physical q/v, without a pluck.
+// Uniform attenuation only (never amplification) enforces a passive fret change.
+function mb_live_commit_fret(st)
+local(l, cfg, g, source, dest, source_count, count, i, ptr, src, q, v, masks, targets, tapers,
+      old_length, energy_before, energy_raw, scale, weights)
+(
+  l=st+MB_LIVE; cfg=st+MB_L_STAGE_CFG; g=st+MB_L_STAGE_G;
+  source=st[MB_S_ACTIVE]; source_count=st[MB_S_COUNT];
+  dest=source==st+MB_BANK_A ? st+MB_BANK_B : st+MB_BANK_A;
+  count=source_count>0 ? l[MB_L_JOB_COUNT] : 0;
+  old_length=source==st+MB_BANK_A ? st[MB_S_LENGTH_A] : st[MB_S_LENGTH_B];
+  energy_before=mb_bank_energy(source, source_count, old_length);
+  mb_live_geometry(st, cfg, g, l[MB_L_JOB_FRET], l[MB_L_BEND]);
+  // Destination is no longer a sounding bank: it is safe to prepare here.
+  dest==st+MB_BANK_A ? (
+    masks=st+MB_MASK_A; targets=st+MB_MASK_TARGET_A; tapers=st+MB_TAPER_A;
+    weights=st+MB_PICKUP_A;
+  ) : (
+    masks=st+MB_MASK_B; targets=st+MB_MASK_TARGET_B; tapers=st+MB_TAPER_B;
+    weights=st+MB_PICKUP_B;
+  );
+  memset(dest, 0, MB_MAX_MODES*MB_MODE_STRIDE);
+  memset(masks, 1, MB_MAX_MODES); memset(targets, 1, MB_MAX_MODES);
+  memset(tapers, 1, MB_MAX_MODES);
+  mb_live_coefficients(st, dest, 0, count, cfg, g);
+  i=0; loop(count,
+    q=v=0;
+    i<source_count ? (
+      src=source+i*MB_MODE_STRIDE; q=src[MB_M_R];
+      v=-src[MB_M_ALPHA]*q-src[MB_M_OMEGA]*src[MB_M_I];
+    );
+    ptr=dest+i*MB_MODE_STRIDE;
+    // Inaudible above-band components are dissipated at the transfer boundary.
+    ptr[MB_M_FREQ]>=0.48*srate ? (q=v=0;);
+    ptr[MB_M_R]=q; ptr[MB_M_I]=-(v+ptr[MB_M_ALPHA]*q)/ptr[MB_M_OMEGA];
+    masks[i]=targets[i]; i+=1;
+  );
+  energy_raw=mb_bank_energy(dest, count, g[MB_G_LENGTH]);
+  scale=energy_raw>energy_before && energy_raw>0 ? sqrt(energy_before/energy_raw) : 1;
+  i=0; loop(count,
+    ptr=dest+i*MB_MODE_STRIDE;
+    ptr[MB_M_R]*=scale; ptr[MB_M_I]*=scale; i+=1;
+  );
+  l[MB_L_ENERGY_BEFORE]=energy_before; l[MB_L_ENERGY_RAW]=energy_raw;
+  mb_contact_response_transfer(st, source, dest, source_count, count, scale);
+  l[MB_L_ENERGY_SCALE]=scale;
+  l[MB_L_ENERGY_AFTER]=mb_bank_energy(dest, count, g[MB_G_LENGTH]);
+  l[MB_L_COMMITS]+=1;
+  st[MB_S_PREVIOUS]=source; st[MB_S_PREVIOUS_COUNT]=source_count;
+  st[MB_S_ACTIVE]=dest; st[MB_S_COUNT]=count;
+  l[MB_L_FADE_KIND]=1;
+  l[MB_L_FADE_TOTAL]=max(1, l[MB_L_JOB_DURATION]);
+  st[MB_S_PREVIOUS_LEFT]=source_count>0 ? l[MB_L_FADE_TOTAL] : 0;
+  dest==st+MB_BANK_A ? st[MB_S_LENGTH_A]=g[MB_G_LENGTH] : st[MB_S_LENGTH_B]=g[MB_G_LENGTH];
+  mb_pickup_capture(st, weights, count, g[MB_G_LENGTH], cfg);
+  memcpy(st+MB_CONFIG, cfg, MB_CONFIG_WORDS);
+  memcpy(st+MB_GEOMETRY, g, MB_GEOMETRY_WORDS);
+  // Stretch belongs to the string, not to a reusable oscillator bank. Transfer
+  // its captured profile; the new span is re-estimated passively before render.
+  // TENSION_TRANSFER_BEGIN
+  (st+MB_TENSION)[MB_AT_AMOUNT] || (st+MB_TENSION+MB_AT_WORDS)[MB_AT_AMOUNT] ? (
+    src=st+MB_TENSION+(source!=st+MB_BANK_A)*MB_AT_WORDS;
+    ptr=st+MB_TENSION+(dest!=st+MB_BANK_A)*MB_AT_WORDS;
+    memcpy(ptr, src, MB_AT_WORDS);
+    memcpy(ptr+MB_AT_CFG, cfg, MB_CONFIG_WORDS);
+    (ptr+MB_AT_CFG)[MB_C_TENSION]-=ptr[MB_AT_DELTA];
+    ptr[MB_AT_WORK_PENDING]=1; ptr[MB_AT_CLOCK]=0;
+  );
+  // TENSION_TRANSFER_END
+  st[MB_S_F1]=g[MB_G_F1]; l[MB_L_FRET]=l[MB_L_JOB_FRET];
+  mb_fret_response_level(st, 0);
+  l[MB_L_JOB]=0;
+  // MIDI identity, mute multiplier and electronics delays are untouched.
+);
+
+function mb_live_tick(st)
+local(l, cfg, g, step, count, delta)
+(
+  l=st+MB_LIVE; l[MB_L_PAIRS_THIS_SAMPLE]=0;
+  // Serialise structural changes and coefficient ramps with two-bank fades.
+  l[MB_L_HAS_CONFIG] && st[MB_S_PREVIOUS_LEFT]<=0 ? (
+    l[MB_L_CLOCK]<=0 ? (
+      l[MB_L_CLOCK]=MB_CONTROL_INTERVAL;
+      l[MB_L_BEND_LEFT]>0 ? (
+        step=min(MB_CONTROL_INTERVAL, l[MB_L_BEND_LEFT]);
+        delta=(l[MB_L_BEND_TARGET]-l[MB_L_BEND])*step/l[MB_L_BEND_LEFT];
+        l[MB_L_BEND]+=delta;
+        l[MB_L_MOTION_RATE]=abs(delta)/step; l[MB_L_DAMP_LEFT]=step;
+        l[MB_L_BEND_LEFT]-=step;
+        cfg=st+MB_CONFIG; g=st+MB_GEOMETRY;
+        mb_live_geometry(st, cfg, g, l[MB_L_FRET], l[MB_L_BEND]);
+        st[MB_S_COUNT]>0 ? (
+          count=min(MB_MAX_MODES, floor(cfg[MB_C_MODES]));
+          mb_live_coefficients(st, st[MB_S_ACTIVE], st[MB_S_COUNT], count, cfg, g);
+          st[MB_S_COUNT]=count;
+        );
+        st[MB_S_F1]=g[MB_G_F1];
+      );
+    );
+    l[MB_L_CLOCK]-=1;
+    !l[MB_L_JOB] && abs(l[MB_L_FRET_TARGET]-l[MB_L_FRET])>0.000000001 ? mb_live_start_fret(st);
+    l[MB_L_JOB] && mb_preparation_allowance>0 ? (
+      mb_live_commit_fret(st);
+    );
+  );
+);

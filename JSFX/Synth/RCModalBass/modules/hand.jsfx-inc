@@ -1,0 +1,186 @@
+// Audio-thread hand planning. No excitation, string motion, damping or FIFO writes.
+// Positions use requested physical frets, so queued span moves affect planning
+// immediately. Actual committed fret/frequency stay separate engine snapshots.
+@init
+// Match the engine's nearest-crown policy; fretless hand positions stay continuous.
+function mb_hand_fret(fret)
+global(hand_fretless_current, fret_count_current)
+(
+  hand_fretless_current ? mb_clamp(fret, 0, fret_count_current) : mb_clamp(floor(fret+0.5), 0, fret_count_current);
+);
+
+// One audio position, mirrored by the native parameter. Request/seen values are
+// synchronization mailboxes, not an independent saved starting preference.
+function mb_hand_position_store(position)
+global(hand_position_dirty, hand_position_request, hand_position_seen, MB_R_HAND_START, MB_RACK,
+       p_playing_position)
+(
+  position=mb_hand_fret(position);
+  MB_RACK[MB_R_HAND_START]=position;
+  // A newer GUI/host edit wins at the next block. Do not overwrite its value
+  // with a MIDI-driven update before the request has been captured/applied.
+  abs(p_playing_position-hand_position_seen)<0.000000001 &&
+  abs(hand_position_request-hand_position_seen)<0.000000001 ? (
+    hand_position_seen=hand_position_request=position;
+    abs(p_playing_position-position)>0.000000001 ? (
+      p_playing_position=position;
+      hand_position_dirty=1;
+    );
+  );
+);
+
+// Refresh the native display at most once per block; automatic following does
+// not call slider_automate or create a GUI parameter request.
+function mb_hand_position_notify()
+global(hand_position_dirty, p_playing_position)
+(
+  hand_position_dirty ? (hand_position_dirty=0; sliderchange(p_playing_position););
+);
+
+function mb_hand_init()
+(
+  hand_position_dirty=1;
+  hand_fretless_current=hand_fretless_request=p_contact_surface>=0.5;
+  hand_span_current=hand_span_request=mb_clamp(floor(p_hand_span), 1, 12);
+  p_playing_position=mb_hand_fret(p_playing_position);
+  hand_position_seen=hand_position_request=mb_clamp(p_playing_position, 0, fret_count_current);
+  hand_minimum_seen=mb_clamp(p_capo, 0, fret_count_current);
+  hand_open_current=hand_open_request=mb_clamp(floor(p_prefer_open_strings), MB_OPEN_FRETTED_FIRST, MB_OPEN_PREFER_ALL);
+  mb_hand_position_store(max(hand_position_seen, hand_minimum_seen));
+  MB_RACK[MB_R_HAND_LOW]=MB_RACK[MB_R_HAND_HIGH]=-1;
+  MB_RACK[MB_R_HAND_FRETTED]=MB_RACK[MB_R_HAND_OPEN]=0;
+  MB_RACK[MB_R_HAND_CONFLICT]=MB_RACK[MB_R_HAND_MASK]=0;
+);
+
+function mb_hand_apply_requests()
+local(minimum)
+global(hand_fretless_current, hand_fretless_request, hand_minimum_seen, hand_open_current,
+       hand_open_request, hand_position_request, hand_position_seen, live_fret_request,
+       hand_span_current, hand_span_request, fret_count_current)
+(
+  hand_span_current=hand_span_request;
+  minimum=mb_clamp(live_fret_request, 0, fret_count_current);
+  abs(hand_position_request-hand_position_seen)>0.000000001 ||
+  abs(minimum-hand_minimum_seen)>0.000000001 || hand_fretless_current!=hand_fretless_request ? (
+    hand_fretless_current=hand_fretless_request;
+    hand_position_seen=hand_position_request;
+    hand_minimum_seen=minimum;
+    mb_hand_position_store(max(hand_position_request, minimum));
+  );
+  hand_open_current=hand_open_request;
+);
+
+// Key-held and pedal-sustained owners occupy one physical string each.
+// Release/damping tails can be reused; decayed held keys still count.
+function mb_hand_occupied(index)
+local(owner)
+global(MB_O_KEY_DOWN, MB_O_STATE, MB_VOICE_RINGING, MB_O_SOURCE_CHANNEL)
+(
+  owner=mb_owner_ptr(index);
+  owner[MB_O_KEY_DOWN] ||
+    (owner[MB_O_STATE]==MB_VOICE_RINGING && mb_ring_active(owner[MB_O_SOURCE_CHANNEL]));
+);
+
+// Pure query: replacing excluded_index with candidate_fret, or -1 for no target.
+// Outputs are audio-only scratch scalars. Open strings never enlarge hand span.
+// At most six owners; source-key identity and release tails are not changed.
+function mb_hand_measure(excluded_index, candidate_fret)
+local(i, slot, fret, bit)
+(
+  hand_low=25;
+  hand_high=-1;
+  hand_fretted=hand_open=hand_mask=0;
+  i=0;
+  bit=1;
+  loop(MB_MAX_STRINGS,
+    slot=mb_rack_slot(i);
+    i!=excluded_index && slot[MB_RS_ENABLED] && mb_hand_occupied(i) ? (
+      fret=mb_hand_fret((mb_rack_string(i)+MB_LIVE)[MB_L_FRET_TARGET]);
+      fret>0.000000001 ? (
+        hand_low=min(hand_low, fret);
+        hand_high=max(hand_high, fret);
+        hand_fretted+=1;
+        hand_mask+=bit;
+      ) : hand_open+=1;
+    );
+    i+=1;
+    bit*=2;
+  );
+  candidate_fret>=0 ? (
+    candidate_fret=mb_hand_fret(candidate_fret);
+    candidate_fret>0.000000001 ? (
+      hand_low=min(hand_low, candidate_fret);
+      hand_high=max(hand_high, candidate_fret);
+      hand_fretted+=1;
+    ) : hand_open+=1;
+  );
+  !hand_fretted ? hand_low=hand_high=-1;
+  hand_fits=hand_fretted<2 || hand_high-hand_low<=hand_span_current+0.000000001;
+  hand_fits;
+);
+
+// Ordinary Auto plucks may shift the hand instead of rejecting a new note.
+// Retire only fretted peers outside the nearest window containing the target.
+// FIFO records remain for old note-offs; damping is gradual, with no new gesture.
+function mb_hand_release_unreachable(index, target_fret)
+local(start, end, i, st, fret)
+global(chord_mode_current, channel_mode_current, MB_RACK, MB_R_HAND_START,
+       hand_span_current, MB_MAX_STRINGS, MB_RS_ENABLED, MB_LIVE, MB_L_FRET_TARGET, p_mute_t60, fret_count_current)
+(
+  target_fret=mb_hand_fret(target_fret);
+  !chord_mode_current && channel_mode_current==0 && mb_string_selection()==0 &&
+  target_fret>0.000000001 && !mb_hand_measure(-1, -1) ? (
+    start=mb_clamp(MB_RACK[MB_R_HAND_START], max(0, target_fret-hand_span_current), target_fret);
+    end=min(fret_count_current, start+hand_span_current); i=0;
+    loop(MB_MAX_STRINGS,
+      i!=index && mb_rack_slot(i)[MB_RS_ENABLED] && mb_hand_occupied(i) ? (
+        st=mb_rack_string(i); fret=mb_hand_fret((st+MB_LIVE)[MB_L_FRET_TARGET]);
+        fret>0.000000001 && (fret<start-0.000000001 || fret>end+0.000000001) ? (
+          mb_notes_retire_string(i, 1);
+          mb_friction_stop(st);
+          mb_engine_damp(st, p_mute_t60);
+        );
+      );
+      i+=1;
+    );
+    mb_hand_position_store(start);
+  );
+);
+
+// Follow a newly assigned fret, or the held span after controller motion (-1).
+// An open-note attack never repositions the hand around other held notes.
+// A wide chord is reported, never silently muted, moved or transposed here.
+function mb_hand_follow(target_fret)
+local(start, low, high)
+(
+  target_fret>=0 ? target_fret=mb_hand_fret(target_fret);
+  channel_mode_current==0 && !hand_lock_current && target_fret!=0 ? (
+    mb_hand_measure(-1, -1);
+    start=MB_RACK[MB_R_HAND_START];
+    hand_fretted>0 ? (
+      hand_fits ? (
+        low=max(0, hand_high-hand_span_current);
+        high=hand_low;
+        start=mb_clamp(start, low, high);
+      ) : target_fret>0 ? start=mb_clamp(start, max(0, target_fret-hand_span_current), target_fret);
+      mb_hand_position_store(start);
+    );
+  );
+);
+
+function mb_hand_refresh()
+(
+  channel_mode_current==0 ? (
+    mb_hand_measure(-1, -1);
+    MB_RACK[MB_R_HAND_LOW]=hand_low;
+    MB_RACK[MB_R_HAND_HIGH]=hand_high;
+    MB_RACK[MB_R_HAND_FRETTED]=hand_fretted;
+    MB_RACK[MB_R_HAND_OPEN]=hand_open;
+    MB_RACK[MB_R_HAND_CONFLICT]=!hand_fits;
+    MB_RACK[MB_R_HAND_MASK]=hand_mask;
+  ) : (
+    MB_RACK[MB_R_HAND_LOW]=MB_RACK[MB_R_HAND_HIGH]=-1;
+    MB_RACK[MB_R_HAND_FRETTED]=MB_RACK[MB_R_HAND_OPEN]=0;
+    MB_RACK[MB_R_HAND_CONFLICT]=MB_RACK[MB_R_HAND_MASK]=0;
+  );
+);

@@ -1,0 +1,186 @@
+// Audio-thread overlap slide. Select and validate before changing ownership.
+// Applying a slide never excites or resets the vibrating string.
+@init
+function mb_legato_held(index)
+local(slot, owner, st)
+global(MB_RS_ENABLED, MB_RS_RETIRING, MB_RS_LATCHED, MB_O_KEY_DOWN,
+       MB_S_COUNT, MB_S_PREVIOUS_LEFT)
+(
+  slot = mb_rack_slot(index);
+  owner = mb_owner_ptr(index);
+  st = mb_rack_string(index);
+  slot[MB_RS_ENABLED] && !slot[MB_RS_RETIRING] && slot[MB_RS_LATCHED] &&
+    owner[MB_O_KEY_DOWN] && (st[MB_S_COUNT] > 0 || st[MB_S_PREVIOUS_LEFT] > 0);
+);
+
+// A matching preferred open string gets an ordinary pluck, ahead of legato.
+function mb_legato_preferred_open(note)
+local(index, found, slot)
+global(channel_mode_current, hand_open_current,
+       live_fret_request, MB_MAX_STRINGS, MB_RS_ENABLED, MB_RS_OPEN,
+       MB_CTRL_SLIDE, midi_slide_range_current)
+(
+  found = 0;
+  channel_mode_current == 0 && mb_string_selection() == 0 &&
+  hand_open_current && live_fret_request <= 0 &&
+  abs(mb_midi_note_input(0, MB_CTRL_SLIDE)*midi_slide_range_current)<=0.000000001 ? (
+    index = 0;
+    loop(MB_MAX_STRINGS,
+      slot = mb_rack_slot(index);
+      slot[MB_RS_ENABLED] && mb_midi_playing_pitch(note) == slot[MB_RS_OPEN] &&
+        mb_fingering_open_preferred(index) ? found = 1;
+      index += 1;
+    );
+  );
+  found;
+);
+
+// Destination fret, or -1 if the string cannot slide. Pending tuning is ignored.
+function mb_legato_candidate_fret(index, channel, note)
+local(owner, target, played, minimum, allowed)
+global(channel_mode_current, live_fret_request, MB_CTRL_SLIDE, MB_O_FRET_ANCHOR,
+       MB_RS_LATCH_OPEN, midi_slide_range_current, fret_count_current)
+(
+  owner = mb_owner_ptr(index);
+  allowed = mb_legato_held(index);
+  channel_mode_current > 0 ? (
+    allowed = allowed && index == mb_midi_channel_string(channel);
+  ) : mb_string_selection() > 0 ? (
+    allowed = allowed && index == mb_string_index(7 - mb_string_selection());
+  );
+
+  // Auto protects open drones. Explicit string/channel locks can slide them.
+  channel_mode_current == 0 && mb_string_selection() == 0 &&
+  mb_fingering_open_drone(index) ? allowed = 0;
+
+  minimum = channel_mode_current == 0 && mb_string_selection() == 0 ? live_fret_request : 0;
+  target = mb_midi_playing_pitch(note) - mb_rack_slot(index)[MB_RS_LATCH_OPEN];
+  played = target + mb_midi_note_input(channel, MB_CTRL_SLIDE) * midi_slide_range_current;
+  allowed && target >= minimum && target <= fret_count_current && played >= 0 && played <= fret_count_current &&
+    mb_fingering_reachable(played) ? target : -1;
+);
+
+function mb_legato_requires_group(index, channel, target)
+local(played)
+global(channel_mode_current, MB_CTRL_SLIDE, midi_slide_range_current)
+(
+  played = target + mb_midi_note_input(channel, MB_CTRL_SLIDE) * midi_slide_range_current;
+  channel_mode_current == 0 && played > 0.000000001 && !mb_hand_measure(index, played);
+);
+
+// Check every peer before starting a group move. Never clamp chord members.
+function mb_legato_group_fits(primary, delta)
+local(index, owner, target, played, fits)
+global(MB_MAX_STRINGS, MB_O_FRET_ANCHOR, MB_O_MIDI_SLIDE, fret_count_current)
+(
+  fits = 1;
+  index = 0;
+  loop(MB_MAX_STRINGS,
+    index != primary && mb_legato_held(index) ? (
+      owner = mb_owner_ptr(index);
+      owner[MB_O_FRET_ANCHOR] > 0.000000001 ? (
+        target = owner[MB_O_FRET_ANCHOR] + delta;
+        played = target + owner[MB_O_MIDI_SLIDE];
+        target < 0 || target > fret_count_current || played < 0 || played > fret_count_current ||
+          !mb_fingering_reachable(played) ? fits = 0;
+      );
+    );
+    index += 1;
+  );
+  fits;
+);
+
+// Newest reachable held string wins. Only hand-query scratch values change.
+function mb_legato_select(channel, note)
+local(index, chosen, newest, target, delta, allowed, owner)
+global(MB_MAX_STRINGS, MB_O_FRET_ANCHOR, MB_O_SERIAL)
+(
+  chosen = -1;
+  newest = -1;
+  index = 0;
+  loop(MB_MAX_STRINGS,
+    target = mb_legato_candidate_fret(index, channel, note);
+    allowed = target >= 0;
+    owner = mb_owner_ptr(index);
+    allowed && mb_legato_requires_group(index, channel, target) ? (
+      delta = target - owner[MB_O_FRET_ANCHOR];
+      allowed = mb_legato_group_fits(index, delta);
+    );
+    allowed && owner[MB_O_SERIAL] > newest ? (
+      chosen = index;
+      newest = owner[MB_O_SERIAL];
+    );
+    index += 1;
+  );
+  chosen;
+);
+
+function mb_legato_duration(from_fret, target, velocity)
+local(speed, milliseconds)
+global(MB_ARTICULATION, MB_A_VALUE, legato_slide_ms_request, MB_MOTION_INTERVAL_MS,
+       MB_LEGATO_MAX_MS, srate)
+(
+  speed = max(1 / 16129, (velocity / 127) * (MB_ARTICULATION[MB_A_VALUE] / 127));
+  milliseconds = abs(target - from_fret) * legato_slide_ms_request / speed;
+  ceil(mb_clamp(milliseconds, MB_MOTION_INTERVAL_MS, MB_LEGATO_MAX_MS) * 0.001 * srate);
+);
+
+// Preserve each peer's original source key and serial for later note-offs.
+function mb_legato_move_peers(primary, delta, duration, token)
+local(index, owner, start, target)
+global(MB_MAX_STRINGS, MB_O_FRET_ANCHOR, MB_FRICTION, MB_FR_SLIDE_TOKEN)
+(
+  index = 0;
+  loop(MB_MAX_STRINGS,
+    index != primary && mb_legato_held(index) ? (
+      owner = mb_owner_ptr(index);
+      owner[MB_O_FRET_ANCHOR] > 0.000000001 ? (
+        start = mb_motion_base(index);
+        target = owner[MB_O_FRET_ANCHOR] + delta;
+        owner[MB_O_FRET_ANCHOR] = target;
+        mb_motion_begin(index, start, target, duration);
+        (mb_rack_string(index)+MB_FRICTION)[MB_FR_SLIDE_TOKEN]=token;
+      );
+    );
+    index += 1;
+  );
+);
+
+// Rebind metadata only. The same physical string keeps vibrating.
+function mb_legato_rebind(record, index, channel, target, duration)
+local(start)
+global()
+(
+  start = mb_motion_base(index);
+  mb_notes_retire_string(index, 0);
+  mb_notes_bind(record, index);
+  mb_midi_bend_bind(index, channel, target);
+  mb_motion_begin(index, start, target, duration);
+  mb_midi_bend_retarget(index);
+  mb_midi_slide_retarget(index);
+);
+
+// Success suppresses the ordinary pluck. Failure lets normal routing continue.
+function mb_legato_try(record, channel, note, velocity)
+local(index, target, group, delta, duration)
+(
+  index = -1;
+  MB_ARTICULATION[MB_A_KIND] == MB_ROLE_LEGATO && MB_ARTICULATION[MB_A_VALUE] > 0 && !mb_legato_preferred_open(note) ?
+    index = mb_legato_select(channel, note);
+
+  index >= 0 ? (
+    target = mb_legato_candidate_fret(index, channel, note);
+    group = mb_legato_requires_group(index, channel, target);
+    delta = target - mb_owner_ptr(index)[MB_O_FRET_ANCHOR];
+    duration = mb_legato_duration(mb_motion_base(index), target, velocity);
+    group ? mb_legato_move_peers(index, delta, duration, mb_note_ptr(record)[MB_N_SERIAL]);
+    mb_legato_rebind(record, index, channel, target, duration);
+    MB_RACK[MB_R_LAST_ROUTE] = index;
+    MB_ARTICULATION[MB_A_SLIDES] += 1;
+    MB_ARTICULATION[MB_A_DURATION] = duration;
+    1;
+  ) : (
+    MB_ARTICULATION[MB_A_KIND] == MB_ROLE_LEGATO && MB_ARTICULATION[MB_A_VALUE] > 0 ? MB_ARTICULATION[MB_A_FALLBACKS] += 1;
+    0;
+  );
+);

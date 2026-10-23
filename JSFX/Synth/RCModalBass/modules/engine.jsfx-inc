@@ -1,0 +1,93 @@
+@init
+// Immediate controller/fault silence. Configuration/cache may survive, but no
+// sounding bank, fade, live job, auxiliary observer or filter delay survives.
+function mb_engine_kill(st)
+local(l, e)
+(
+  st[MB_S_COUNT]=st[MB_S_PREVIOUS_COUNT]=st[MB_S_PREVIOUS_LEFT]=0;
+  st[MB_S_HARMONIC]=0;
+  st[MB_S_NOTE]=st[MB_S_CHANNEL]=-1; st[MB_S_MUTE]=1;
+  memset(st+MB_REPLUCK, 0, MB_RP_HEADER_WORDS);
+  memset(st+MB_TENSION, 0, 2*MB_AT_WORDS);
+  mb_pickup_clear(st);
+  mb_nonlinear_clear(st);
+  mb_vibrato_clear(st);
+  mb_magnet_clear(st);
+  mb_contact_clear(st);
+  mb_pop_clear(st);
+  mb_slap_clear(st);
+  mb_pick_cancel(st);
+  (st+MB_PICK)[MB_PK_VOICE]=(st+MB_PICK)[MB_PK_GAIN]=(st+MB_PICK)[MB_PK_GAIN_TARGET]=0;
+  mb_impact_compress_clear(st);
+  mb_friction_clear(st);
+  mb_pick_friction_clear(st);
+  l=st+MB_LIVE; l[MB_L_JOB]=l[MB_L_BEND_LEFT]=l[MB_L_DAMP_LEFT]=0;
+  l[MB_L_FRET_TARGET]=l[MB_L_FRET]; l[MB_L_BEND_TARGET]=l[MB_L_BEND];
+  l[MB_L_PAIRS_THIS_SAMPLE]=0;
+  l[MB_L_GHOST_DAMP]=0;
+  l[MB_L_GHOST_AMOUNT]=0;
+  e=st+MB_ELECTRONICS; memset(e+MB_E_X1, 0, 4);
+);
+
+function mb_engine_render(st)
+local(signal, previous_signal, weights, previous_weights, l, fade, previous_weight, circuit_main, saved_mute, performance_damp, bank_mute)
+(
+  mb_ghost_enforce(st);
+  mb_live_tick(st);
+  (st+MB_SLAP)[MB_SL_LEFT]>0 ? mb_slap_tick(st);
+  mb_tension_tick(st);
+  mb_magnet_tick(st);
+  vibrato_running ? mb_vibrato_tick(st);
+  mb_pickup_tick(st);
+  mb_nonlinear_tick(st);
+  mb_contact_level_tick(st);
+  l=st+MB_LIVE;
+  st[MB_S_ACTIVE]==st+MB_BANK_A ? (
+    weights=st+MB_PICKUP_A; previous_weights=st+MB_PICKUP_B;
+  ) : (
+    weights=st+MB_PICKUP_B; previous_weights=st+MB_PICKUP_A;
+  );
+  saved_mute=st[MB_S_MUTE];
+  performance_damp=performance_damping_used ? mb_performance_damping(st) : 1;
+  performance_damp!=1 ? st[MB_S_MUTE]*=performance_damp;
+  bank_mute=st[MB_S_MUTE];
+  fret_sustain_current<1 ? st[MB_S_MUTE]=mb_fret_response_damper(st, st[MB_S_ACTIVE], bank_mute);
+  signal=mb_render_bank(st, st[MB_S_ACTIVE], weights, st[MB_S_COUNT]);
+  (st+MB_PICKUP_NL)[MB_NL_ON] ? signal=mb_nonlinear_mix(st, st[MB_S_ACTIVE], weights, signal);
+  circuit_observe_current ? circuit_main=signal;
+  previous_weight=0;
+  st[MB_S_PREVIOUS_LEFT]>0 ? (
+    fret_sustain_current<1 ? st[MB_S_MUTE]=mb_fret_response_damper(st, st[MB_S_PREVIOUS], bank_mute);
+    previous_signal=mb_render_bank(st, st[MB_S_PREVIOUS], previous_weights, st[MB_S_PREVIOUS_COUNT]);
+    (st+MB_PICKUP_NL)[MB_NL_ON] ? previous_signal=mb_nonlinear_mix(st, st[MB_S_PREVIOUS], previous_weights, previous_signal);
+    l[MB_L_FADE_KIND] ? (
+      fade=0.5-0.5*cos($pi*(1-st[MB_S_PREVIOUS_LEFT]/l[MB_L_FADE_TOTAL]));
+      previous_weight=1-fade;
+      signal=previous_signal*(1-fade)+signal*fade;
+    ) : (
+      previous_weight=st[MB_S_PREVIOUS_LEFT]/st[MB_S_TAIL_SAMPLES];
+      // Keep the approved pluck-tail arithmetic order, including roundoff.
+      signal+=previous_signal*st[MB_S_PREVIOUS_LEFT]/st[MB_S_TAIL_SAMPLES];
+    );
+    st[MB_S_PREVIOUS_LEFT]-=1;
+    circuit_observe_current ? circuit_main=signal;
+    (st+MB_REPLUCK)[MB_RP_LEFT]>0 ? signal+=mb_repluck_tail(st);
+  );
+  st[MB_S_MUTE]=saved_mute;
+  (st+MB_PICKUP_STATE)[MB_PU_CONFIGURED] && (st+MB_PICKUP_STATE)[MB_PU_GATE]!=1 ?
+    signal*=(st+MB_PICKUP_STATE)[MB_PU_GATE];
+  circuit_observe_current ? mb_circuit_string(st, signal, circuit_main, previous_weight);
+  (st+MB_PICK)[MB_PK_GAIN]!=0 || (st+MB_PICK)[MB_PK_GAIN_TARGET]!=0 ?
+    signal=mb_gesture_voice_render(st, signal);
+  signal=mb_pop_voice(st, signal);
+  impact_compress_running && ((st+MB_POP)[MB_POP_STYLE] ||
+    (st+MB_IMPACT_COMP)[MB_IPC_ENVELOPE]>0 || (st+MB_IMPACT_COMP)[MB_IPC_REDUCTION]>0) ?
+    signal=mb_impact_compress_render(st, signal);
+  signal=mb_electronics_render(st, signal);
+  (st+MB_PICK_FRICTION)[MB_PF_ON] ? signal=mb_pick_friction_mix(st, signal);
+  signal=mb_friction_mix(st, signal);
+  // Both fade banks share one movement clock; decrement exactly once/sample.
+  l[MB_L_DAMP_LEFT]>0 ? l[MB_L_DAMP_LEFT]-=1;
+  mb_modal_retire(st);
+  signal;
+);

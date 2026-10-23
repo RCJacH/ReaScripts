@@ -1,0 +1,407 @@
+// Audio-thread controller routing, separate from event dispatch and physical DSP.
+// Shared sources split at center; independent wheel/CC slide is bidirectional.
+@init
+// Keep source keys intact in the note registry. Only musical pitch allocation
+// converts them: key 40 plays E1 (28); switches/controller notes are unshifted.
+function mb_midi_playing_pitch(note)
+global(MB_MIDI_PLAYING_OFFSET)
+( note+MB_MIDI_PLAYING_OFFSET; );
+
+// Channels 1..N follow enabled physical string numbers, never tuning order.
+// Internal channels are zero based; result -1 means there is no mapped string.
+function mb_midi_channel_string(channel)
+local(step, number, index, seen, chosen)
+global(channel_mode_current, MB_CHANNELS, MB_MAX_STRINGS, MB_RS_ENABLED)
+(
+  chosen=-1;
+  seen=0;
+  step=0;
+  channel_mode_current>0 && channel>=0 && channel<MB_CHANNELS ? (
+    loop(MB_MAX_STRINGS,
+      number=channel_mode_current==1 ? 6-step : 1+step;
+      index=mb_string_index(number);
+      mb_rack_slot(index)[MB_RS_ENABLED] ? (
+        seen==channel ? chosen=index;
+        seen+=1;
+      );
+      step+=1;
+    );
+  );
+  chosen;
+);
+
+function mb_midi_string_channel(index)
+local(channel, chosen)
+global(MB_MAX_STRINGS)
+(
+  chosen=-1;
+  channel=0;
+  loop(MB_MAX_STRINGS,
+    mb_midi_channel_string(channel)==index ? chosen=channel;
+    channel+=1;
+  );
+  chosen;
+);
+
+// Endpoint-exact normalization. Positive wheel has 8191 steps, negative 8192.
+function mb_midi_wheel_normal(value)
+global()
+(
+  value>=8192 ? (value-8192)/8191 : (value-8192)/8192;
+);
+
+function mb_midi_controller_ptr(scope)
+global(MB_CONTROLLER_INPUTS, MB_CTRL_WORDS)
+( MB_CONTROLLER_INPUTS+scope*MB_CTRL_WORDS; );
+
+// Keep dropdown indices separate from wire CC numbers. The list starts at CC1,
+// while wire source IDs are 2 + the actual MIDI CC number (including CC0).
+function mb_midi_selector_source(selection)
+local(index)
+global(MB_CTRL_SELECTOR_CC_FIRST, MB_CTRL_SELECTOR_LAST, MB_CTRL_WHEEL)
+(
+  index=mb_midi_mapping_index(selection, MB_CTRL_SELECTOR_LAST);
+  index>=MB_CTRL_SELECTOR_CC_FIRST ? index+1 : index;
+);
+
+// Receive-time selection uses host values: @block applies their requests after
+// collecting packets, including the first block following a GUI/slider edit.
+function mb_midi_controller_selected(source)
+global(p_bend_controller, p_slide_controller, MB_CTRL_WHEEL, MB_CTRL_PRESSURE, MB_CTRL_CC_FIRST)
+(
+  (source==MB_CTRL_WHEEL || source==MB_CTRL_PRESSURE || mb_midi_cc_supported(source-MB_CTRL_CC_FIRST)) &&
+    (source==mb_midi_selector_source(p_bend_controller) ||
+     source==mb_midi_selector_source(p_slide_controller) || mb_vibrato_selected(source));
+);
+
+function mb_midi_input_amount(source, value, side)
+local(normal, amount)
+global(bend_controller_current, MB_CTRL_CC_FIRST, MB_CTRL_SLIDE, MB_CTRL_WHEEL,
+       slide_controller_current)
+(
+  amount=0;
+  value>=0 ? (
+    source==MB_CTRL_WHEEL || bend_controller_current==slide_controller_current ||
+      (side==MB_CTRL_SLIDE && source>=MB_CTRL_CC_FIRST) ? (
+      normal=source==MB_CTRL_WHEEL ? mb_midi_wheel_normal(value) :
+        (value>=64 ? (value-64)/63 : (value-64)/64);
+      amount=side==MB_CTRL_SLIDE ?
+        (bend_controller_current==slide_controller_current ? min(0, normal) : normal) : max(0, normal);
+    ) : amount=(side==MB_CTRL_SLIDE ? -1 : 1)*value/127;
+  );
+  amount;
+);
+
+function mb_midi_note_input(channel, side)
+local(scope, source)
+global(bend_controller_current, channel_mode_current, MB_BEND_SHARED, MB_CTRL_SLIDE,
+       slide_controller_current)
+(
+  scope=channel_mode_current==0 ? MB_BEND_SHARED : channel;
+  source=side==MB_CTRL_SLIDE ? slide_controller_current : bend_controller_current;
+  mb_midi_input_amount(source, mb_midi_controller_ptr(scope)[side], side);
+);
+
+function mb_midi_bend_target(index, midi_semitones)
+local(owner, total, target)
+global(MB_BEND_MAX, MB_BEND_MIN, MB_O_BEND_CLIPPED)
+(
+  owner=mb_owner_ptr(index);
+  total=midi_semitones;
+  target=mb_clamp(total, MB_BEND_MIN, MB_BEND_MAX);
+  owner[MB_O_BEND_CLIPPED]=abs(total-target)>0.000000001;
+  target;
+);
+
+function mb_midi_bend_retarget(index)
+global(MB_CONTROLLER_SMOOTH_MS, MB_O_MIDI_BEND, srate)
+(
+  // Tension ramp only: no excitation, fret move, ownership change or energy boost.
+  mb_engine_bend(mb_rack_string(index),
+    mb_midi_bend_target(index, mb_owner_ptr(index)[MB_O_MIDI_BEND]),
+    MB_CONTROLLER_SMOOTH_MS*0.001*srate);
+);
+
+function mb_midi_slide_target(index)
+global()
+(
+  mb_motion_fret_target(index);
+);
+
+function mb_midi_slide_retarget(index)
+local(st, target)
+global(MB_FRET_TRANSITION_MS, MB_L_FRET_TARGET, MB_LIVE, srate)
+(
+  st=mb_rack_string(index);
+  target=mb_midi_slide_target(index);
+  // Fretted targets snap before comparison; fretless targets stay fractional.
+  // Identical/clamped wheel targets
+  // must not restart the existing bounded fret/texture preparation or fade.
+  abs(target-(st+MB_LIVE)[MB_L_FRET_TARGET])>0.000000001 ?
+    mb_engine_fret_transition(st, target, MB_FRET_TRANSITION_MS*0.001*srate);
+);
+
+function mb_midi_components(index, bend_input, slide_input)
+local(owner, slot)
+global(MB_O_MIDI_BEND, MB_O_MIDI_SLIDE, MB_O_WHEEL_NORMAL, MB_RS_BEND_INPUT, MB_RS_SLIDE_INPUT,
+       midi_bend_range_current, midi_slide_range_current)
+(
+  owner=mb_owner_ptr(index);
+  slot=mb_rack_slot(index);
+  slot[MB_RS_BEND_INPUT]=bend_input;
+  slot[MB_RS_SLIDE_INPUT]=slide_input;
+  // Legacy diagnostic field: net input, not a source of independent gestures.
+  owner[MB_O_WHEEL_NORMAL]=bend_input+slide_input;
+  owner[MB_O_MIDI_BEND]=bend_input*midi_bend_range_current;
+  owner[MB_O_MIDI_SLIDE]=slide_input*midi_slide_range_current;
+);
+
+function mb_midi_wheel_retarget(index)
+global()
+(
+  mb_midi_bend_retarget(index);
+  mb_midi_slide_retarget(index);
+);
+
+function mb_midi_bend_bind(index, channel, anchor_fret)
+local(owner)
+global(channel_mode_current, MB_BEND_SHARED, MB_CTRL_BEND, MB_CTRL_SLIDE, MB_O_BEND_CHANNEL,
+       MB_O_FRET_ANCHOR, MB_O_MIDI_BEND, fret_count_current)
+(
+  owner=mb_owner_ptr(index);
+  owner[MB_O_BEND_CHANNEL]=channel_mode_current==0 ? MB_BEND_SHARED : channel;
+  // Anchor is the played fret BEFORE wheel travel, including a pre-note slide
+  // clamped at the nut. Never infer it from an already shifted/limited fret.
+  owner[MB_O_FRET_ANCHOR]=mb_clamp(anchor_fret, 0, fret_count_current);
+  mb_midi_components(index, mb_midi_note_input(channel, MB_CTRL_BEND), mb_midi_note_input(channel, MB_CTRL_SLIDE));
+  mb_midi_bend_target(index, owner[MB_O_MIDI_BEND]);
+  mb_midi_slide_target(index);
+);
+
+function mb_midi_bend_init()
+(
+  MB_RACK[MB_R_SHARED_WHEEL]=8192;
+  memset(MB_CONTROLLER_INPUTS, -1, MB_CONTROLLER_WORDS);
+  bend_controller_current=bend_controller_request=mb_midi_selector_source(p_bend_controller);
+  slide_controller_current=slide_controller_request=mb_midi_selector_source(p_slide_controller);
+  channel_mode_current=channel_mode_request=mb_clamp(floor(p_midi_channel_mode), 0, 2);
+  midi_bend_range_current=midi_bend_range_request=mb_clamp(p_midi_pitch_bend_range, 0, 2);
+  midi_slide_range_current=midi_slide_range_request=mb_clamp(p_midi_slide_range, 0, 24);
+  midi_bend_count_current=MB_RACK[MB_R_COUNT];
+);
+
+// Rebinding changes controller ownership, never source-note identity or pitch.
+// Held/tail pitch stays put until a controller/range edit; new notes use scoped inputs.
+function mb_midi_bend_apply_requests()
+local(i, owner, slot, bend_changed, slide_changed, shared_changed, input)
+(
+  channel_mode_request!=channel_mode_current || MB_RACK[MB_R_COUNT]!=midi_bend_count_current ? (
+    channel_mode_current=channel_mode_request;
+    midi_bend_count_current=MB_RACK[MB_R_COUNT];
+    i=0;
+    loop(MB_MAX_STRINGS,
+      owner=mb_owner_ptr(i);
+      owner[MB_O_BEND_CHANNEL]>=0 && owner[MB_O_SOURCE_CHANNEL]>=0 &&
+      mb_rack_slot(i)[MB_RS_ENABLED] ?
+        owner[MB_O_BEND_CHANNEL]=channel_mode_current==0 ? MB_BEND_SHARED : mb_midi_string_channel(i);
+      i+=1;
+    );
+  );
+  shared_changed=(bend_controller_request==slide_controller_request)!=(bend_controller_current==slide_controller_current);
+  bend_changed=bend_controller_request!=bend_controller_current || shared_changed;
+  slide_changed=slide_controller_request!=slide_controller_current || shared_changed;
+  bend_changed || slide_changed ? (
+    bend_controller_current=bend_controller_request;
+    slide_controller_current=slide_controller_request;
+    // A new assignment starts neutral, waiting for fresh input. When entering
+    // or leaving a shared source, reset both sides because their scaling changes.
+    i=0;
+    loop(MB_CHANNELS+1,
+      input=mb_midi_controller_ptr(i);
+      bend_changed ? input[MB_CTRL_BEND]=-1;
+      slide_changed ? input[MB_CTRL_SLIDE]=-1;
+      i+=1;
+    );
+    i=0;
+    loop(MB_MAX_STRINGS,
+      owner=mb_owner_ptr(i);
+      slot=mb_rack_slot(i);
+      owner[MB_O_BEND_CHANNEL]>=0 ? (
+        mb_midi_components(i, bend_changed ? 0 : slot[MB_RS_BEND_INPUT],
+                            slide_changed ? 0 : slot[MB_RS_SLIDE_INPUT]);
+        bend_changed ? mb_midi_bend_retarget(i);
+        slide_changed ? mb_midi_slide_retarget(i);
+      );
+      i+=1;
+    );
+  );
+  abs(midi_bend_range_request-midi_bend_range_current)>0.000000001 ||
+  abs(midi_slide_range_request-midi_slide_range_current)>0.000000001 ? (
+    midi_bend_range_current=midi_bend_range_request;
+    midi_slide_range_current=midi_slide_range_request;
+    i=0;
+    loop(MB_MAX_STRINGS,
+      owner=mb_owner_ptr(i);
+      slot=mb_rack_slot(i);
+      owner[MB_O_BEND_CHANNEL]>=0 ? (
+        mb_midi_components(i, slot[MB_RS_BEND_INPUT], slot[MB_RS_SLIDE_INPUT]);
+        mb_midi_wheel_retarget(i);
+      );
+      i+=1;
+    );
+  );
+);
+
+function mb_midi_enforce_fault()
+global(MB_NH_FAULT, MB_NH_FAULT_SILENCED, MB_NOTES)
+(
+  MB_NOTES[MB_NH_FAULT] && !MB_NOTES[MB_NH_FAULT_SILENCED] ? (
+    mb_rack_kill_all();
+    mb_force_clear();
+    mb_ring_clear();
+    MB_NOTES[MB_NH_FAULT_SILENCED]=1;
+  );
+);
+
+function mb_midi_reset()
+global(MB_CONTROLLER_INPUTS, MB_CONTROLLER_WORDS, MB_R_SHARED_WHEEL, MB_RACK)
+(
+  mb_rack_kill_all();
+  mb_notes_reset(1);
+  mb_fingers_reset();
+  mb_variation_reset();
+  MB_RACK[MB_R_SHARED_WHEEL]=8192;
+  memset(MB_CONTROLLER_INPUTS, -1, MB_CONTROLLER_WORDS);
+  mb_hand_init();
+  mb_vibrato_reset();
+  mb_art_init();
+  mb_ring_init();
+  mb_force_init();
+);
+
+function mb_midi_control(channel, source, value)
+local(bend_selected, slide_selected, input, i, owner, slot, bend_input, slide_input,
+      old_slide, m, duration, target, index, f, start, supported)
+(
+  supported=source==MB_CTRL_WHEEL || source==MB_CTRL_PRESSURE || mb_midi_cc_supported(source-MB_CTRL_CC_FIRST);
+  supported ? mb_vibrato_controller(channel, source, value);
+  bend_selected=supported && source==bend_controller_current;
+  slide_selected=supported && source==slide_controller_current;
+  bend_selected || slide_selected ? (
+    input=mb_midi_controller_ptr(channel);
+    bend_selected ? input[MB_CTRL_BEND]=value;
+    slide_selected ? input[MB_CTRL_SLIDE]=value;
+    channel_mode_current==0 ? (
+      input=mb_midi_controller_ptr(MB_BEND_SHARED);
+      bend_selected ? input[MB_CTRL_BEND]=value;
+      slide_selected ? input[MB_CTRL_SLIDE]=value;
+    );
+    bend_input=mb_midi_input_amount(source, value, MB_CTRL_BEND);
+    slide_input=mb_midi_input_amount(source, value, MB_CTRL_SLIDE);
+    i=0;
+    loop(MB_MAX_STRINGS,
+      owner=mb_owner_ptr(i);
+      slot=mb_rack_slot(i);
+      owner[MB_O_BEND_CHANNEL]==(channel_mode_current==0 ? MB_BEND_SHARED : channel) ? (
+        old_slide=owner[MB_O_MIDI_SLIDE];
+        mb_midi_components(i, bend_selected ? bend_input : slot[MB_RS_BEND_INPUT],
+                            slide_selected ? slide_input : slot[MB_RS_SLIDE_INPUT]);
+        bend_selected ? mb_midi_bend_retarget(i);
+        slide_selected ? mb_midi_slide_retarget(i);
+        slide_selected && source!=MB_CTRL_CC_FIRST+120 && source!=MB_CTRL_CC_FIRST+123 &&
+        abs(owner[MB_O_MIDI_SLIDE]-old_slide)>0.000000001 ? (
+          m=mb_motion_ptr(i);
+          duration=m[MB_MO_ACTIVE] ? max(1, m[MB_MO_TOTAL]-m[MB_MO_ELAPSED]) : ceil(MB_CONTROLLER_SMOOTH_MS*0.001*srate);
+          target=(m[MB_MO_ACTIVE] ? m[MB_MO_TARGET] : owner[MB_O_FRET_ANCHOR])+owner[MB_O_MIDI_SLIDE];
+          // An active legato still provides a known continuous trajectory.
+          mb_friction_begin(i*MB_STRING_WORDS, mb_motion_base(i)+old_slide, target, duration, m[MB_MO_ACTIVE] ? 1 : 2);
+          (i*MB_STRING_WORDS+MB_FRICTION)[MB_FR_CHANNEL]=channel;
+        );
+      );
+      i+=1;
+    );
+    // Explicit Slide input can audition friction on a silent identified string.
+    // Auto with no owner has no finger/string target and creates no motion.
+    slide_selected && source!=MB_CTRL_CC_FIRST+120 && source!=MB_CTRL_CC_FIRST+123 ? (
+      index=channel_mode_current>0 ? mb_midi_channel_string(channel) :
+        mb_string_selection()>0 ? mb_string_index(7-mb_string_selection()) : -1;
+      index>=0 ? (
+        owner=mb_owner_ptr(index);
+        owner[MB_O_BEND_CHANNEL]!=(channel_mode_current==0 ? MB_BEND_SHARED : channel) ? (
+          f=index*MB_STRING_WORDS+MB_FRICTION;
+          target=slide_input*midi_slide_range_current; start=f[MB_FR_CTRL_SLIDE];
+          abs(target-start)>0.000000001 ? mb_friction_begin(index*MB_STRING_WORDS,
+            live_fret_request+start, live_fret_request+target, MB_CONTROLLER_SMOOTH_MS*0.001*srate, 2);
+          f[MB_FR_CTRL_SLIDE]=target;
+          f[MB_FR_CHANNEL]=channel;
+        );
+      );
+    );
+    slide_selected ? mb_hand_follow(-1);
+    source!=MB_CTRL_WHEEL ? MB_NOTES[MB_NH_BENDS]+=1;
+  );
+);
+
+function mb_midi_wheel(channel, lsb, msb)
+local(value)
+global(channel_mode_current, MB_CH_WHEEL, MB_CTRL_WHEEL, MB_NH_BENDS, MB_NOTES, MB_R_SHARED_WHEEL,
+       MB_RACK)
+(
+  value=(lsb&127)+128*(msb&127);
+  mb_channel_ptr(channel)[MB_CH_WHEEL]=value;
+  channel_mode_current==0 ? MB_RACK[MB_R_SHARED_WHEEL]=value;
+  mb_midi_control(channel, MB_CTRL_WHEEL, value);
+  MB_NOTES[MB_NH_BENDS]+=1;
+);
+
+function mb_midi_channel_controller(channel, controller)
+local(i, owner, ch, binding, normal, semitones, clipped, anchor, slide, slide_clipped, slot,
+      bend_input, slide_input)
+(
+  controller==120 || controller==123 ? (
+    // Invalidate unmatched channel records without scanning the record pool.
+    // Their individual offs still consume FIFO entries after the controller.
+    mb_notes_advance_epoch(channel);
+    ch=mb_channel_ptr(channel);
+    controller==120 ? ch[MB_CH_KILLS]+=1 : ch[MB_CH_RELEASES]+=1;
+    i=0;
+    loop(MB_MAX_STRINGS,
+      owner=mb_owner_ptr(i);
+      owner[MB_O_SOURCE_CHANNEL]==channel && owner[MB_O_STATE]>0 ? (
+        controller==120 ? mb_rack_kill_string(i) : owner[MB_O_KEY_DOWN] ? (
+          mb_motion_note_off(i, owner[MB_O_SERIAL]);
+          binding=owner[MB_O_BEND_CHANNEL];
+          normal=owner[MB_O_WHEEL_NORMAL];
+          semitones=owner[MB_O_MIDI_BEND];
+          clipped=owner[MB_O_BEND_CLIPPED];
+          anchor=owner[MB_O_FRET_ANCHOR];
+          slide=owner[MB_O_MIDI_SLIDE];
+          slide_clipped=owner[MB_O_SLIDE_CLIPPED];
+          slot=mb_rack_slot(i);
+          bend_input=slot[MB_RS_BEND_INPUT];
+          slide_input=slot[MB_RS_SLIDE_INPUT];
+          memcpy(MB_MOTION_SAVE, mb_motion_ptr(i), MB_MOTION_WORDS);
+          mb_notes_retire_string(i, 1);
+          memcpy(mb_motion_ptr(i), MB_MOTION_SAVE, MB_MOTION_WORDS);
+          slot[MB_RS_BEND_INPUT]=bend_input;
+          slot[MB_RS_SLIDE_INPUT]=slide_input;
+          owner[MB_O_BEND_CHANNEL]=binding;
+          owner[MB_O_WHEEL_NORMAL]=normal;
+          owner[MB_O_MIDI_BEND]=semitones;
+          owner[MB_O_BEND_CLIPPED]=clipped;
+          owner[MB_O_FRET_ANCHOR]=anchor;
+          owner[MB_O_MIDI_SLIDE]=slide;
+          owner[MB_O_SLIDE_CLIPPED]=slide_clipped;
+          owner[MB_O_STATE]=mb_ring_active(channel) ? MB_VOICE_RINGING : MB_VOICE_DAMPING;
+          mb_release_capture(i);
+          !mb_ring_active(channel) ? mb_release_apply(i);
+        );
+      );
+      (mb_rack_string(i)+MB_FRICTION)[MB_FR_CHANNEL]==channel ? (
+        controller==120 ? mb_friction_clear(mb_rack_string(i)) : mb_friction_stop(mb_rack_string(i));
+      );
+      i+=1;
+    );
+    mb_midi_enforce_fault();
+  );
+);

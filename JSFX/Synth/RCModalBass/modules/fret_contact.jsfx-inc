@@ -1,0 +1,379 @@
+// One compliant, dissipative fret contact; forces change actual modal velocity.
+@init
+function mb_contact_invalidate(st)
+global(MB_FRET_POINT, MB_FP_WORDS, MB_FP_READY, MB_FP_SLEEP, MB_FP_SLEEP_CLOCK, MB_CONTACT_SLEEP_INTERVAL)
+(
+  (st+MB_FRET_POINT)[MB_FP_READY]=0;
+  (st+MB_FRET_POINT+MB_FP_WORDS)[MB_FP_READY]=0;
+  (st+MB_FRET_POINT)[MB_FP_SLEEP]=(st+MB_FRET_POINT+MB_FP_WORDS)[MB_FP_SLEEP]=0;
+  (st+MB_FRET_POINT)[MB_FP_SLEEP_CLOCK]=(st+MB_FRET_POINT+MB_FP_WORDS)[MB_FP_SLEEP_CLOCK]=MB_CONTACT_SLEEP_INTERVAL;
+);
+
+// Coefficient writers invalidate weights too, including interior-mode edits.
+// State-only gestures use invalidate() and reuse the cached shape coefficients.
+function mb_contact_rebase(st, base)
+local(b, i, ptr, q, v, alpha, omega, old_alpha, old_omega)
+(
+  mb_contact_lazy_flush(st,base);
+  b=mb_contact_ptr(st, base); b[MB_FP_COUNT]=-1; b[MB_FP_READY]=0;
+  b[MB_FP_SLEEP]=0; b[MB_FP_SLEEP_CLOCK]=MB_CONTACT_SLEEP_INTERVAL;
+  b[MB_FP_RESPONSE_ACTIVE] ? (
+    i=0; loop(b[MB_FP_RESPONSE_COUNT],
+      ptr=base+i*MB_MODE_STRIDE; alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
+      old_alpha=(b+MB_FP_RESPONSE_ALPHA)[i]; old_omega=(b+MB_FP_RESPONSE_OMEGA)[i];
+      abs(alpha-old_alpha)>0.000000000001 || abs(omega-old_omega)>0.000000000001 ? (
+        q=(b+MB_FP_RESPONSE_Q)[i];
+        v=-old_alpha*q-old_omega*(b+MB_FP_RESPONSE_I)[i];
+        (b+MB_FP_RESPONSE_I)[i]=-(v+alpha*q)/omega;
+      );
+      (b+MB_FP_RESPONSE_ALPHA)[i]=alpha; (b+MB_FP_RESPONSE_OMEGA)[i]=omega;
+      i+=1;
+    );
+  );
+);
+
+function mb_contact_clear(st)
+global(MB_FRET_POINT, MB_FP_WORDS, MB_CONTACT_LAZY, MB_CL_WORDS)
+(
+  memset(st+MB_FRET_POINT, 0, 2*MB_FP_WORDS);
+  memset(st+MB_CONTACT_LAZY,0,2*MB_CL_WORDS);
+);
+
+// Physical contact remains unchanged. This gain observes only the response to
+// its forces, before pickup electronics. Neutral is stored as zero (gain-1).
+function mb_contact_level_configure(st, db)
+local(k)
+global(MB_CONTACT, MB_K_LEVEL, MB_K_LEVEL_TARGET, MB_K_LEVEL_INITIALIZED, MB_S_COUNT, MB_S_PREVIOUS_LEFT)
+(
+  k=st+MB_CONTACT;
+  k[MB_K_LEVEL_TARGET]=db<=-60 ? -1 : 10^(mb_clamp(db, -60, 24)/20)-1;
+  !k[MB_K_LEVEL_INITIALIZED] || (st[MB_S_COUNT]<=0 && st[MB_S_PREVIOUS_LEFT]<=0) ? (
+    k[MB_K_LEVEL]=k[MB_K_LEVEL_TARGET]; k[MB_K_LEVEL_INITIALIZED]=1;
+  );
+);
+
+function mb_contact_level_tick(st)
+local(k)
+global(MB_CONTACT, MB_K_LEVEL, MB_K_LEVEL_TARGET, MB_CONTACT_LEVEL_SMOOTH)
+(
+  k=st+MB_CONTACT;
+  k[MB_K_LEVEL]+=(k[MB_K_LEVEL_TARGET]-k[MB_K_LEVEL])*MB_CONTACT_LEVEL_SMOOTH;
+  abs(k[MB_K_LEVEL]-k[MB_K_LEVEL_TARGET])<0.000000000001 ? k[MB_K_LEVEL]=k[MB_K_LEVEL_TARGET];
+);
+
+function mb_contact_response_clear(st, base)
+local(b)
+global(MB_FP_RESPONSE_Q, MB_MAX_MODES, MB_FP_RESPONSE_ACTIVE, MB_FP_RESPONSE_COUNT)
+(
+  b=mb_contact_ptr(st, base);
+  mb_contact_lazy_clear(st,base);
+  memset(b+MB_FP_RESPONSE_Q, 0, 2*MB_MAX_MODES);
+  b[MB_FP_RESPONSE_ACTIVE]=0; b[MB_FP_RESPONSE_COUNT]=0;
+);
+
+// Cache the coordinate interpretation once per newly available mode. Retunes
+// preserve physical q/v in rebase(); rendering reuses the actual mode rotation.
+function mb_contact_response_prepare(st, base, count)
+local(b, i, ptr)
+global(MB_FP_RESPONSE_COUNT, MB_FP_RESPONSE_ALPHA, MB_FP_RESPONSE_OMEGA,
+       MB_MODE_STRIDE, MB_M_ALPHA, MB_M_OMEGA)
+(
+  b=mb_contact_ptr(st, base); i=b[MB_FP_RESPONSE_COUNT];
+  loop(max(0, count-i),
+    ptr=base+i*MB_MODE_STRIDE;
+    (b+MB_FP_RESPONSE_ALPHA)[i]=ptr[MB_M_ALPHA];
+    (b+MB_FP_RESPONSE_OMEGA)[i]=ptr[MB_M_OMEGA]; i+=1;
+  );
+  b[MB_FP_RESPONSE_COUNT]=count;
+  b;
+);
+
+// State transforms transport this observation component with the real motion.
+function mb_contact_response_transfer(st, source, dest, source_count, count, scale)
+local(a, b, i, ptr, src, q, v)
+global(MB_FP_RESPONSE_ACTIVE, MB_FP_RESPONSE_I, MB_FP_RESPONSE_Q, MB_M_ALPHA,
+       MB_M_FREQ, MB_M_OMEGA, MB_MODE_STRIDE, srate)
+(
+  mb_contact_lazy_flush(st,source);
+  a=mb_contact_ptr(st, source); b=mb_contact_ptr(st, dest);
+  mb_contact_response_clear(st, dest);
+  a[MB_FP_RESPONSE_ACTIVE] && scale>0 ? (
+    i=0; loop(min(source_count, count),
+      ptr=dest+i*MB_MODE_STRIDE; src=source+i*MB_MODE_STRIDE;
+      ptr[MB_M_FREQ]<0.48*srate ? (
+        q=(a+MB_FP_RESPONSE_Q)[i]*scale;
+        v=(-src[MB_M_ALPHA]*(a+MB_FP_RESPONSE_Q)[i]-src[MB_M_OMEGA]*(a+MB_FP_RESPONSE_I)[i])*scale;
+        (b+MB_FP_RESPONSE_Q)[i]=q;
+        (b+MB_FP_RESPONSE_I)[i]=-(v+ptr[MB_M_ALPHA]*q)/ptr[MB_M_OMEGA];
+      );
+      i+=1;
+    );
+    b[MB_FP_RESPONSE_ACTIVE]=1; mb_contact_response_prepare(st, dest, count);
+  );
+);
+
+function mb_contact_response_scale(st, base, count, scale)
+local(b, i)
+global(MB_FP_RESPONSE_ACTIVE, MB_FP_RESPONSE_Q, MB_FP_RESPONSE_I)
+(
+  mb_contact_lazy_flush(st,base);
+  b=mb_contact_ptr(st, base);
+  b[MB_FP_RESPONSE_ACTIVE] ? (
+    i=0; loop(count,
+      (b+MB_FP_RESPONSE_Q)[i]*=scale; (b+MB_FP_RESPONSE_I)[i]*=scale; i+=1;
+    );
+  );
+);
+
+function mb_contact_response_project(st, base, count, partial)
+local(b, i)
+global(MB_FP_RESPONSE_ACTIVE, MB_FP_RESPONSE_Q, MB_FP_RESPONSE_I)
+(
+  mb_contact_lazy_flush(st,base);
+  b=mb_contact_ptr(st, base);
+  b[MB_FP_RESPONSE_ACTIVE] ? (
+    i=0; loop(count,
+      (i+1)%partial ? ((b+MB_FP_RESPONSE_Q)[i]=(b+MB_FP_RESPONSE_I)[i]=0;);
+      i+=1;
+    );
+  );
+);
+
+function mb_contact_response_fold(st, base, previous, count, pc, a, b, scale)
+local(c, d, l, masks, previous_masks, flag, previous_flag, i, q, v, mask, ptr, src)
+(
+  mb_contact_lazy_flush(st,base); mb_contact_lazy_flush(st,previous);
+  c=mb_contact_ptr(st, base); d=mb_contact_ptr(st, previous); l=st+MB_LIVE;
+  c[MB_FP_RESPONSE_ACTIVE] || (pc>0 && d[MB_FP_RESPONSE_ACTIVE]) ? (
+    base==st+MB_BANK_A ? (
+      masks=st+MB_MASK_A; previous_masks=st+MB_MASK_B;
+      flag=l[MB_L_FLAG_A]; previous_flag=l[MB_L_FLAG_B];
+    ) : (
+      masks=st+MB_MASK_B; previous_masks=st+MB_MASK_A;
+      flag=l[MB_L_FLAG_B]; previous_flag=l[MB_L_FLAG_A];
+    );
+    i=0; loop(count,
+      mask=flag ? masks[i] : 1;
+      ptr=base+i*MB_MODE_STRIDE;
+      q=a*mask*(c+MB_FP_RESPONSE_Q)[i];
+      v=a*mask*(-ptr[MB_M_ALPHA]*(c+MB_FP_RESPONSE_Q)[i]-ptr[MB_M_OMEGA]*(c+MB_FP_RESPONSE_I)[i]);
+      i<pc ? (
+        mask=previous_flag ? previous_masks[i] : 1;
+        src=previous+i*MB_MODE_STRIDE;
+        q+=b*mask*(d+MB_FP_RESPONSE_Q)[i];
+        v+=b*mask*(-src[MB_M_ALPHA]*(d+MB_FP_RESPONSE_Q)[i]-src[MB_M_OMEGA]*(d+MB_FP_RESPONSE_I)[i]);
+      );
+      (c+MB_FP_RESPONSE_Q)[i]=q*scale;
+      (c+MB_FP_RESPONSE_I)[i]=-(v*scale+ptr[MB_M_ALPHA]*(c+MB_FP_RESPONSE_Q)[i])/ptr[MB_M_OMEGA];
+      i+=1;
+    );
+    c[MB_FP_RESPONSE_ACTIVE]=1; mb_contact_response_prepare(st, base, count);
+  );
+);
+
+function mb_engine_contact_configure(st, amount, stiffness, damping, surface)
+local(k)
+global(MB_CONTACT, MB_K_AMOUNT, MB_K_STIFFNESS, MB_K_DAMPING, MB_K_SURFACE)
+(
+  k=st+MB_CONTACT;
+  k[MB_K_AMOUNT]!=mb_clamp(amount*0.01, 0, 1) || k[MB_K_SURFACE]!=(surface>=0.5) ?
+    mb_contact_invalidate(st);
+  k[MB_K_AMOUNT]=mb_clamp(amount*0.01, 0, 1);
+  k[MB_K_STIFFNESS]=mb_clamp(stiffness, 100, 100000);
+  k[MB_K_DAMPING]=mb_clamp(damping, 0, 2);
+  k[MB_K_SURFACE]=surface>=0.5;
+);
+
+// Refresh on geometry/coefficient/state changes. Pickup edits do not enter.
+// The next fret is at 2^(-1/12) of the span, measured from the bridge.
+function mb_contact_prepare(st, base, count)
+local(b, g, cfg, length, fret, i, ptr, phi, norm, q, im, x, v, band, last, rebuild)
+(
+  b=mb_contact_ptr(st, base);
+  g=st+MB_GEOMETRY; cfg=st+MB_CONFIG;
+  length=g[MB_G_LENGTH]; fret=(st+MB_LIVE)[MB_L_FRET];
+  last=base+max(0, count-1)*MB_MODE_STRIDE;
+  rebuild=b[MB_FP_COUNT]!=count || b[MB_FP_LENGTH]!=length ||
+  abs(b[MB_FP_OMEGA]-base[MB_M_OMEGA])>0.000000000001 || abs(b[MB_FP_ALPHA]-base[MB_M_ALPHA])>0.000000000001 ||
+  abs(b[MB_FP_LAST_OMEGA]-last[MB_M_OMEGA])>0.000000000001 || abs(b[MB_FP_LAST_ALPHA]-last[MB_M_ALPHA])>0.000000000001;
+  !b[MB_FP_READY] || rebuild ? (
+    b[MB_FP_COUNT]=count; b[MB_FP_LENGTH]=length;
+    b[MB_FP_OMEGA]=base[MB_M_OMEGA]; b[MB_FP_ALPHA]=base[MB_M_ALPHA];
+    b[MB_FP_LAST_OMEGA]=last[MB_M_OMEGA]; b[MB_FP_LAST_ALPHA]=last[MB_M_ALPHA];
+    b[MB_FP_FRET]=floor(fret+0.5)+1;
+    b[MB_FP_POSITION]=length*MB_FRET_NEXT_RATIO;
+    b[MB_FP_MASS]=cfg[MB_C_TENSION]/(2*length*g[MB_G_F1])^2*length/2;
+    norm=x=v=i=0;
+    loop(count,
+      ptr=base+i*MB_MODE_STRIDE;
+      rebuild ? (
+        band=mb_clamp((0.48*srate-ptr[MB_M_FREQ])/(0.06*srate), 0, 1);
+        band=band*band*(3-2*band);
+        phi=sin((i+1)*$pi*MB_FRET_NEXT_RATIO)*band;
+        (b+MB_FP_PHI)[i]=phi;
+        (b+MB_FP_VELOCITY_WEIGHT)[i]=phi/ptr[MB_M_OMEGA];
+      ) : phi=(b+MB_FP_PHI)[i];
+      q=ptr[MB_M_R]; im=ptr[MB_M_I];
+      x+=phi*q; v+=phi*(-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im);
+      norm+=phi*phi; i+=1;
+    );
+    b[MB_FP_Q]=x; b[MB_FP_V]=v; b[MB_FP_NORM]=norm;
+    b[MB_FP_READY]=1; b[MB_FP_UPDATES]+=1;
+  );
+  b[MB_FP_GAP]=mb_action_clearance(2+(st+MB_ACTION)[MB_ACT_HEIGHT], length,
+                                 b[MB_FP_POSITION]);
+  fret>0 && (st+MB_VARIATION)[MB_VA_SEATING]>0 ?
+    b[MB_FP_GAP]*=1-(st+MB_VARIATION)[MB_VA_SEATING];
+  b;
+);
+
+// F = K*p^2/(p+d) + C*max(-v,0)*p/(p+d), while approaching in contact.
+// Smooth kinetic-work limit: 0<=j<=(1+e)*(-v)/sum(phi^2), 0<=e<=1.
+// Thus delta E/L = 2*j*v+j*j*sum(phi^2) <= 0. No contact-energy store.
+// Rebound approximates elastic recovery; this is not a Hertz contact solver.
+function mb_contact_kick(st, b)
+local(k, penetration, approach, force, desired, limit, restitution, critical, kick)
+(
+  k=st+MB_CONTACT; kick=0;
+  penetration=max(0, -b[MB_FP_Q]-b[MB_FP_GAP]); approach=max(0, -b[MB_FP_V]);
+  b[MB_FP_PENETRATION]=penetration;
+  penetration>0 && approach>0 && b[MB_FP_NORM]>0 ? (
+    force=k[MB_K_AMOUNT]*penetration/(penetration+MB_CONTACT_SOFT_DISTANCE)*
+      (k[MB_K_STIFFNESS]*penetration+k[MB_K_DAMPING]*approach);
+    desired=force/(srate*b[MB_FP_MASS]);
+    critical=2*sqrt(k[MB_K_STIFFNESS]*b[MB_FP_MASS]/b[MB_FP_NORM]);
+    restitution=1/(1+k[MB_K_DAMPING]/max(0.000000001, critical));
+    limit=(1+restitution)*approach/b[MB_FP_NORM];
+    kick=limit*desired/(limit+desired);
+  );
+  b[MB_FP_FORCE]=kick*b[MB_FP_MASS]*srate;
+  b[MB_FP_WORK]=b[MB_FP_LENGTH]*(2*kick*b[MB_FP_V]+kick*kick*b[MB_FP_NORM]);
+  b[MB_FP_LOSS]-=b[MB_FP_WORK];
+  kick>0 ? (
+    !b[MB_FP_TOUCHING] ? (
+      b[MB_FP_HITS]+=1;
+      b[MB_FP_HITS]==1 ? b[MB_FP_FIRST_SAMPLE]=instrument_sample_clock;
+    );
+    b[MB_FP_TOUCHING]=1;
+  ) : b[MB_FP_TOUCHING]=0;
+  kick;
+);
+
+function mb_contact_enabled(st, base, count)
+global(MB_CONTACT, MB_K_AMOUNT, MB_K_SURFACE, MB_S_ACTIVE, MB_LIVE, MB_L_FRET, MB_POP, MB_POP_STYLE,
+       MB_IMPACT_SLAP, MB_SLAP, MB_SL_CLANK, fret_count_current)
+(
+  count>0 && base==st[MB_S_ACTIVE] && (st+MB_CONTACT)[MB_K_AMOUNT]>0 &&
+  !(st+MB_CONTACT)[MB_K_SURFACE] && (st+MB_LIVE)[MB_L_FRET]<fret_count_current &&
+  !((st+MB_POP)[MB_POP_STYLE] && floor((st+MB_LIVE)[MB_L_FRET]+0.5)>=fret_count_current) &&
+  !((st+MB_POP)[MB_POP_STYLE]==MB_IMPACT_SLAP && (st+MB_SLAP)[MB_SL_CLANK]<=-1);
+);
+
+function mb_contact_idle(st, base)
+local(b)
+global(MB_FP_READY, MB_FP_FORCE, MB_FP_WORK, MB_FP_TOUCHING)
+(
+  b=mb_contact_ptr(st, base);
+  b[MB_FP_READY]=b[MB_FP_FORCE]=b[MB_FP_WORK]=b[MB_FP_TOUCHING]=0;
+);
+
+// Observe and advance in one pass. Capture next sample's exact local q/v.
+// Four-mode unrolling retains the approved fast renderer's summation order.
+function mb_contact_render_fast(st, base, weights, count)
+local(b, kick, phi, velocity_weights, i, ptr, r, im, nr, ni, rr, ri, sum, x, v, w, damper, alpha, omega,
+      response, level, cq, ci, rq, rv, impulse, bank, next, pop, total)
+(
+  pop=(st+MB_POP)[MB_POP_STYLE];
+  b=pop ? mb_pop_contact_prepare(st,base,count) : mb_contact_prepare(st,base,count);
+  kick=pop ? mb_pop_contact_kick(st,b) : mb_contact_kick(st,b);
+  bank=mb_contact_ptr(st,base);
+  next=pop ? (st+MB_POP_CONTACT)[MB_PCC_NEXT] : b;
+  phi=next+MB_FP_PHI; velocity_weights=b+MB_FP_VELOCITY_WEIGHT;
+  response=(bank[MB_FP_RESPONSE_ACTIVE] || kick>0) &&
+    !mb_contact_lazy_ptr(st,base)[MB_CL_ACTIVE];
+  response ? (
+    bank[MB_FP_RESPONSE_ACTIVE]=1; mb_contact_response_prepare(st, base, count);
+    rq=bank+MB_FP_RESPONSE_Q; rv=bank+MB_FP_RESPONSE_I;
+  );
+  level=(st+MB_CONTACT)[MB_K_LEVEL];
+  // Uncoupled upper modes retain the same observation/advance and sum order.
+  total=count; pop ? count=min(count,bank[MB_FP_RENDER_COUNT]);
+  sum=x=v=i=0; ptr=base; damper=st[MB_S_MUTE];
+  loop(floor(count/4),
+    alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
+    impulse=kick*velocity_weights[i]; r=ptr[MB_M_R]; im=ptr[MB_M_I]-impulse;
+    sum+=(-alpha*r-omega*im)*weights[i];
+    rr=ptr[MB_M_ROT_R]; ri=ptr[MB_M_ROT_I];
+    response ? (
+      cq=rq[i]; ci=rv[i]-impulse;
+      abs(level)>0 ? sum+=level*(-alpha*cq-omega*ci)*weights[i];
+      rq[i]=(cq*rr-ci*ri)*damper;
+      rv[i]=(cq*ri+ci*rr)*damper;
+    );
+    nr=(r*rr-im*ri)*damper; ni=(r*ri+im*rr)*damper;
+    ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
+    w=phi[i]; x+=w*nr; v+=w*(-alpha*nr-omega*ni);
+    ptr+=MB_MODE_STRIDE; i+=1;
+    alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
+    impulse=kick*velocity_weights[i]; r=ptr[MB_M_R]; im=ptr[MB_M_I]-impulse;
+    sum+=(-alpha*r-omega*im)*weights[i];
+    rr=ptr[MB_M_ROT_R]; ri=ptr[MB_M_ROT_I];
+    response ? (
+      cq=rq[i]; ci=rv[i]-impulse;
+      abs(level)>0 ? sum+=level*(-alpha*cq-omega*ci)*weights[i];
+      rq[i]=(cq*rr-ci*ri)*damper;
+      rv[i]=(cq*ri+ci*rr)*damper;
+    );
+    nr=(r*rr-im*ri)*damper; ni=(r*ri+im*rr)*damper;
+    ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
+    w=phi[i]; x+=w*nr; v+=w*(-alpha*nr-omega*ni);
+    ptr+=MB_MODE_STRIDE; i+=1;
+    alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
+    impulse=kick*velocity_weights[i]; r=ptr[MB_M_R]; im=ptr[MB_M_I]-impulse;
+    sum+=(-alpha*r-omega*im)*weights[i];
+    rr=ptr[MB_M_ROT_R]; ri=ptr[MB_M_ROT_I];
+    response ? (
+      cq=rq[i]; ci=rv[i]-impulse;
+      abs(level)>0 ? sum+=level*(-alpha*cq-omega*ci)*weights[i];
+      rq[i]=(cq*rr-ci*ri)*damper;
+      rv[i]=(cq*ri+ci*rr)*damper;
+    );
+    nr=(r*rr-im*ri)*damper; ni=(r*ri+im*rr)*damper;
+    ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
+    w=phi[i]; x+=w*nr; v+=w*(-alpha*nr-omega*ni);
+    ptr+=MB_MODE_STRIDE; i+=1;
+    alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
+    impulse=kick*velocity_weights[i]; r=ptr[MB_M_R]; im=ptr[MB_M_I]-impulse;
+    sum+=(-alpha*r-omega*im)*weights[i];
+    rr=ptr[MB_M_ROT_R]; ri=ptr[MB_M_ROT_I];
+    response ? (
+      cq=rq[i]; ci=rv[i]-impulse;
+      abs(level)>0 ? sum+=level*(-alpha*cq-omega*ci)*weights[i];
+      rq[i]=(cq*rr-ci*ri)*damper;
+      rv[i]=(cq*ri+ci*rr)*damper;
+    );
+    nr=(r*rr-im*ri)*damper; ni=(r*ri+im*rr)*damper;
+    ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
+    w=phi[i]; x+=w*nr; v+=w*(-alpha*nr-omega*ni);
+    ptr+=MB_MODE_STRIDE; i+=1;
+  );
+  loop(count%4,
+    alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
+    impulse=kick*velocity_weights[i]; r=ptr[MB_M_R]; im=ptr[MB_M_I]-impulse;
+    sum+=(-alpha*r-omega*im)*weights[i];
+    rr=ptr[MB_M_ROT_R]; ri=ptr[MB_M_ROT_I];
+    response ? (
+      cq=rq[i]; ci=rv[i]-impulse;
+      abs(level)>0 ? sum+=level*(-alpha*cq-omega*ci)*weights[i];
+      rq[i]=(cq*rr-ci*ri)*damper;
+      rv[i]=(cq*ri+ci*rr)*damper;
+    );
+    nr=(r*rr-im*ri)*damper; ni=(r*ri+im*rr)*damper;
+    ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
+    w=phi[i]; x+=w*nr; v+=w*(-alpha*nr-omega*ni);
+    ptr+=MB_MODE_STRIDE; i+=1;
+  );
+  next[MB_FP_Q]=x; next[MB_FP_V]=v;
+  total>count ? sum=mb_modal_render_continue(base+count*MB_MODE_STRIDE,weights+count,total-count,damper,sum);
+  sum;
+);

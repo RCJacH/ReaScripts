@@ -1,0 +1,232 @@
+// Weak-field diagonal magnetic stiffness, one transverse plane. No synthetic
+// hum, DC excitation, magnetic dissipation or two-polarization beating.
+@init
+function mb_magnet_ptr(st, base)
+global(MB_MAGNET, MB_BANK_A, MB_MG_A, MB_MG_B)
+( st+MB_MAGNET+(base==st+MB_BANK_A ? MB_MG_A : MB_MG_B); );
+
+function mb_magnet_request()
+global(p_pickup_1_magnetic_pull, p_pickup_2_magnetic_pull, magnet_force1_request, magnet_force2_request)
+(
+  magnet_force1_request=0.001*mb_clamp(p_pickup_1_magnetic_pull, 0, 200);
+  magnet_force2_request=0.001*mb_clamp(p_pickup_2_magnetic_pull, 0, 200);
+);
+
+// F(d)=Fref*((3+a)/(d+a))^3, linearized about the prescribed rest gap.
+// Return the destabilizing spring gradient in N/m, not a damping coefficient.
+function mb_magnet_gradient(force, gap)
+global(MB_MAGNET_FIELD_DEPTH)
+(
+  3000*force*(3+MB_MAGNET_FIELD_DEPTH)^3/(max(0, gap)+MB_MAGNET_FIELD_DEPTH)^4;
+);
+
+// Same effective source depth/geometry as observation. Fref remains force at
+// 3 mm for either shape. Rail's inverse-square attraction falls off more slowly
+// than the pole inverse-cube proxy. Differentiate that force, in N/m.
+function mb_magnet_field_gradient(force, gap, geometry, width)
+local(depth, power)
+global(MB_POLE_POLES, MB_POLE_RAIL, MB_PICKUP_REFERENCE_FIELD_WIDTH)
+(
+  geometry==MB_POLE_POLES && width==MB_PICKUP_REFERENCE_FIELD_WIDTH ? mb_magnet_gradient(force, gap) : (
+    depth=mb_field_source_depth(width); power=geometry==MB_POLE_RAIL ? 2 : 3;
+    1000*power*force*(3+depth)^power/(max(0, gap)+depth)^(power+1);
+  );
+);
+
+// Integral of sin^2 over the original magnetic footprint. Sensing width is a
+// field-footprint proxy; out-of-span force is zero, partial overlap loses force.
+function mb_magnet_overlap(n, position, width, length)
+local(x, w, lo, hi, coverage, k)
+global()
+(
+  x=position*0.001; w=width*0.001; k=n*$pi/length;
+  w>0 ? (
+    lo=max(0, x-w/2); hi=min(length, x+w/2); coverage=max(0, hi-lo)/w;
+    coverage>0 ? coverage*mb_clamp(0.5-0.5*cos(k*(lo+hi))*mb_sinc(k*(hi-lo)), 0, 1) : 0;
+  ) : x>0 && x<length ? sin(k*x)^2 : 0;
+);
+
+function mb_magnet_target(st, base)
+local(m, b, p, h, c, field, length, open_length, action, side, pickup, mode, spacing, stagger,
+      position, width, force, regions, coil, x, gap, gradient, i, target, geometry, field_width)
+(
+  m=st+MB_MAGNET; b=mb_magnet_ptr(st, base); p=st+MB_PICKUP_STATE;
+  h=st+MB_PICKUP_HEIGHT; c=st+MB_PICKUP_COILS;
+  field=st+MB_PICKUP_FIELD;
+  length=b[MB_MGB_LENGTH]; open_length=b[MB_MGB_OPEN];
+  target=b+MB_MGB_TARGET; memset(target, 0, MB_MAX_MODES);
+  action=max(0, 2+h[MB_PH_ACTION]);
+  side=mb_coil_split_side(floor(st/MB_STRING_WORDS), c[MB_PC_STRINGS]);
+  length>0 && open_length>0 && b[MB_MGB_MASS]>0 ? (
+    pickup=0; loop(2,
+      force=m[pickup==0 ? MB_MG_FORCE1 : MB_MG_FORCE2];
+      force>0 ? (
+        position=p[pickup==0 ? MB_PU_POSITION1 : MB_PU_POSITION2];
+        width=p[pickup==0 ? MB_PU_WIDTH1 : MB_PU_WIDTH2];
+        mode=c[pickup==0 ? MB_PC_MODE1 : MB_PC_MODE2];
+        spacing=c[pickup==0 ? MB_PC_SPACING1 : MB_PC_SPACING2];
+        stagger=c[pickup==0 ? MB_PC_STAGGER1 : MB_PC_STAGGER2];
+        geometry=field[pickup==0 ? MB_PF_GEOMETRY1 : MB_PF_GEOMETRY2];
+        field_width=MB_PICKUP_REFERENCE_FIELD_WIDTH+field[pickup==0 ? MB_PF_WIDTH1 : MB_PF_WIDTH2];
+        regions=mode==MB_COIL_SERIES || mode==MB_COIL_PARALLEL ? 2 : 1;
+        coil=0; loop(regions,
+          x=mb_coil_center(position, mode, spacing, stagger, side, coil);
+          gap=mb_coil_gap(3+h[pickup==0 ? MB_PH_DISTANCE1 : MB_PH_DISTANCE2], action,
+            length, open_length, position*0.001, x*0.001);
+          gradient=mb_magnet_field_gradient(force/regions, gap, geometry, field_width)/b[MB_MGB_MASS];
+          i=0; loop(b[MB_MGB_COUNT],
+            target[i]+=gradient*mb_magnet_overlap(i+1, x, width, length); i+=1;
+          );
+          coil+=1;
+        );
+      );
+      pickup+=1;
+    );
+  );
+);
+
+// Preserve physical q/v. Fixed magnetic coefficients are conservative; parameter
+// edits supply/remove spring potential work, recorded without amplitude boost.
+function mb_magnet_retune(st, base, immediate)
+local(b, i, ptr, bare, delta, omega, q, v, radius, before, after, fraction, current, target)
+(
+  b=mb_magnet_ptr(st, base); current=b+MB_MGB_CURRENT; target=b+MB_MGB_TARGET;
+  fraction=immediate<0 ? 0 : immediate ? 1 : 1/max(1, b[MB_MGB_LEFT]);
+  b[MB_MGB_LIMITED]=0; before=after=0; i=0;
+  loop(b[MB_MGB_COUNT],
+    current[i]+=(target[i]-current[i])*fraction;
+    ptr=base+i*MB_MODE_STRIDE; bare=(b+MB_MGB_OMEGA)[i];
+    delta=(b+MB_MGB_FREQ)[i]<0.48*srate ? min(current[i], MB_MAGNET_MAX_FRACTION*bare*bare) : 0;
+    current[i]>MB_MAGNET_MAX_FRACTION*bare*bare ? b[MB_MGB_LIMITED]+=1;
+    omega=delta>0 ? sqrt(bare*bare-delta) : bare;
+    omega!=ptr[MB_M_OMEGA] ? (
+      q=ptr[MB_M_R]; v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*ptr[MB_M_I];
+      before+=(ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2)*q*q+v*v;
+      ptr[MB_M_I]=-(v+ptr[MB_M_ALPHA]*q)/max(omega, 0.000001);
+      ptr[MB_M_OMEGA]=omega;
+      ptr[MB_M_FREQ]=delta>0 ? omega/(2*$pi) : (b+MB_MGB_FREQ)[i];
+      radius=exp(-ptr[MB_M_ALPHA]/srate);
+      ptr[MB_M_ROT_R]=radius*cos(omega/srate); ptr[MB_M_ROT_I]=radius*sin(omega/srate);
+      after+=(omega*omega+ptr[MB_M_ALPHA]^2)*q*q+v*v;
+    );
+    i+=1;
+  );
+  b[MB_MGB_WORK]=(after-before)*b[MB_MGB_MASS]*0.5;
+  b[MB_MGB_UPDATES]+=1;
+  b[MB_MGB_ON]=(st+MB_MAGNET)[MB_MG_FORCE1]>0 || (st+MB_MAGNET)[MB_MG_FORCE2]>0;
+  immediate==0 ? b[MB_MGB_LEFT]=max(0, b[MB_MGB_LEFT]-1);
+  b[MB_MGB_LEFT]>0 ? b[MB_MGB_ON]=1;
+  mb_contact_rebase(st, base);
+);
+
+// Called after ordinary coefficient calculation. Metadata is captured even at
+// zero force so a held/previous bank can later enable pull without a new pluck.
+function mb_magnet_rebase(st, base, count, cfg, g, fresh)
+local(m, b, changed, active, i, ptr, mass)
+(
+  m=st+MB_MAGNET; b=mb_magnet_ptr(st, base);
+  mass=cfg[MB_C_TENSION]/(2*g[MB_G_LENGTH]*g[MB_G_F1])^2*g[MB_G_LENGTH]/2;
+  changed=fresh || b[MB_MGB_LENGTH]!=g[MB_G_LENGTH] || b[MB_MGB_OPEN]!=cfg[MB_C_SCALE]*0.001 ||
+    b[MB_MGB_COUNT]!=min(MB_MAX_MODES, count) || abs(mass-b[MB_MGB_MASS])>0.000000000001*mass;
+  active=b[MB_MGB_ON] || m[MB_MG_FORCE1]>0 || m[MB_MG_FORCE2]>0;
+  b[MB_MGB_LENGTH]=g[MB_G_LENGTH]; b[MB_MGB_OPEN]=cfg[MB_C_SCALE]*0.001;
+  b[MB_MGB_MASS]=mass;
+  b[MB_MGB_COUNT]=min(MB_MAX_MODES, count);
+  active ? (
+    i=0; loop(b[MB_MGB_COUNT],
+      ptr=base+i*MB_MODE_STRIDE;
+      (b+MB_MGB_OMEGA)[i]=ptr[MB_M_OMEGA]; (b+MB_MGB_FREQ)[i]=ptr[MB_M_FREQ]; i+=1;
+    );
+    changed ? mb_magnet_target(st, base);
+    // Rebuild coefficients using the current field during an existing ramp.
+    // A new span/gesture has its own bank fade and starts at the target field.
+    changed ? (
+      memcpy(b+MB_MGB_CURRENT, b+MB_MGB_TARGET, MB_MAX_MODES);
+      b[MB_MGB_LEFT]=0;
+    );
+    mb_magnet_retune(st, base, -1);
+    fresh ? b[MB_MGB_WORK]=0;
+  );
+);
+
+// Ghost's post-pluck loss changes damped omega while retaining natural stiffness.
+// Transport that change into the unpulled baseline before later field edits.
+function mb_magnet_loss_rebase(st, base)
+local(b, i, ptr, bare, delta)
+(
+  b=mb_magnet_ptr(st, base);
+  b[MB_MGB_ON] ? (
+    i=0; loop(b[MB_MGB_COUNT],
+      ptr=base+i*MB_MODE_STRIDE; bare=(b+MB_MGB_OMEGA)[i];
+      delta=(b+MB_MGB_FREQ)[i]<0.48*srate ? min((b+MB_MGB_CURRENT)[i], MB_MAGNET_MAX_FRACTION*bare*bare) : 0;
+      (b+MB_MGB_OMEGA)[i]=sqrt(ptr[MB_M_OMEGA]^2+delta);
+      (b+MB_MGB_FREQ)[i]<0.48*srate ? (b+MB_MGB_FREQ)[i]=(b+MB_MGB_OMEGA)[i]/(2*$pi);
+      i+=1;
+    );
+    mb_magnet_retune(st, base, -1);
+  );
+);
+
+function mb_magnet_apply(st)
+local(m, p, h, bank, base, b, i, ptr)
+(
+  m=st+MB_MAGNET; p=st+MB_PICKUP_STATE; h=st+MB_PICKUP_HEIGHT;
+  (magnet_force1_request>0 || magnet_force2_request>0 || m[MB_MG_FORCE1]>0 || m[MB_MG_FORCE2]>0) &&
+    (m[MB_MG_FORCE1]!=magnet_force1_request || m[MB_MG_FORCE2]!=magnet_force2_request ||
+     m[MB_MG_REVISION]!=p[MB_PU_REVISION] || m[MB_MG_ACTION]!=h[MB_PH_ACTION]) ? (
+    m[MB_MG_FORCE1]=magnet_force1_request; m[MB_MG_FORCE2]=magnet_force2_request;
+    m[MB_MG_REVISION]=p[MB_PU_REVISION]; m[MB_MG_ACTION]=h[MB_PH_ACTION];
+    bank=0; loop(2,
+      base=st+(bank==0 ? MB_BANK_A : MB_BANK_B); b=mb_magnet_ptr(st, base);
+      b[MB_MGB_COUNT]>0 ? (
+        !b[MB_MGB_ON] ? (
+          i=0; loop(b[MB_MGB_COUNT],
+            ptr=base+i*MB_MODE_STRIDE;
+            (b+MB_MGB_OMEGA)[i]=ptr[MB_M_OMEGA]; (b+MB_MGB_FREQ)[i]=ptr[MB_M_FREQ]; i+=1;
+          );
+        );
+        mb_magnet_target(st, base);
+        b[MB_MGB_LEFT]=max(1, ceil(MB_MAGNET_SMOOTH_MS*0.001*srate/MB_MAGNET_INTERVAL));
+        b[MB_MGB_CLOCK]=0; b[MB_MGB_ON]=1;
+        m[MB_MG_BUSY]=1;
+      );
+      bank+=1;
+    );
+  );
+);
+
+function mb_magnet_tick(st)
+local(bank, base, b, busy)
+global(MB_BANK_A, MB_BANK_B, MB_MGB_LEFT, MB_MGB_CLOCK, MB_MAGNET_INTERVAL, MB_MAGNET, MB_MG_BUSY)
+(
+  (st+MB_MAGNET)[MB_MG_BUSY] ? (
+    busy=bank=0; loop(2,
+      base=st+(bank==0 ? MB_BANK_A : MB_BANK_B); b=mb_magnet_ptr(st, base);
+      b[MB_MGB_LEFT]>0 ? (
+        b[MB_MGB_CLOCK]-=1;
+        b[MB_MGB_CLOCK]<=0 ? (
+          mb_magnet_retune(st, base, 0); b[MB_MGB_CLOCK]=MB_MAGNET_INTERVAL;
+        );
+        busy+=b[MB_MGB_LEFT]>0;
+      );
+      bank+=1;
+    );
+    (st+MB_MAGNET)[MB_MG_BUSY]=busy>0;
+  );
+);
+
+function mb_magnet_clear(st)
+global(MB_MAGNET, MB_MG_A, MB_MAGNET_WORDS, MB_MG_HEADER, MB_MG_BUSY)
+(
+  memset(st+MB_MAGNET+MB_MG_A, 0, MB_MAGNET_WORDS-MB_MG_HEADER);
+  (st+MB_MAGNET)[MB_MG_BUSY]=0;
+);
+
+function mb_magnet_frequency(st, frequency)
+local(partial)
+global(MB_S_ACTIVE, MB_S_COUNT, MB_S_HARMONIC, MB_MODE_STRIDE, MB_M_FREQ, MB_MGB_ON)
+(
+  partial=max(1, st[MB_S_HARMONIC]);
+  mb_magnet_ptr(st, st[MB_S_ACTIVE])[MB_MGB_ON] && st[MB_S_COUNT]>=partial ?
+    (st[MB_S_ACTIVE]+(partial-1)*MB_MODE_STRIDE)[MB_M_FREQ] : frequency;
+);

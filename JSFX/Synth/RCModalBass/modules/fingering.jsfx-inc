@@ -1,0 +1,95 @@
+// Event-only Auto allocation preferences; no excitation or modal state.
+@init
+function mb_fingering_request()
+global(p_fingering_strategy, fingering_strategy_request, p_chord_mode, chord_mode_request,
+       MB_FINGERING_LOW_POSITION, MB_FINGERING_LOCK_POSITION)
+(
+  fingering_strategy_request=mb_clamp(floor(p_fingering_strategy),MB_FINGERING_LOW_POSITION,MB_FINGERING_LOCK_POSITION);
+  chord_mode_request=p_chord_mode>=0.5;
+);
+
+function mb_fingering_apply()
+global(fingering_strategy_current, fingering_strategy_request, hand_lock_current, MB_FINGERING_LOCK_POSITION,
+       chord_mode_current, chord_mode_request)
+(
+  fingering_strategy_current=fingering_strategy_request;
+  hand_lock_current=fingering_strategy_current==MB_FINGERING_LOCK_POSITION;
+  chord_mode_current=chord_mode_request;
+);
+
+function mb_fingering_init()
+global()
+( mb_fingering_request(); mb_fingering_apply(); );
+
+// Explicit Manual/Force/channel assignments keep their full physical reach.
+// Existing open strings need no fretting hand; Capo is checked by the caller.
+function mb_fingering_reachable(fret)
+local(start)
+global(hand_lock_current, channel_mode_current, MB_RACK, MB_R_HAND_START, hand_span_current, fret_count_current)
+(
+  !hand_lock_current || channel_mode_current>0 || mb_string_selection()>0 ? 1 : (
+    fret=mb_hand_fret(fret); start=MB_RACK[MB_R_HAND_START];
+    fret<=0.000000001 ||
+      (fret>=start-0.000000001 && fret<=min(fret_count_current,start+hand_span_current)+0.000000001);
+  );
+);
+
+// Release does not erase string continuity; MIDI Reset clears ACCEPTED history.
+function mb_fingering_same(index)
+global(MB_NOTES, MB_NH_ACCEPTED, MB_RACK, MB_R_LAST_ROUTE)
+(
+  MB_NOTES[MB_NH_ACCEPTED]>0 && index==MB_RACK[MB_R_LAST_ROUTE];
+);
+
+// Low/high are pitch-ranked enabled strings, including fine detuning.
+// With an odd string count the middle pitch belongs to both halves.
+// At most six comparisons, only on allocation/articulation events.
+function mb_fingering_open_preferred(index)
+local(slot, pitch, i, other, other_pitch, count, below)
+global(hand_open_current, MB_OPEN_FRETTED_FIRST, MB_OPEN_PREFER_LOW, MB_OPEN_PREFER_ALL,
+       MB_MAX_STRINGS, MB_RS_ENABLED, MB_RS_OPEN, MB_RS_FINE)
+(
+  slot=mb_rack_slot(index);
+  !slot[MB_RS_ENABLED] || hand_open_current==MB_OPEN_FRETTED_FIRST ? 0 :
+  hand_open_current==MB_OPEN_PREFER_ALL ? 1 : (
+    pitch=slot[MB_RS_OPEN]+slot[MB_RS_FINE]*0.01;
+    i=count=below=0;
+    loop(MB_MAX_STRINGS,
+      other=mb_rack_slot(i);
+      other[MB_RS_ENABLED] ? (
+        other_pitch=other[MB_RS_OPEN]+other[MB_RS_FINE]*0.01;
+        count+=1;
+        other_pitch<pitch || (other_pitch==pitch && mb_string_number(i)>mb_string_number(index)) ? below+=1;
+      );
+      i+=1;
+    );
+    hand_open_current==MB_OPEN_PREFER_LOW ? below<ceil(count*0.5) : below>=floor(count*0.5);
+  );
+);
+
+// A selected open drone remains protected under Let Ring after key release.
+// Damping tails and lifted/re-fretted notes do not acquire drone status.
+function mb_fingering_open_drone(index)
+local(owner)
+global(MB_O_KEY_DOWN, MB_O_FRET_ANCHOR, MB_O_STATE, MB_O_SOURCE_CHANNEL,
+       MB_VOICE_RINGING, MB_LIVE, MB_L_FRET_TARGET)
+(
+  owner=mb_owner_ptr(index);
+  owner[MB_O_FRET_ANCHOR]<=0.000000001 &&
+    (mb_rack_string(index)+MB_LIVE)[MB_L_FRET_TARGET]<=0.000000001 &&
+    (owner[MB_O_KEY_DOWN] ||
+      (owner[MB_O_STATE]==MB_VOICE_RINGING && mb_ring_active(owner[MB_O_SOURCE_CHANNEL]))) &&
+    mb_fingering_open_preferred(index);
+);
+
+function mb_fingering_cost(index, fret, distance, span)
+local(gap)
+(
+  fingering_strategy_current==MB_FINGERING_LOW_POSITION ? fret :
+  fingering_strategy_current==MB_FINGERING_NEAREST ||
+    fingering_strategy_current==MB_FINGERING_LOCK_POSITION ? distance : (
+    gap=MB_NOTES[MB_NH_ACCEPTED]>0 ?
+      abs(mb_string_number(index)-mb_string_number(MB_RACK[MB_R_LAST_ROUTE])) : 0;
+    MB_EASY_SHIFT_COST*distance+MB_EASY_SPAN_COST*span+MB_EASY_STRING_COST*gap;
+  );
+);

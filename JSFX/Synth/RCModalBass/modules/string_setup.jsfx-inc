@@ -1,0 +1,408 @@
+// Per-string construction, sustain and open-note calibration.
+@init
+
+// ---- construction ----
+// Per-string gauge, stiffness and construction; pack presets remain reserved.
+// @slider captures scalar requests; @block applies them for the next gesture.
+function mb_gauge_request()
+local(changed)
+(
+  changed=gauge_request6!=mb_clamp(p_string_6_gauge, 6, 200) ||
+    gauge_request5!=mb_clamp(p_string_5_gauge, 6, 200) ||
+    gauge_request4!=mb_clamp(p_string_4_gauge, 6, 200) ||
+    gauge_request3!=mb_clamp(p_string_3_gauge, 6, 200) ||
+    gauge_request2!=mb_clamp(p_string_2_gauge, 6, 200) ||
+    gauge_request1!=mb_clamp(p_string_1_gauge, 6, 200);
+  gauge_request6=mb_clamp(p_string_6_gauge, 6, 200);
+  gauge_request5=mb_clamp(p_string_5_gauge, 6, 200);
+  gauge_request4=mb_clamp(p_string_4_gauge, 6, 200);
+  gauge_request3=mb_clamp(p_string_3_gauge, 6, 200);
+  gauge_request2=mb_clamp(p_string_2_gauge, 6, 200);
+  gauge_request1=mb_clamp(p_string_1_gauge, 6, 200);
+  changed;
+);
+
+function mb_gauge_apply_requests()
+global(gauge_current1, gauge_current2, gauge_current3, gauge_current4, gauge_current5, gauge_current6,
+       gauge_request1, gauge_request2, gauge_request3, gauge_request4, gauge_request5, gauge_request6)
+(
+  gauge_current6=gauge_request6; gauge_current5=gauge_request5;
+  gauge_current4=gauge_request4; gauge_current3=gauge_request3;
+  gauge_current2=gauge_request2; gauge_current1=gauge_request1;
+);
+
+// Stable physical RAM order E/A/D/G/B/C, independent of tuning or MIDI routing.
+function mb_gauge_current(index)
+global(gauge_current1, gauge_current2, gauge_current3, gauge_current4, gauge_current5, gauge_current6)
+(
+  index==0 ? gauge_current5 : index==1 ? gauge_current4 : index==2 ? gauge_current3 :
+    index==3 ? gauge_current2 : index==4 ? gauge_current6 : gauge_current1;
+);
+
+// Diameter in 0.001 inches. Keep pitch by scaling tuned tension with mass ratio.
+// The existing geometry derives mass ~ diameter^2 and rigidity ~ diameter^4.
+function mb_gauge_configuration(cfg, index)
+local(gauge, previous, reference)
+global(MB_C_GAUGE, MB_C_REFERENCE, MB_C_TENSION)
+(
+  gauge=mb_gauge_current(index); reference=mb_ref_gauge(cfg[MB_C_REFERENCE]);
+  previous=cfg[MB_C_GAUGE]>0 ? cfg[MB_C_GAUGE] : reference;
+  cfg[MB_C_TENSION]*=(gauge/previous)^2;
+  // Zero is the legacy reference-gauge sentinel, preserving default RAM/audio.
+  cfg[MB_C_GAUGE]=gauge==reference ? 0 : gauge;
+);
+
+function mb_gauge_pending(st, index)
+local(cfg, gauge)
+global(MB_CONFIG, MB_C_GAUGE, MB_C_REFERENCE)
+(
+  cfg=st+MB_CONFIG;
+  gauge=cfg[MB_C_GAUGE]>0 ? cfg[MB_C_GAUGE] : mb_ref_gauge(cfg[MB_C_REFERENCE]);
+  abs(gauge-mb_gauge_current(index))>0.000000001;
+);
+
+function mb_stiffness_request()
+local(changed)
+(
+  changed=reference_inharmonicity_request!=mb_clamp(p_reference_inharmonicity, 0, 0.003) ||
+    stiffness_request6!=mb_clamp(p_string_6_stiffness_multiplier, 0.25, 4) ||
+    stiffness_request5!=mb_clamp(p_string_5_stiffness_multiplier, 0.25, 4) ||
+    stiffness_request4!=mb_clamp(p_string_4_stiffness_multiplier, 0.25, 4) ||
+    stiffness_request3!=mb_clamp(p_string_3_stiffness_multiplier, 0.25, 4) ||
+    stiffness_request2!=mb_clamp(p_string_2_stiffness_multiplier, 0.25, 4) ||
+    stiffness_request1!=mb_clamp(p_string_1_stiffness_multiplier, 0.25, 4);
+  reference_inharmonicity_request=mb_clamp(p_reference_inharmonicity, 0, 0.003);
+  stiffness_request6=mb_clamp(p_string_6_stiffness_multiplier, 0.25, 4);
+  stiffness_request5=mb_clamp(p_string_5_stiffness_multiplier, 0.25, 4);
+  stiffness_request4=mb_clamp(p_string_4_stiffness_multiplier, 0.25, 4);
+  stiffness_request3=mb_clamp(p_string_3_stiffness_multiplier, 0.25, 4);
+  stiffness_request2=mb_clamp(p_string_2_stiffness_multiplier, 0.25, 4);
+  stiffness_request1=mb_clamp(p_string_1_stiffness_multiplier, 0.25, 4);
+  changed;
+);
+
+function mb_stiffness_apply_requests()
+(
+  reference_inharmonicity_current=reference_inharmonicity_request;
+  stiffness_current6=stiffness_request6; stiffness_current5=stiffness_request5;
+  stiffness_current4=stiffness_request4; stiffness_current3=stiffness_request3;
+  stiffness_current2=stiffness_request2; stiffness_current1=stiffness_request1;
+);
+
+function mb_stiffness_current(index)
+global(stiffness_current1, stiffness_current2, stiffness_current3,
+       stiffness_current4, stiffness_current5, stiffness_current6)
+(
+  index==0 ? stiffness_current5 : index==1 ? stiffness_current4 : index==2 ? stiffness_current3 :
+    index==3 ? stiffness_current2 : index==4 ? stiffness_current6 : stiffness_current1;
+);
+
+function mb_stiffness_configuration(cfg, index)
+local(multiplier)
+global(MB_C_STIFFNESS, MB_C_STIFFNESS_TRIM)
+(
+  multiplier=mb_stiffness_current(index);
+  cfg[MB_C_STIFFNESS]*=multiplier/(1+cfg[MB_C_STIFFNESS_TRIM]);
+  cfg[MB_C_STIFFNESS_TRIM]=multiplier-1;
+);
+
+function mb_stiffness_pending(st, index)
+local(cfg, multiplier)
+global(MB_CONFIG, MB_C_STIFFNESS, MB_C_STIFFNESS_TRIM, reference_inharmonicity_current)
+(
+  cfg=st+MB_CONFIG; multiplier=mb_stiffness_current(index);
+  abs(cfg[MB_C_STIFFNESS_TRIM]-(multiplier-1))>0.000000001 ||
+    abs(cfg[MB_C_STIFFNESS]-reference_inharmonicity_current*multiplier)>0.000000000001;
+);
+
+function mb_winding_request()
+local(changed)
+(
+  changed=winding_request6!=mb_clamp(floor(p_string_6_winding), 0, 3) ||
+    winding_request5!=mb_clamp(floor(p_string_5_winding), 0, 3) ||
+    winding_request4!=mb_clamp(floor(p_string_4_winding), 0, 3) ||
+    winding_request3!=mb_clamp(floor(p_string_3_winding), 0, 3) ||
+    winding_request2!=mb_clamp(floor(p_string_2_winding), 0, 3) ||
+    winding_request1!=mb_clamp(floor(p_string_1_winding), 0, 3);
+  winding_request6=mb_clamp(floor(p_string_6_winding), 0, 3);
+  winding_request5=mb_clamp(floor(p_string_5_winding), 0, 3);
+  winding_request4=mb_clamp(floor(p_string_4_winding), 0, 3);
+  winding_request3=mb_clamp(floor(p_string_3_winding), 0, 3);
+  winding_request2=mb_clamp(floor(p_string_2_winding), 0, 3);
+  winding_request1=mb_clamp(floor(p_string_1_winding), 0, 3);
+  changed;
+);
+
+function mb_winding_apply_requests()
+global(winding_current1, winding_current2, winding_current3, winding_current4, winding_current5, winding_current6,
+       winding_request1, winding_request2, winding_request3, winding_request4, winding_request5, winding_request6)
+(
+  winding_current6=winding_request6; winding_current5=winding_request5;
+  winding_current4=winding_request4; winding_current3=winding_request3;
+  winding_current2=winding_request2; winding_current1=winding_request1;
+);
+
+function mb_winding_current(index)
+global(winding_current1, winding_current2, winding_current3, winding_current4, winding_current5, winding_current6)
+(
+  index==0 ? winding_current5 : index==1 ? winding_current4 : index==2 ? winding_current3 :
+    index==3 ? winding_current2 : index==4 ? winding_current6 : winding_current1;
+);
+
+function mb_winding_configuration(cfg, index)
+local(kind, previous, reference)
+global(MB_C_WINDING, MB_C_REFERENCE, MB_C_TENSION, MB_C_HF_LOSS, MB_WINDING_ROUND)
+(
+  kind=mb_winding_current(index); previous=cfg[MB_C_WINDING]+MB_WINDING_ROUND;
+  reference=cfg[MB_C_REFERENCE];
+  cfg[MB_C_TENSION]*=mb_winding_mass(reference, kind)/mb_winding_mass(reference, previous);
+  cfg[MB_C_HF_LOSS]*=mb_winding_loss(kind)/mb_winding_loss(previous);
+  cfg[MB_C_WINDING]=kind-MB_WINDING_ROUND;
+);
+
+function mb_winding_pending(st, index)
+global(MB_CONFIG, MB_C_WINDING, MB_WINDING_ROUND)
+( (st+MB_CONFIG)[MB_C_WINDING]+MB_WINDING_ROUND!=mb_winding_current(index); );
+
+// Gauge, stiffness and winding together; distinct from winding-only helpers.
+function mb_string_setup_request()
+local(gauge_changed, stiffness_changed, winding_changed)
+global()
+(
+  // Capture every mailbox even when several properties change in one edit.
+  gauge_changed=mb_gauge_request(); stiffness_changed=mb_stiffness_request();
+  winding_changed=mb_winding_request();
+  gauge_changed || stiffness_changed || winding_changed;
+);
+
+function mb_string_setup_apply_requests()
+global()
+( mb_gauge_apply_requests(); mb_stiffness_apply_requests(); mb_winding_apply_requests(); );
+
+function mb_string_setup_configuration(cfg, index)
+global()
+( mb_gauge_configuration(cfg, index); mb_stiffness_configuration(cfg, index); mb_winding_configuration(cfg, index); );
+
+function mb_string_setup_pending(st, index)
+global()
+( mb_gauge_pending(st, index) || mb_stiffness_pending(st, index) || mb_winding_pending(st, index); );
+
+// ---- sustain ----
+// Per-string intrinsic loss, captured at the next pluck/tap. No modal or UI RAM.
+// @slider writes requests; @block applies settings; existing mode loops do the DSP.
+function mb_sustain_request()
+local(changed)
+(
+  changed=sustain_t60_request!=mb_clamp(p_t60, 0.2, 40) ||
+    sustain_hf_loss_request!=mb_clamp(p_hf_loss, 0, 60) ||
+    sustain_decay6_request!=mb_clamp(p_string_6_low_frequency_decay_multiplier, 0.25, 4) ||
+    sustain_decay5_request!=mb_clamp(p_string_5_low_frequency_decay_multiplier, 0.25, 4) ||
+    sustain_decay4_request!=mb_clamp(p_string_4_low_frequency_decay_multiplier, 0.25, 4) ||
+    sustain_decay3_request!=mb_clamp(p_string_3_low_frequency_decay_multiplier, 0.25, 4) ||
+    sustain_decay2_request!=mb_clamp(p_string_2_low_frequency_decay_multiplier, 0.25, 4) ||
+    sustain_decay1_request!=mb_clamp(p_string_1_low_frequency_decay_multiplier, 0.25, 4) ||
+    sustain_hf6_request!=mb_clamp(p_string_6_high_frequency_loss_multiplier, 0.25, 4) ||
+    sustain_hf5_request!=mb_clamp(p_string_5_high_frequency_loss_multiplier, 0.25, 4) ||
+    sustain_hf4_request!=mb_clamp(p_string_4_high_frequency_loss_multiplier, 0.25, 4) ||
+    sustain_hf3_request!=mb_clamp(p_string_3_high_frequency_loss_multiplier, 0.25, 4) ||
+    sustain_hf2_request!=mb_clamp(p_string_2_high_frequency_loss_multiplier, 0.25, 4) ||
+    sustain_hf1_request!=mb_clamp(p_string_1_high_frequency_loss_multiplier, 0.25, 4) ||
+    sustain_age6_request!=mb_clamp(p_string_6_age, 0, 100) ||
+    sustain_age5_request!=mb_clamp(p_string_5_age, 0, 100) ||
+    sustain_age4_request!=mb_clamp(p_string_4_age, 0, 100) ||
+    sustain_age3_request!=mb_clamp(p_string_3_age, 0, 100) ||
+    sustain_age2_request!=mb_clamp(p_string_2_age, 0, 100) ||
+    sustain_age1_request!=mb_clamp(p_string_1_age, 0, 100);
+  sustain_t60_request=mb_clamp(p_t60, 0.2, 40);
+  sustain_hf_loss_request=mb_clamp(p_hf_loss, 0, 60);
+  sustain_decay6_request=mb_clamp(p_string_6_low_frequency_decay_multiplier, 0.25, 4);
+  sustain_decay5_request=mb_clamp(p_string_5_low_frequency_decay_multiplier, 0.25, 4);
+  sustain_decay4_request=mb_clamp(p_string_4_low_frequency_decay_multiplier, 0.25, 4);
+  sustain_decay3_request=mb_clamp(p_string_3_low_frequency_decay_multiplier, 0.25, 4);
+  sustain_decay2_request=mb_clamp(p_string_2_low_frequency_decay_multiplier, 0.25, 4);
+  sustain_decay1_request=mb_clamp(p_string_1_low_frequency_decay_multiplier, 0.25, 4);
+  sustain_hf6_request=mb_clamp(p_string_6_high_frequency_loss_multiplier, 0.25, 4);
+  sustain_hf5_request=mb_clamp(p_string_5_high_frequency_loss_multiplier, 0.25, 4);
+  sustain_hf4_request=mb_clamp(p_string_4_high_frequency_loss_multiplier, 0.25, 4);
+  sustain_hf3_request=mb_clamp(p_string_3_high_frequency_loss_multiplier, 0.25, 4);
+  sustain_hf2_request=mb_clamp(p_string_2_high_frequency_loss_multiplier, 0.25, 4);
+  sustain_hf1_request=mb_clamp(p_string_1_high_frequency_loss_multiplier, 0.25, 4);
+  sustain_age6_request=mb_clamp(p_string_6_age, 0, 100);
+  sustain_age5_request=mb_clamp(p_string_5_age, 0, 100);
+  sustain_age4_request=mb_clamp(p_string_4_age, 0, 100);
+  sustain_age3_request=mb_clamp(p_string_3_age, 0, 100);
+  sustain_age2_request=mb_clamp(p_string_2_age, 0, 100);
+  sustain_age1_request=mb_clamp(p_string_1_age, 0, 100);
+  changed;
+);
+
+function mb_sustain_apply_requests()
+(
+  sustain_t60_current=sustain_t60_request;
+  sustain_hf_loss_current=sustain_hf_loss_request;
+  sustain_decay6_current=sustain_decay6_request;
+  sustain_decay5_current=sustain_decay5_request;
+  sustain_decay4_current=sustain_decay4_request;
+  sustain_decay3_current=sustain_decay3_request;
+  sustain_decay2_current=sustain_decay2_request;
+  sustain_decay1_current=sustain_decay1_request;
+  sustain_hf6_current=sustain_hf6_request;
+  sustain_hf5_current=sustain_hf5_request;
+  sustain_hf4_current=sustain_hf4_request;
+  sustain_hf3_current=sustain_hf3_request;
+  sustain_hf2_current=sustain_hf2_request;
+  sustain_hf1_current=sustain_hf1_request;
+  sustain_age6_current=sustain_age6_request;
+  sustain_age5_current=sustain_age5_request;
+  sustain_age4_current=sustain_age4_request;
+  sustain_age3_current=sustain_age3_request;
+  sustain_age2_current=sustain_age2_request;
+  sustain_age1_current=sustain_age1_request;
+);
+
+// Stable E/A/D/G/B/C slots, independent of retuning or display order.
+function mb_sustain_t60(index)
+local(value)
+global(sustain_t60_current, sustain_decay1_current, sustain_decay2_current, sustain_decay3_current, sustain_decay4_current, sustain_decay5_current, sustain_decay6_current)
+(
+  value=index==0 ? sustain_decay5_current : index==1 ? sustain_decay4_current : index==2 ? sustain_decay3_current :
+    index==3 ? sustain_decay2_current : index==4 ? sustain_decay6_current : sustain_decay1_current;
+  sustain_t60_current*value;
+);
+
+function mb_sustain_hf_loss(index, construction)
+local(value)
+global(sustain_hf_loss_current, sustain_hf1_current, sustain_hf2_current, sustain_hf3_current, sustain_hf4_current, sustain_hf5_current, sustain_hf6_current)
+(
+  value=index==0 ? sustain_hf5_current : index==1 ? sustain_hf4_current : index==2 ? sustain_hf3_current :
+    index==3 ? sustain_hf2_current : index==4 ? sustain_hf6_current : sustain_hf1_current;
+  sustain_hf_loss_current*mb_winding_loss(construction)*value;
+);
+
+function mb_sustain_age(index)
+local(value)
+global(sustain_age1_current, sustain_age2_current, sustain_age3_current, sustain_age4_current, sustain_age5_current, sustain_age6_current)
+(
+  value=index==0 ? sustain_age5_current : index==1 ? sustain_age4_current : index==2 ? sustain_age3_current :
+    index==3 ? sustain_age2_current : index==4 ? sustain_age6_current : sustain_age1_current;
+  value;
+);
+
+// Rebuild from captured baselines, never multiply an already-refined setting.
+// Construction has already selected the profile; its loss factor appears once.
+function mb_sustain_configuration(cfg, index)
+global(MB_C_T60, MB_C_HF_LOSS, MB_C_AGE, MB_C_WINDING, MB_WINDING_ROUND)
+(
+  cfg[MB_C_T60]=mb_sustain_t60(index);
+  cfg[MB_C_HF_LOSS]=mb_sustain_hf_loss(index, cfg[MB_C_WINDING]+MB_WINDING_ROUND);
+  cfg[MB_C_AGE]=mb_sustain_age(index);
+);
+
+function mb_sustain_pending(st, index)
+local(cfg)
+global(MB_CONFIG, MB_C_T60, MB_C_HF_LOSS, MB_C_AGE)
+(
+  cfg=st+MB_CONFIG;
+  abs(cfg[MB_C_T60]-mb_sustain_t60(index))>0.000000001 ||
+    abs(cfg[MB_C_HF_LOSS]-mb_sustain_hf_loss(index, mb_winding_current(index)))>0.000000001 ||
+    abs(cfg[MB_C_AGE]-mb_sustain_age(index))>0.000000001;
+);
+
+// ---- tuning ----
+// Pending tuning and fixed physical-string calibration. No oscillator state here.
+function mb_ref_midi(reference)
+global()
+(
+  reference==0 ? 28 : reference==1 ? 33 : reference==2 ? 38 :
+  reference==3 ? 43 : reference==4 ? 23 : 48;
+);
+
+function mb_tuned_frequency(reference, open_note, cents)
+global(tuning_a4_current)
+(
+  // Reference rounding is retained for exact approved default plucks.
+  mb_ref_frequency(reference)*2^((open_note-mb_ref_midi(reference))/12+cents/1200)*(tuning_a4_current/440);
+);
+
+function mb_tuned_configuration(cfg, reference, open_note, cents, fret, bend)
+local(ratio, scale)
+global(MB_C_FRET, MB_C_GAUGE, MB_C_REFERENCE, MB_C_SCALE, MB_C_TENSION, MB_C_A4_OFFSET, fret_count_current)
+(
+  mb_capture_configuration(cfg, reference);
+  cfg[MB_C_REFERENCE]=reference; cfg[MB_C_FRET]=mb_clamp(fret, 0, fret_count_current);
+  ratio=(cfg[MB_C_GAUGE]>0 ? cfg[MB_C_GAUGE] : mb_ref_gauge(reference))/mb_ref_gauge(reference);
+  scale=cfg[MB_C_SCALE]/863.6;
+  // mu * (2*L0*f_open)^2. Tuning changes tension, never vibrating length.
+  cfg[MB_C_TENSION]=180*ratio^2*scale^2*
+    2^((open_note-mb_ref_midi(reference))/6+cents/600);
+  cfg[MB_C_TENSION]*=(1+cfg[MB_C_A4_OFFSET]/440)^2;
+  cfg[MB_C_TENSION]*=2^(bend/6);
+);
+
+// @slider mailboxes are scalars, separate from audio-owned rack settings.
+function mb_tuning_request()
+local(changed, sustain_changed)
+(
+  sustain_changed=mb_sustain_request();
+  changed=mb_string_setup_request() || sustain_changed || rack_count_request!=mb_clamp(floor(p_string_count), 1, MB_MAX_STRINGS) ||
+    tuning_a4_request!=mb_clamp(p_a4, 400, 480) ||
+    p_open6!=tune_open6 || p_open5!=tune_open5 || p_open4!=tune_open4 ||
+    p_open3!=tune_open3 || p_open2!=tune_open2 || p_open1!=tune_open1 ||
+    p_fine6!=tune_fine6 || p_fine5!=tune_fine5 || p_fine4!=tune_fine4 ||
+    p_fine3!=tune_fine3 || p_fine2!=tune_fine2 || p_fine1!=tune_fine1;
+  rack_count_request=mb_clamp(floor(p_string_count), 1, MB_MAX_STRINGS);
+  tuning_a4_request=mb_clamp(p_a4, 400, 480);
+  tune_open6=p_open6; tune_open5=p_open5; tune_open4=p_open4;
+  tune_open3=p_open3; tune_open2=p_open2; tune_open1=p_open1;
+  tune_fine6=p_fine6; tune_fine5=p_fine5; tune_fine4=p_fine4;
+  tune_fine3=p_fine3; tune_fine2=p_fine2; tune_fine1=p_fine1;
+  changed ? rack_configuration_revision+=1;
+);
+
+function mb_tuning_requested_open(index)
+global(tune_open1, tune_open2, tune_open3, tune_open4, tune_open5, tune_open6)
+(
+  mb_clamp(floor(index==0 ? tune_open5 : index==1 ? tune_open4 : index==2 ? tune_open3 :
+    index==3 ? tune_open2 : index==4 ? tune_open6 : tune_open1), 0, 127);
+);
+function mb_tuning_requested_fine(index)
+global(tune_fine1, tune_fine2, tune_fine3, tune_fine4, tune_fine5, tune_fine6)
+(
+  mb_clamp(index==0 ? tune_fine5 : index==1 ? tune_fine4 : index==2 ? tune_fine3 :
+    index==3 ? tune_fine2 : index==4 ? tune_fine6 : tune_fine1, -100, 100);
+);
+function mb_tuning_requested_reference(index)
+global()
+(
+  // Physical slots E/A/D/G/B/C retain their calibration when retuned.
+  mb_clamp(floor(index), 0, 5);
+);
+
+function mb_tuning_preset_reference(preset, index)
+global()
+(
+  // All presets keep E/A/D/G/B/C in the same physical slots. B and C are
+  // enabled by the 5/6-string counts; routing sorts nominal tuning separately.
+  index;
+);
+function mb_tuning_preset_count(preset)
+global()
+( preset==1 ? 4 : preset==2 ? 5 : 6; );
+
+// Audio thread updates native controls after an explicit preset transaction.
+// Separate slider references avoid masks above the exact integer bit range.
+function mb_tuning_publish_slot(index, open_note, cents)
+(
+  index==0 ? (p_open5=open_note; p_fine5=cents;
+    sliderchange(p_open5); sliderchange(p_fine5);) :
+  index==1 ? (p_open4=open_note; p_fine4=cents;
+    sliderchange(p_open4); sliderchange(p_fine4);) :
+  index==2 ? (p_open3=open_note; p_fine3=cents;
+    sliderchange(p_open3); sliderchange(p_fine3);) :
+  index==3 ? (p_open2=open_note; p_fine2=cents;
+    sliderchange(p_open2); sliderchange(p_fine2);) :
+  index==4 ? (p_open6=open_note; p_fine6=cents;
+    sliderchange(p_open6); sliderchange(p_fine6);) :
+  (p_open1=open_note; p_fine1=cents;
+    sliderchange(p_open1); sliderchange(p_fine1););
+);

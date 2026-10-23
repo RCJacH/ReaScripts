@@ -1,0 +1,365 @@
+// Held-note returns and Hammer-on/Pull-off/Tap finger forces.
+@init
+
+// ---- hopo ----
+// HO/PO and tap ownership, held-key returns and gesture work allowances.
+// Shared finite pulses follow the ownership helpers; no moving-contact solver is used.
+function mb_hopo_ptr(index)
+global(MB_HOPO, MB_HOPO_WORDS)
+( MB_HOPO + index * MB_HOPO_WORDS; );
+
+// Finger reach may stretch to a fifth, without transposing chord peers.
+function mb_hopo_fits(index, channel, target)
+local(played)
+global(channel_mode_current, MB_CTRL_SLIDE, midi_slide_range_current,
+       hand_fretted, hand_high, hand_low, MB_HOPO_REACH)
+(
+  played = target + mb_midi_note_input(channel, MB_CTRL_SLIDE) * midi_slide_range_current;
+  mb_hand_measure(index, played);
+  mb_fingering_reachable(played) &&
+    (channel_mode_current > 0 || hand_fretted < 2 || hand_high - hand_low <= MB_HOPO_REACH);
+);
+
+// A bounded held-key set, not a second MIDI queue. FIFO records remain the
+// authority for releases. Serial/epoch checks reject released or recycled slots.
+function mb_hopo_held_prune(index)
+local(hp, i, count, entry, rec)
+(
+  hp = mb_hopo_ptr(index);
+  i = count = 0;
+  loop(hp[MB_HP_HELD_COUNT],
+    entry = hp + MB_HP_HELD + 2 * i;
+    rec = mb_note_ptr(entry[0]);
+    rec[MB_N_ALLOCATED] && rec[MB_N_SERIAL] == entry[1] &&
+    rec[MB_N_STRING] == index && rec[MB_N_ROLE] == MB_ROLE_NOTE &&
+    rec[MB_N_EPOCH] == mb_channel_ptr(rec[MB_N_CHANNEL])[MB_CH_EPOCH] ? (
+      hp[MB_HP_HELD + 2 * count] = entry[0];
+      hp[MB_HP_HELD + 2 * count + 1] = entry[1];
+      count += 1;
+    );
+    i += 1;
+  );
+  hp[MB_HP_HELD_COUNT] = count;
+);
+
+function mb_hopo_held_add(index, record)
+local(hp, i, found, count)
+global(MB_HP_HELD_COUNT, MB_HP_HELD, MB_HOPO_HELD_LIMIT, MB_N_SERIAL)
+(
+  mb_hopo_held_prune(index);
+  hp = mb_hopo_ptr(index);
+  count = hp[MB_HP_HELD_COUNT];
+  i = found = 0;
+  loop(count, found = found || hp[MB_HP_HELD + 2 * i] == record; i += 1;);
+  !found ? (
+    count == MB_HOPO_HELD_LIMIT ? (
+      i = 1;
+      loop(count - 1,
+        hp[MB_HP_HELD + 2 * (i - 1)] = hp[MB_HP_HELD + 2 * i];
+        hp[MB_HP_HELD + 2 * (i - 1) + 1] = hp[MB_HP_HELD + 2 * i + 1];
+        i += 1;
+      );
+      count -= 1;
+    );
+    hp[MB_HP_HELD + 2 * count] = record;
+    hp[MB_HP_HELD + 2 * count + 1] = mb_note_ptr(record)[MB_N_SERIAL];
+    hp[MB_HP_HELD_COUNT] = count + 1;
+  );
+);
+
+// No chord-wide move: a new finger must fit the other held fretted notes.
+function mb_hopo_select(channel, note)
+local(index, chosen, newest, target, owner)
+global(MB_MAX_STRINGS, MB_O_FRET_ANCHOR, MB_O_SERIAL)
+(
+  chosen = -1;
+  newest = -1;
+  index = 0;
+  loop(MB_MAX_STRINGS,
+    target = mb_legato_candidate_fret(index, channel, note);
+    target < 0 ? target = mb_fretting_quiet_candidate(index, channel, note);
+    owner = mb_owner_ptr(index);
+    target >= 0 && abs(target - owner[MB_O_FRET_ANCHOR]) > 0.000000001 &&
+    mb_hopo_fits(index, channel, target) && owner[MB_O_SERIAL] > newest ? (
+      chosen = index;
+      newest = owner[MB_O_SERIAL];
+    );
+    index += 1;
+  );
+  chosen;
+);
+
+// Shared finger gesture: HO/PO continuation, tap, or held-key return.
+// Rebinding an old record updates its generation; it does not fabricate a note-on.
+function mb_hopo_apply(record, index, channel, target, velocity)
+local(st, hp, owner, length, energy, kind, source_fret, accepted, tapping, held,
+      slot, played, bend, cfg, reference, seeded)
+(
+  accepted = 0;
+  st = mb_rack_string(index);
+  hp = mb_hopo_ptr(index);
+  owner = mb_owner_ptr(index);
+  slot = mb_rack_slot(index);
+  tapping = mb_art_tap_value();
+  held = mb_legato_held(index) || (tapping && hp[MB_HP_SERIAL] == owner[MB_O_SERIAL] &&
+    hp[MB_HP_HELD_COUNT] > 0 && slot[MB_RS_LATCHED] && st[MB_S_COUNT] > 0);
+  tapping && slot[MB_RS_PENDING] ? held = 0;
+  source_fret = owner[MB_O_FRET_ANCHOR] + owner[MB_O_MIDI_SLIDE];
+  tapping && !held ? source_fret = target;
+  kind = tapping && (!held || target >= owner[MB_O_FRET_ANCHOR]) ? MB_TAP_KIND :
+    target > owner[MB_O_FRET_ANCHOR] ? 1 : -1;
+  length = st[MB_S_ACTIVE] == st + MB_BANK_A ? st[MB_S_LENGTH_A] : st[MB_S_LENGTH_B];
+  energy = mb_bank_energy(st[MB_S_ACTIVE], min(MB_HOPO_MODES, st[MB_S_COUNT]), length);
+  // Keep one ceiling across an entire linked HO/PO chain, not a fresh gain
+  // allowance every time. Ordinary reuse starts a new chain from its motion.
+  hp[MB_HP_SERIAL] != owner[MB_O_SERIAL] || (tapping && !held) ? (
+    hp[MB_HP_CEILING] = MB_HOPO_CHAIN_CEILING * energy;
+    hp[MB_HP_HAND_ANCHOR] = source_fret;
+    hp[MB_HP_HELD_COUNT] = 0;
+  );
+  owner[MB_O_RECORD] >= 0 ? mb_hopo_held_add(index, owner[MB_O_RECORD]);
+  seeded=tapping || st[MB_S_COUNT]<=0;
+  seeded ? (
+    played = mb_clamp(target + mb_midi_note_input(channel, MB_CTRL_SLIDE) * midi_slide_range_current, 0, fret_count_current);
+    bend = mb_midi_note_input(channel, MB_CTRL_BEND) * midi_bend_range_current;
+    accepted = mb_rack_seed_tap(index, velocity, played, bend, mb_note_ptr(record)[MB_N_PITCH], channel);
+  ) : accepted = mb_notes_retire_string(index, 0);
+  accepted ? (
+    tapping ? mb_gesture_voice_begin(st, MB_TRIM_TAP);
+    mb_friction_stop(st);
+    // A new finger gesture releases the previous ideal harmonic touch.
+    st[MB_S_HARMONIC]=0;
+    mb_notes_bind(record, index);
+    mb_hopo_held_add(index, record);
+    mb_midi_bend_bind(index, channel, target);
+    mb_midi_bend_retarget(index);
+    hp[MB_HP_STATE] = 1;
+    hp[MB_HP_SERIAL] = owner[MB_O_SERIAL];
+    hp[MB_HP_TARGET] = mb_midi_slide_target(index);
+    !seeded ? mb_variation_begin(st, st+MB_CONFIG, 0, hp[MB_HP_TARGET]);
+    !tapping ? mb_engine_fret_gesture(st, hp[MB_HP_TARGET], ceil(MB_HOPO_FADE_MS * 0.001 * srate));
+    hp[MB_HP_SOURCE_LENGTH] = length;
+    hp[MB_HP_KIND] = kind;
+    hp[MB_HP_WIDTH] = mb_variation_width(st, mb_clamp(p_finger_contact_width, 0, 30) * 0.001);
+    hp[MB_HP_DISPLAY_FROM] = source_fret;
+    hp[MB_HP_DISPLAY_UNTIL] = instrument_sample_clock + ceil(MB_HOPO_DISPLAY_MS * 0.001 * srate);
+    hp[MB_HP_AMOUNT] = (velocity / 127)^1.5 * MB_ARTICULATION[MB_A_VALUE] / 127;
+    hp[MB_HP_AMOUNT] = mb_variation_strength(st, hp[MB_HP_AMOUNT]);
+    hp[MB_HP_BUDGET] = MB_HOPO_WORK_FRACTION * energy * hp[MB_HP_AMOUNT]^2;
+    tapping ? (
+      // Absolute finger work can start from rest. Existing HO/PO's relative
+      // chain budget remains unchanged. Taps get one bounded allowance/event.
+      cfg = st + MB_CONFIG;
+      length = (st + MB_GEOMETRY)[MB_G_LENGTH];
+      energy = mb_bank_energy(st[MB_S_ACTIVE], min(MB_HOPO_MODES, st[MB_S_COUNT]), length);
+      reference = st[MB_S_ACTIVE];
+      reference = length * (reference[MB_M_OMEGA]^2 + reference[MB_M_ALPHA]^2) *
+        (cfg[MB_C_DISPLACEMENT] * 0.001)^2;
+      hp[MB_HP_AMOUNT] = (velocity / 127)^velocity_curve_current * tapping / 127;
+      hp[MB_HP_AMOUNT] = mb_variation_strength(st, hp[MB_HP_AMOUNT]);
+      hp[MB_HP_BUDGET] = MB_TAP_WORK_SCALE * reference * hp[MB_HP_AMOUNT]^2;
+      hp[MB_HP_CEILING] = energy + hp[MB_HP_BUDGET];
+    );
+    mb_fretting_capture(st);
+    hp[MB_HP_WORK] = hp[MB_HP_LEFT] = 0;
+    MB_ARTICULATION[MB_A_HO_RUNNING] = 1;
+    tapping ? MB_ARTICULATION[MB_A_TAPS] += 1 :
+      kind > 0 ? MB_ARTICULATION[MB_A_HAMMERS] += 1 : MB_ARTICULATION[MB_A_PULLS] += 1;
+    MB_RACK[MB_R_LAST_ROUTE] = index;
+    // Different fingers cover nearby frets. Only a wider gesture shifts the
+    // hand; retaining the anchor also prevents small steps walking it forever.
+    (tapping && !held) || abs(hp[MB_HP_TARGET] - hp[MB_HP_HAND_ANCHOR]) > MB_HOPO_REACH ? (
+      mb_hand_follow(hp[MB_HP_TARGET]);
+      hp[MB_HP_HAND_ANCHOR] = hp[MB_HP_TARGET];
+    );
+    accepted = 1;
+  );
+  accepted;
+);
+
+function mb_hopo_try(record, channel, note, velocity)
+local(index, target)
+global(MB_ARTICULATION, MB_A_KIND, MB_A_VALUE, MB_ROLE_HOPO, MB_A_HO_FALLBACKS)
+(
+  index = -1;
+  MB_ARTICULATION[MB_A_KIND] == MB_ROLE_HOPO && MB_ARTICULATION[MB_A_VALUE] > 0 ?
+    index = mb_hopo_select(channel, note);
+  index >= 0 ? (
+    target=mb_legato_candidate_fret(index, channel, note);
+    target<0 ? target=mb_fretting_quiet_candidate(index, channel, note);
+    mb_hopo_apply(record, index, channel, target, velocity);
+  ) : (
+    MB_ARTICULATION[MB_A_KIND] == MB_ROLE_HOPO && MB_ARTICULATION[MB_A_VALUE] > 0 ?
+      MB_ARTICULATION[MB_A_HO_FALLBACKS] += 1;
+    0;
+  );
+);
+
+// Called only after a playing note-off releases the current physical owner.
+// Most-recent still-held note wins; inactive older-key offs never reach here.
+function mb_hopo_release(index)
+local(hp, owner, slot, st, i, record, rec, channel, target, played, allowed, restored)
+(
+  restored = 0;
+  hp = mb_hopo_ptr(index);
+  owner = mb_owner_ptr(index);
+  slot = mb_rack_slot(index);
+  st = mb_rack_string(index);
+  ((MB_ARTICULATION[MB_A_KIND] == MB_ROLE_HOPO && MB_ARTICULATION[MB_A_VALUE] > 0) ||
+    mb_art_tap_value()>0) &&
+  hp[MB_HP_SERIAL] == owner[MB_O_SERIAL] && slot[MB_RS_ENABLED] &&
+  !slot[MB_RS_RETIRING] && slot[MB_RS_LATCHED] && st[MB_S_COUNT] > 0 ? (
+    mb_hopo_held_prune(index);
+    i = hp[MB_HP_HELD_COUNT] - 1;
+    while(i >= 0 && !restored) (
+      record = hp[MB_HP_HELD + 2 * i];
+      rec = mb_note_ptr(record);
+      channel = rec[MB_N_CHANNEL];
+      target = mb_midi_playing_pitch(rec[MB_N_PITCH]) - slot[MB_RS_LATCH_OPEN];
+      played = target + mb_midi_note_input(channel, MB_CTRL_SLIDE) * midi_slide_range_current;
+      allowed = target >= 0 && target <= fret_count_current && played >= 0 && played <= fret_count_current && mb_fingering_reachable(played);
+      channel_mode_current > 0 ? allowed = allowed && index == mb_midi_channel_string(channel) : (
+        mb_string_selection() > 0 ?
+          allowed = allowed && index == mb_string_index(7 - mb_string_selection()) :
+          allowed = allowed && target >= live_fret_request;
+      );
+      mb_art_tap_value()>0 ? allowed = allowed && !slot[MB_RS_PENDING];
+      allowed && (mb_art_tap_value()>0 || mb_hopo_fits(index, channel, target)) ?
+        restored = mb_hopo_apply(record, index, channel, target, rec[MB_N_VELOCITY]);
+      i -= 1;
+    );
+  );
+  !restored ? hp[MB_HP_HELD_COUNT] = 0;
+  restored;
+);
+
+// ---- finger force ----
+// Shared bounded hammer/pull/tap pulses. Policy and note ownership stay in hopo.
+// Prepare one spatial force vector only after the requested span has committed.
+function mb_hopo_prepare(st, hp)
+local(length, point, softness, i, ptr, weight, norm, tap, width, ft, sharpness, milliseconds)
+(
+  length = st[MB_S_ACTIVE] == st + MB_BANK_A ? st[MB_S_LENGTH_A] : st[MB_S_LENGTH_B];
+  tap = hp[MB_HP_KIND] == MB_TAP_KIND;
+  point = hp[MB_HP_KIND] > 0 ? length - min(0.008, 0.1 * length) :
+    min(0.98 * length, hp[MB_HP_SOURCE_LENGTH]);
+  softness = hp[MB_HP_KIND] > 0 ? 0.00008 : 0.0003;
+  width = hp[MB_HP_WIDTH];
+  tap ? (
+    point = length - min(MB_TAP_OFFSET, 0.2 * length);
+    softness = mb_excite_softness((st + MB_CONFIG)[MB_C_SOFTNESS], st[MB_S_VELOCITY]) * 0.001;
+  );
+  point = mb_clamp(point / length, 0.002, 0.998);
+  width = min(width, 2 * length * min(point, 1 - point));
+  hp[MB_HP_POINT] = point;
+  hp[MB_HP_COUNT] = min(MB_HOPO_MODES, st[MB_S_COUNT]);
+  milliseconds=hp[MB_HP_KIND]>0 ? MB_HOPO_HAMMER_MS : MB_HOPO_PULL_MS;
+  ft=st+MB_FRETTING;
+  ft[MB_FT_ON] ? (
+    sharpness=ft[MB_FT_ATTACK]*(0.5+0.5*hp[MB_HP_AMOUNT]);
+    hp[MB_HP_KIND]==MB_PLACEMENT_KIND ? (
+      milliseconds=3.5-2.3*sharpness; softness=0.0007-0.0004*sharpness;
+    ) : hp[MB_HP_KIND]>0 ? (
+      milliseconds=2.8-2.2*sharpness; softness=0.00035-0.0003*sharpness;
+    ) : (
+      milliseconds=5-3.2*sharpness; softness=0.0006-0.0004*sharpness;
+    );
+  );
+  hp[MB_HP_TOTAL] = max(2, ceil(milliseconds * 0.001 * srate));
+  softness = mb_variation_softness(st, softness);
+  hp[MB_HP_LEFT] = hp[MB_HP_TOTAL];
+  hp[MB_HP_BEFORE] = mb_bank_energy(st[MB_S_ACTIVE], hp[MB_HP_COUNT], length);
+  mb_fretting_prepare(st, hp, length);
+  hp[MB_HP_BUDGET]<=0 ? (hp[MB_HP_COUNT]=hp[MB_HP_LEFT]=0;);
+  hp[MB_HP_IMPULSE] = sqrt(max(0, hp[MB_HP_BUDGET]) / length);
+  i = norm = 0;
+  loop(hp[MB_HP_COUNT],
+    ptr = st[MB_S_ACTIVE] + i * MB_MODE_STRIDE;
+    weight = (hp[MB_HP_KIND] > 0 ? -1 : 1) * sin((i + 1) * $pi * point) *
+      mb_sinc((i + 1) * $pi * width / (2 * length)) *
+      exp(-0.5 * (ptr[MB_M_OMEGA] * softness)^2) * mb_band_taper(ptr[MB_M_FREQ]);
+    hp[MB_HP_WEIGHTS + i] = weight;
+    norm += weight * weight;
+    i += 1;
+  );
+  norm > 0 ? (
+    i = 0;
+    loop(hp[MB_HP_COUNT], hp[MB_HP_WEIGHTS + i] /= sqrt(norm); i += 1;);
+    hp[MB_HP_STATE] = 2;
+  ) : hp[MB_HP_STATE] = 0;
+);
+
+// Apply after this sample's observation; q is unchanged and velocity is driven
+// by a smooth finite pulse. At most 32 modes, two linear passes, no transform.
+function mb_hopo_force(st, hp)
+local(length, pulse, i, ptr, q, v, dv, energy, linear, quadratic, allowed, scale, work)
+(
+  mb_contact_lazy_flush(st,st[MB_S_ACTIVE]);
+  length = st[MB_S_ACTIVE] == st + MB_BANK_A ? st[MB_S_LENGTH_A] : st[MB_S_LENGTH_B];
+  pulse = hp[MB_HP_IMPULSE] * (1 - cos(2 * $pi *
+    (hp[MB_HP_TOTAL] - hp[MB_HP_LEFT] + 0.5) / hp[MB_HP_TOTAL])) / hp[MB_HP_TOTAL];
+  i = energy = linear = quadratic = 0;
+  loop(hp[MB_HP_COUNT],
+    ptr = st[MB_S_ACTIVE] + i * MB_MODE_STRIDE;
+    q = ptr[MB_M_R];
+    v = -ptr[MB_M_ALPHA] * q - ptr[MB_M_OMEGA] * ptr[MB_M_I];
+    dv = ptr[MB_M_FREQ] < 0.48 * srate ? pulse * hp[MB_HP_WEIGHTS + i] : 0;
+    energy += v * v + (ptr[MB_M_OMEGA]^2 + ptr[MB_M_ALPHA]^2) * q * q;
+    linear += 2 * v * dv;
+    quadratic += dv * dv;
+    i += 1;
+  );
+  energy *= length;
+  linear *= length;
+  quadratic *= length;
+  allowed = max(0, min(hp[MB_HP_BUDGET] - hp[MB_HP_WORK], hp[MB_HP_CEILING] - energy));
+  scale = 1;
+  linear + quadratic > allowed && quadratic > 0 ? (
+    scale = linear >= 0 ? 2 * allowed / max(0.000000000000000000000000000001,
+      linear + sqrt(linear * linear + 4 * quadratic * allowed)) :
+      (-linear + sqrt(linear * linear + 4 * quadratic * allowed)) / (2 * quadratic);
+    scale = mb_clamp(scale, 0, 1);
+  );
+  work = scale * linear + scale * scale * quadratic;
+  i = 0;
+  loop(hp[MB_HP_COUNT],
+    ptr = st[MB_S_ACTIVE] + i * MB_MODE_STRIDE;
+    ptr[MB_M_FREQ] < 0.48 * srate ?
+      ptr[MB_M_I] -= scale * pulse * hp[MB_HP_WEIGHTS + i] / ptr[MB_M_OMEGA];
+    i += 1;
+  );
+  hp[MB_HP_WORK] += max(0, work);
+  hp[MB_HP_AFTER] = energy + work;
+  work > 0 ? mb_tension_work(st);
+  mb_contact_invalidate(st);
+  hp[MB_HP_LEFT] -= 1;
+  hp[MB_HP_LEFT] <= 0 ? hp[MB_HP_STATE] = 0;
+);
+
+function mb_hopo_tick()
+local(index, hp, st, owner, l, running)
+(
+  MB_ARTICULATION[MB_A_HO_RUNNING] ? (
+    index = running = 0;
+    loop(MB_MAX_STRINGS,
+      hp = mb_hopo_ptr(index);
+      hp[MB_HP_STATE] ? (
+        st = mb_rack_string(index);
+        owner = mb_owner_ptr(index);
+        l = st + MB_LIVE;
+        owner[MB_O_SERIAL] != hp[MB_HP_SERIAL] ||
+        (!owner[MB_O_KEY_DOWN] && (hp[MB_HP_KIND]!=MB_PLACEMENT_KIND || hp[MB_HP_SERIAL]>0)) || st[MB_S_COUNT] <= 0 ||
+        abs(l[MB_L_FRET_TARGET] - hp[MB_HP_TARGET]) > 0.000000001 ? (
+          hp[MB_HP_STATE] = hp[MB_HP_LEFT] = 0;
+        ) : (
+          hp[MB_HP_STATE] == 1 && abs(l[MB_L_FRET] - hp[MB_HP_TARGET]) < 0.000000001 ?
+            mb_hopo_prepare(st, hp);
+          hp[MB_HP_STATE] == 2 ? mb_hopo_force(st, hp);
+        );
+        running = max(running, hp[MB_HP_STATE] > 0);
+      );
+      index += 1;
+    );
+    MB_ARTICULATION[MB_A_HO_RUNNING] = running;
+  );
+);

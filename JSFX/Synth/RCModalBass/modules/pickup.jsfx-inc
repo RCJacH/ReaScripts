@@ -1,0 +1,352 @@
+@init
+function mb_pickup_meta(st, weights)
+global(MB_PICKUP_A, MB_PICKUP_STATE, MB_PU_A, MB_PU_B)
+( st+MB_PICKUP_STATE+(weights==st+MB_PICKUP_A ? MB_PU_A : MB_PU_B); );
+
+function mb_pickup_height_build(st, weights, length)
+local(h, field, bank, meta, open_length, action, position, gap, reference)
+(
+  h=st+MB_PICKUP_HEIGHT; meta=mb_pickup_meta(st, weights);
+  field=st+MB_PICKUP_FIELD;
+  bank=h+(weights==st+MB_PICKUP_A ? MB_PH_A : MB_PH_B);
+  open_length=meta[MB_PUB_OPEN_LENGTH]; action=max(0, 2+h[MB_PH_ACTION]);
+  length>0 && open_length>0 ? (
+    position=(st+MB_PICKUP_STATE)[MB_PU_POSITION1]*0.001;
+    gap=mb_pickup_gap(3+h[MB_PH_DISTANCE1], action, length, open_length, position);
+    reference=mb_pickup_gap(3, 2, length, open_length, position);
+    bank[MB_PHB_GAP1]=gap; bank[MB_PHB_GAIN1]=mb_pickup_field_gain(gap, reference,
+      field[MB_PF_GEOMETRY1], MB_PICKUP_REFERENCE_FIELD_WIDTH+field[MB_PF_WIDTH1]);
+    position=(st+MB_PICKUP_STATE)[MB_PU_POSITION2]*0.001;
+    gap=mb_pickup_gap(3+h[MB_PH_DISTANCE2], action, length, open_length, position);
+    reference=mb_pickup_gap(3, 2, length, open_length, position);
+    bank[MB_PHB_GAP2]=gap; bank[MB_PHB_GAIN2]=mb_pickup_field_gain(gap, reference,
+      field[MB_PF_GEOMETRY2], MB_PICKUP_REFERENCE_FIELD_WIDTH+field[MB_PF_WIDTH2]);
+  );
+);
+
+// @slider publishes scalar requests; only audio-thread functions below touch RAM.
+function mb_pickup_request()
+local(position1, position2, width1, width2, gain1, gain2, mix, polarity, distance1, distance2,
+      mode1, mode2, spacing1, spacing2, stagger1, stagger2, strings,
+      geometry1, geometry2, field_width1, field_width2)
+(
+  mb_pickup_profiles_request();
+  mb_nonlinear_request();
+  mode1=mb_coil_mode(p_pickup_1_coil_configuration); mode2=mb_coil_mode(p_pickup_2_coil_configuration);
+  spacing1=mode1==MB_COIL_SERIES || mode1==MB_COIL_PARALLEL ? mb_clamp(p_pickup_1_coil_spacing, 0, 40) : 0;
+  spacing2=mode2==MB_COIL_SERIES || mode2==MB_COIL_PARALLEL ? mb_clamp(p_pickup_2_coil_spacing, 0, 40) : 0;
+  stagger1=mode1==MB_COIL_SPLIT ? mb_clamp(p_pickup_1_split_stagger, -40, 40) : 0;
+  stagger2=mode2==MB_COIL_SPLIT ? mb_clamp(p_pickup_2_split_stagger, -40, 40) : 0;
+  strings=mb_clamp(floor(p_string_count), 1, MB_MAX_STRINGS);
+  width1=mb_clamp(p_pickup_1_sensing_width, 0, 80);
+  width2=mb_clamp(p_pickup_2_sensing_width, 0, 80);
+  position1=mb_coil_mount(p_pickup_1_distance_from_bridge, width1, mode1, spacing1, stagger1, p_scale_length);
+  position2=mb_coil_mount(p_pickup_2_distance_from_bridge, width2, mode2, spacing2, stagger2, p_scale_length);
+  gain1=(p_pickup_1_enable>=0.5)*mb_clamp(p_pickup_1_sensitivity*0.01, 0, 2);
+  gain2=(p_pickup_2_enable>=0.5)*mb_clamp(p_pickup_2_sensitivity*0.01, 0, 2);
+  distance1=mb_clamp(p_pickup_1_string_distance, 0.5, 25);
+  distance2=mb_clamp(p_pickup_2_string_distance, 0.5, 25);
+  geometry1=mb_clamp(floor(p_pickup_1_pole_geometry), MB_POLE_POLES, MB_POLE_RAIL);
+  geometry2=mb_clamp(floor(p_pickup_2_pole_geometry), MB_POLE_POLES, MB_POLE_RAIL);
+  field_width1=mb_clamp(p_pickup_1_field_width, 0.5, 30);
+  field_width2=mb_clamp(p_pickup_2_field_width, 0.5, 30);
+  mix=mb_clamp(p_pickup_mix*0.01, 0, 1); polarity=p_pickup_polarity>=0.5 ? -1 : 1;
+  position1!=pickup_position1_request || position2!=pickup_position2_request ||
+    width1!=pickup_width1_request || width2!=pickup_width2_request ||
+    gain1!=pickup_gain1_request || gain2!=pickup_gain2_request ||
+    mix!=pickup_mix_request || polarity!=pickup_polarity_request ||
+    distance1!=pickup_distance1_request || distance2!=pickup_distance2_request ||
+    geometry1!=pickup_geometry1_request || geometry2!=pickup_geometry2_request ||
+    field_width1!=pickup_field_width1_request || field_width2!=pickup_field_width2_request ||
+    mode1!=pickup_mode1_request || mode2!=pickup_mode2_request ||
+    spacing1!=pickup_spacing1_request || spacing2!=pickup_spacing2_request ||
+    stagger1!=pickup_stagger1_request || stagger2!=pickup_stagger2_request ||
+    ((mode1==MB_COIL_SPLIT || mode2==MB_COIL_SPLIT) && strings!=pickup_strings_request) ? pickup_revision_request+=1;
+  pickup_position1_request=position1; pickup_position2_request=position2;
+  pickup_width1_request=width1; pickup_width2_request=width2;
+  pickup_gain1_request=gain1; pickup_gain2_request=gain2;
+  pickup_mix_request=mix; pickup_polarity_request=polarity;
+  pickup_distance1_request=distance1; pickup_distance2_request=distance2;
+  pickup_geometry1_request=geometry1; pickup_geometry2_request=geometry2;
+  pickup_field_width1_request=field_width1; pickup_field_width2_request=field_width2;
+  pickup_mode1_request=mode1; pickup_mode2_request=mode2;
+  pickup_spacing1_request=spacing1; pickup_spacing2_request=spacing2;
+  pickup_stagger1_request=stagger1; pickup_stagger2_request=stagger2;
+  pickup_strings_request=strings;
+);
+
+// Audio-thread publication, once per block. The native value follows its actual
+// mounting position, including clamps caused by scale or aperture edits. Notify
+// the host display without writing a new automation gesture.
+function mb_pickup_publish()
+global(p_pickup_1_distance_from_bridge, p_pickup_2_distance_from_bridge, pickup_position1_request, pickup_position2_request)
+(
+  abs(p_pickup_1_distance_from_bridge-pickup_position1_request)>0.000000001 ? (
+    p_pickup_1_distance_from_bridge=pickup_position1_request; sliderchange(p_pickup_1_distance_from_bridge);
+  );
+  abs(p_pickup_2_distance_from_bridge-pickup_position2_request)>0.000000001 ? (
+    p_pickup_2_distance_from_bridge=pickup_position2_request; sliderchange(p_pickup_2_distance_from_bridge);
+  );
+);
+
+// Retained configuration API and approved shared-aperture arithmetic.
+function mb_pickup_weights(weights, count, length, cfg)
+local(i, n, pu_width, q1, q2, mix, polarity)
+global(MB_C_PICKUP1, MB_C_PICKUP2, MB_C_PICKUP_MIX, MB_C_PICKUP_POLARITY, MB_C_PICKUP_WIDTH)
+(
+  pu_width=min(cfg[MB_C_PICKUP_WIDTH]*0.001, length*0.99);
+  q1=mb_clamp(cfg[MB_C_PICKUP1]*0.001/length, max(0.001, pu_width/(2*length)),
+              min(0.999, 1-pu_width/(2*length)));
+  q2=mb_clamp(cfg[MB_C_PICKUP2]*0.001/length, max(0.001, pu_width/(2*length)),
+              min(0.999, 1-pu_width/(2*length)));
+  mix=cfg[MB_C_PICKUP_MIX]*0.01;
+  polarity=cfg[MB_C_PICKUP_POLARITY]==0 ? 1 : -1;
+  i=0;
+  loop(count,
+    n=i+1;
+    weights[i]=((1-mix)*sin(n*$pi*q1)+mix*polarity*sin(n*$pi*q2))
+               *mb_sinc(n*$pi*pu_width/(2*length));
+    i+=1;
+  );
+);
+
+// At most 256 rows/bank, only on a changed observation or a new speaking span.
+// Separate unmixed pickup weights are retained for the later circuit observer.
+function mb_pickup_build(st, weights, count, length, immediate)
+local(p, meta, target, pickup1, pickup2, w1, w2, shared, q1, q2, mix, polarity,
+      coverage1, coverage2, lo, hi, i, n, sine1, sine2, aperture1, aperture2, height, gain1, gain2)
+(
+  p=st+MB_PICKUP_STATE; meta=mb_pickup_meta(st, weights);
+  weights==st+MB_PICKUP_A ? (
+    target=st+MB_PU_TARGET_A; pickup1=st+MB_PU_1_A; pickup2=st+MB_PU_2_A;
+  ) : (
+    target=st+MB_PU_TARGET_B; pickup1=st+MB_PU_1_B; pickup2=st+MB_PU_2_B;
+  );
+  count=mb_clamp(floor(count), 0, MB_MAX_MODES);
+  meta[MB_PUB_COUNT]=count; meta[MB_PUB_LENGTH]=length;
+  meta[MB_PUB_LEFT]=immediate ? 0 : max(1, ceil(MB_PICKUP_SMOOTH_MS*0.001*srate));
+  count>0 && length>0 ? (
+    mb_pickup_height_build(st, weights, length);
+    (st+MB_PICKUP_COILS)[MB_PC_MODE1] || (st+MB_PICKUP_COILS)[MB_PC_MODE2] ?
+      mb_coils_weights(st, weights, count, length, meta[MB_PUB_OPEN_LENGTH]) : (
+      height=st+MB_PICKUP_HEIGHT+(weights==st+MB_PICKUP_A ? MB_PH_A : MB_PH_B);
+      gain1=height[MB_PHB_GAIN1]; gain2=height[MB_PHB_GAIN2];
+      w1=p[MB_PU_WIDTH1]*0.001; w2=p[MB_PU_WIDTH2]*0.001;
+      q1=p[MB_PU_POSITION1]*0.001; q2=p[MB_PU_POSITION2]*0.001;
+      coverage1=coverage2=1;
+      // A held string may retain a shorter scale after a setup edit. Integrate
+      // only the overlapping aperture, normalized by its original width. Never
+      // relocate the physical pickup to the current fretted endpoint.
+      w1>0 ? (
+        q1-0.5*w1<0 || q1+0.5*w1>length ? (
+          lo=max(0, q1-0.5*w1); hi=min(length, q1+0.5*w1);
+          coverage1=max(0, hi-lo)/w1; w1=max(0, hi-lo); q1=0.5*(lo+hi);
+        );
+      ) : coverage1=q1>0 && q1<length;
+      w2>0 ? (
+        q2-0.5*w2<0 || q2+0.5*w2>length ? (
+          lo=max(0, q2-0.5*w2); hi=min(length, q2+0.5*w2);
+          coverage2=max(0, hi-lo)/w2; w2=max(0, hi-lo); q2=0.5*(lo+hi);
+        );
+      ) : coverage2=q2>0 && q2<length;
+      q1/=length; q2/=length;
+      shared=abs(w1-w2)<0.000000000001;
+      mix=p[MB_PU_MIX]; polarity=p[MB_PU_POLARITY]; i=0;
+      loop(count,
+        n=i+1; sine1=sin(n*$pi*q1); sine2=sin(n*$pi*q2);
+        aperture1=mb_sinc(n*$pi*w1/(2*length));
+        aperture2=shared ? aperture1 : mb_sinc(n*$pi*w2/(2*length));
+        pickup1[i]=sine1*aperture1*coverage1*gain1; pickup2[i]=sine2*aperture2*coverage2*gain2;
+        // Equal apertures retain the original expression's operation order.
+        target[i]=shared ? ((1-mix)*sine1*p[MB_PU_GAIN1]*coverage1*gain1+mix*polarity*sine2*p[MB_PU_GAIN2]*coverage2*gain2)*aperture1 :
+          (1-mix)*pickup1[i]*p[MB_PU_GAIN1]+mix*polarity*pickup2[i]*p[MB_PU_GAIN2];
+        i+=1;
+      );
+    );
+    immediate ? memcpy(weights, target, count);
+    mb_circuit_pickup_build(st, weights, count, immediate);
+    mb_nonlinear_build(st, weights, count, length, meta[MB_PUB_OPEN_LENGTH], immediate);
+  );
+);
+
+// Material rings lack a spatial field. Their existing level proxy follows the
+// aperture's coverage, so a pickup outside a held shorter string cannot hear it.
+function mb_pickup_auxiliary(st)
+local(p, length, coverage1, coverage2, gain, gate, height, coils)
+(
+  p=st+MB_PICKUP_STATE;
+  length=st[MB_S_ACTIVE]==st+MB_BANK_A ? st[MB_S_LENGTH_A] : st[MB_S_LENGTH_B];
+  coverage1=coverage2=1;
+  length>0 ? (
+    (st+MB_PICKUP_COILS)[MB_PC_MODE1] || (st+MB_PICKUP_COILS)[MB_PC_MODE2] ? (
+      coils=st+MB_PICKUP_COILS+(st[MB_S_ACTIVE]==st+MB_BANK_A ? MB_PC_A : MB_PC_B);
+      coverage1=coils[MB_CO_GAIN]+(coils+MB_COIL_WORDS)[MB_CO_GAIN];
+      coverage2=(coils+2*MB_COIL_WORDS)[MB_CO_GAIN]+(coils+3*MB_COIL_WORDS)[MB_CO_GAIN];
+    ) : (
+      height=st+MB_PICKUP_HEIGHT+(st[MB_S_ACTIVE]==st+MB_BANK_A ? MB_PH_A : MB_PH_B);
+      coverage1=mb_pickup_coverage(p[MB_PU_POSITION1], p[MB_PU_WIDTH1], length);
+      coverage2=mb_pickup_coverage(p[MB_PU_POSITION2], p[MB_PU_WIDTH2], length);
+      coverage1*=height[MB_PHB_GAIN1]; coverage2*=height[MB_PHB_GAIN2];
+    );
+  );
+  gain=(1-p[MB_PU_MIX])*p[MB_PU_GAIN1]*coverage1+p[MB_PU_MIX]*p[MB_PU_GAIN2]*coverage2;
+  gate=(1-p[MB_PU_MIX])*p[MB_PU_GAIN1]+p[MB_PU_MIX]*p[MB_PU_GAIN2]>0;
+  abs(gain-p[MB_PU_AUX_TARGET])>0.000000000001 || gate!=p[MB_PU_GATE_TARGET] ? (
+    p[MB_PU_AUX_TARGET]=gain; p[MB_PU_GATE_TARGET]=gate;
+    p[MB_PU_AUX_LEFT]=max(1, ceil(MB_PICKUP_SMOOTH_MS*0.001*srate));
+  );
+);
+
+// Called after the destination span is committed, before it becomes audible.
+// A structural fade already handles this bank's geometry; do not ramp from RAM
+// belonging to an obsolete span. Keep weights for dormant above-band slots too.
+function mb_pickup_capture(st, weights, count, length, cfg)
+global(MB_PICKUP_STATE, MB_PU_CONFIGURED, MB_MAX_MODES, MB_C_MODES, MB_PUB_OPEN_LENGTH, MB_C_SCALE)
+(
+  mb_pickup_meta(st, weights)[MB_PUB_OPEN_LENGTH]=cfg[MB_C_SCALE]*0.001;
+  (st+MB_PICKUP_STATE)[MB_PU_CONFIGURED] ? (
+    mb_pickup_build(st, weights, max(count, min(MB_MAX_MODES, floor(cfg[MB_C_MODES]))), length, 1);
+    mb_pickup_auxiliary(st);
+  ) : mb_pickup_weights(weights, count, length, cfg);
+);
+
+function mb_pickup_refresh(st)
+local(p, meta, weights, i)
+global(MB_PICKUP_STATE, MB_PICKUP_A, MB_PICKUP_B, MB_PUB_COUNT, MB_PUB_LENGTH, MB_PU_UPDATES)
+(
+  p=st+MB_PICKUP_STATE; i=0;
+  loop(2,
+    weights=st+(i==0 ? MB_PICKUP_A : MB_PICKUP_B); meta=mb_pickup_meta(st, weights);
+    meta[MB_PUB_COUNT]>0 && meta[MB_PUB_LENGTH]>0 ? (
+      mb_pickup_build(st, weights, meta[MB_PUB_COUNT], meta[MB_PUB_LENGTH], 0);
+    );
+    i+=1;
+  );
+  mb_pickup_auxiliary(st);
+  p[MB_PU_UPDATES]+=1;
+);
+
+function mb_pickup_apply(st)
+local(p, h, c, field, initial, action)
+(
+  p=st+MB_PICKUP_STATE; h=st+MB_PICKUP_HEIGHT; initial=!p[MB_PU_CONFIGURED];
+  action=(st+MB_ACTION)[MB_ACT_HEIGHT];
+  initial || p[MB_PU_REVISION]!=pickup_revision_request || h[MB_PH_ACTION]!=action ? (
+    p[MB_PU_POSITION1]=pickup_position1_request; p[MB_PU_POSITION2]=pickup_position2_request;
+    p[MB_PU_WIDTH1]=pickup_width1_request; p[MB_PU_WIDTH2]=pickup_width2_request;
+    p[MB_PU_GAIN1]=pickup_gain1_request; p[MB_PU_GAIN2]=pickup_gain2_request;
+    p[MB_PU_MIX]=pickup_mix_request; p[MB_PU_POLARITY]=pickup_polarity_request;
+    h[MB_PH_DISTANCE1]=pickup_distance1_request-3; h[MB_PH_DISTANCE2]=pickup_distance2_request-3;
+    h[MB_PH_ACTION]=action;
+    field=st+MB_PICKUP_FIELD;
+    field[MB_PF_GEOMETRY1]=pickup_geometry1_request; field[MB_PF_GEOMETRY2]=pickup_geometry2_request;
+    field[MB_PF_WIDTH1]=pickup_field_width1_request-MB_PICKUP_REFERENCE_FIELD_WIDTH;
+    field[MB_PF_WIDTH2]=pickup_field_width2_request-MB_PICKUP_REFERENCE_FIELD_WIDTH;
+    c=st+MB_PICKUP_COILS;
+    c[MB_PC_MODE1]=pickup_mode1_request; c[MB_PC_MODE2]=pickup_mode2_request;
+    c[MB_PC_SPACING1]=pickup_spacing1_request; c[MB_PC_SPACING2]=pickup_spacing2_request;
+    c[MB_PC_STAGGER1]=pickup_stagger1_request; c[MB_PC_STAGGER2]=pickup_stagger2_request;
+    c[MB_PC_STRINGS]=pickup_mode1_request==MB_COIL_SPLIT || pickup_mode2_request==MB_COIL_SPLIT ? pickup_strings_request : 0;
+    mb_pickup_refresh(st);
+    initial ? (
+      p[MB_PU_AUX]=p[MB_PU_AUX_TARGET]; p[MB_PU_GATE]=p[MB_PU_GATE_TARGET]; p[MB_PU_AUX_LEFT]=0;
+    );
+    p[MB_PU_REVISION]=pickup_revision_request; p[MB_PU_CONFIGURED]=1;
+  );
+);
+
+// Finite, restartable 5-ms weight ramps. No trigonometry on the sample path.
+function mb_pickup_tick(st)
+local(p, meta, weights, target, fraction, i, bank)
+(
+  p=st+MB_PICKUP_STATE; bank=0;
+  loop(2,
+    meta=p+(bank==0 ? MB_PU_A : MB_PU_B);
+    meta[MB_PUB_LEFT]>0 ? (
+      weights=st+(bank==0 ? MB_PICKUP_A : MB_PICKUP_B);
+      target=st+(bank==0 ? MB_PU_TARGET_A : MB_PU_TARGET_B);
+      fraction=1/meta[MB_PUB_LEFT]; i=0;
+      circuit_observe_current ? mb_circuit_pickup_tick(st, weights, meta[MB_PUB_COUNT], fraction);
+      loop(meta[MB_PUB_COUNT], weights[i]+=(target[i]-weights[i])*fraction; i+=1;);
+      meta[MB_PUB_LEFT]-=1;
+      meta[MB_PUB_LEFT]<=0 ? memcpy(weights, target, meta[MB_PUB_COUNT]);
+    );
+    bank+=1;
+  );
+  p[MB_PU_AUX_LEFT]>0 ? (
+    p[MB_PU_AUX]+=(p[MB_PU_AUX_TARGET]-p[MB_PU_AUX])/p[MB_PU_AUX_LEFT];
+    p[MB_PU_GATE]+=(p[MB_PU_GATE_TARGET]-p[MB_PU_GATE])/p[MB_PU_AUX_LEFT];
+    p[MB_PU_AUX_LEFT]-=1;
+    p[MB_PU_AUX_LEFT]<=0 ? (
+      p[MB_PU_AUX]=p[MB_PU_AUX_TARGET]; p[MB_PU_GATE]=p[MB_PU_GATE_TARGET];
+    );
+  );
+);
+
+function mb_pickup_clear(st)
+local(p)
+(
+  p=st+MB_PICKUP_STATE;
+  memset(p+MB_PU_A, 0, 2*MB_PU_BANK_WORDS);
+  memset(st+MB_PICKUP_HEIGHT+MB_PH_A, 0, 2*MB_PH_BANK_WORDS);
+  memset(st+MB_PICKUP_COILS+MB_PC_A, 0, 2*MB_COILS_PER_BANK*MB_COIL_WORDS);
+  p[MB_PU_AUX]=p[MB_PU_AUX_TARGET]; p[MB_PU_AUX_LEFT]=0;
+  p[MB_PU_GATE]=p[MB_PU_GATE_TARGET];
+);
+
+function mb_electronics_configure(st, cfg)
+local(e, w0, aq, norm, cc)
+(
+  e=st+MB_ELECTRONICS;
+  e[MB_E_ENABLED]=cfg[MB_C_ELECTRICAL];
+  w0=2*$pi*min(cfg[MB_C_RESONANCE], 0.4*srate)/srate;
+  cc=cos(w0); aq=sin(w0)/(2*cfg[MB_C_Q]); norm=1/(1+aq);
+  e[MB_E_B0]=(1-cc)*0.5*norm; e[MB_E_B1]=(1-cc)*norm;
+  e[MB_E_B2]=e[MB_E_B0];
+  e[MB_E_A1]=-2*cc*norm; e[MB_E_A2]=(1-aq)*norm;
+  // Filter delay memory deliberately survives configuration/retrigger.
+);
+
+function mb_electronics_render(st, signal)
+local(e, filtered)
+(
+  e=st+MB_ELECTRONICS;
+  e[MB_E_ENABLED] ? (
+    filtered=e[MB_E_B0]*signal+e[MB_E_B1]*e[MB_E_X1]+e[MB_E_B2]*e[MB_E_X2]
+             -e[MB_E_A1]*e[MB_E_Y1]-e[MB_E_A2]*e[MB_E_Y2];
+    e[MB_E_X2]=e[MB_E_X1]; e[MB_E_X1]=signal;
+    e[MB_E_Y2]=e[MB_E_Y1]; e[MB_E_Y1]=filtered;
+    signal=filtered;
+  ) : (e[MB_E_X1]=e[MB_E_X2]=e[MB_E_Y1]=e[MB_E_Y2]=0;);
+  signal;
+);
+
+// Audio-thread configuration API: legacy five-field observation snapshot.
+// Both apertures follow cfg's shared width; enables/sensitivities remain live.
+// Use a separate observation snapshot; string configuration is never rewritten.
+function mb_engine_observe(st, cfg)
+local(p, a, b, coils, scale)
+(
+  p=st+MB_PICKUP_STATE;
+  !p[MB_PU_CONFIGURED] ? (
+    p[MB_PU_GAIN1]=p[MB_PU_GAIN2]=p[MB_PU_AUX]=p[MB_PU_GATE]=1;
+    p[MB_PU_CONFIGURED]=1; p[MB_PU_REVISION]=pickup_revision_request;
+  );
+  p[MB_PU_WIDTH1]=p[MB_PU_WIDTH2]=mb_clamp(cfg[MB_C_PICKUP_WIDTH], 0, 80);
+  coils=st+MB_PICKUP_COILS; scale=(st+MB_CONFIG)[MB_C_SCALE];
+  p[MB_PU_POSITION1]=mb_coil_mount(cfg[MB_C_PICKUP1], p[MB_PU_WIDTH1], coils[MB_PC_MODE1],
+    coils[MB_PC_SPACING1], coils[MB_PC_STAGGER1], scale);
+  p[MB_PU_POSITION2]=mb_coil_mount(cfg[MB_C_PICKUP2], p[MB_PU_WIDTH2], coils[MB_PC_MODE2],
+    coils[MB_PC_SPACING2], coils[MB_PC_STAGGER2], scale);
+  p[MB_PU_MIX]=mb_clamp(cfg[MB_C_PICKUP_MIX]*0.01, 0, 1);
+  p[MB_PU_POLARITY]=cfg[MB_C_PICKUP_POLARITY]>=0.5 ? -1 : 1;
+  a=p+MB_PU_A; b=p+MB_PU_B;
+  (st+MB_PICKUP_HEIGHT)[MB_PH_ACTION]=(st+MB_ACTION)[MB_ACT_HEIGHT];
+  // A bare engine can begin observation after an earlier legacy excitation.
+  a[MB_PUB_OPEN_LENGTH]<=0 ? a[MB_PUB_OPEN_LENGTH]=(st+MB_CONFIG)[MB_C_SCALE]*0.001;
+  b[MB_PUB_OPEN_LENGTH]<=0 ? b[MB_PUB_OPEN_LENGTH]=(st+MB_CONFIG)[MB_C_SCALE]*0.001;
+  a[MB_PUB_LENGTH]=st[MB_S_LENGTH_A]; b[MB_PUB_LENGTH]=st[MB_S_LENGTH_B];
+  a[MB_PUB_COUNT]=st[MB_S_ACTIVE]==st+MB_BANK_A ? st[MB_S_COUNT] : st[MB_S_PREVIOUS_COUNT];
+  b[MB_PUB_COUNT]=st[MB_S_ACTIVE]==st+MB_BANK_A ? st[MB_S_PREVIOUS_COUNT] : st[MB_S_COUNT];
+  mb_pickup_refresh(st);
+);

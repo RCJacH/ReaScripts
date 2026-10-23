@@ -1,0 +1,203 @@
+// Audio-thread note-instance ledger. Pairing is FIFO per (channel, MIDI key).
+// Retired/rejected unmatched entries stay queued. No engine calls or UI RAM.
+@init
+function mb_note_ptr(index)
+global(MB_NOTE_RECORDS, MB_NOTE_WORDS)
+( MB_NOTE_RECORDS+index*MB_NOTE_WORDS; );
+function mb_owner_ptr(index)
+global(MB_OWNER_WORDS, MB_OWNERS)
+( MB_OWNERS+index*MB_OWNER_WORDS; );
+function mb_channel_ptr(channel)
+global(MB_CHANNEL_STATE, MB_CHANNEL_WORDS)
+( MB_CHANNEL_STATE+channel*MB_CHANNEL_WORDS; );
+
+function mb_notes_fault(cause)
+global(MB_NH_FAULT, MB_NH_FAULT_COUNT, MB_NH_FAULT_SILENCED, MB_NOTES)
+(
+  !MB_NOTES[MB_NH_FAULT] ? (
+    MB_NOTES[MB_NH_FAULT]=cause;
+    MB_NOTES[MB_NH_FAULT_COUNT]+=1;
+    MB_NOTES[MB_NH_FAULT_SILENCED]=0;
+  );
+);
+
+function mb_notes_reset(preserve_counters)
+local(i, owner, channel, faults, resets)
+(
+  faults=preserve_counters ? MB_NOTES[MB_NH_FAULT_COUNT] : 0;
+  resets=preserve_counters ? MB_NOTES[MB_NH_RESETS]+1 : 0;
+  // Ownership/articulation region ends before the shared electrical instrument.
+  memset(MB_NOTES, 0, MB_CIRCUIT-MB_NOTES);
+  MB_NOTES[MB_NH_FREE]=-1;
+  MB_NOTES[MB_NH_FAULT_COUNT]=faults;
+  MB_NOTES[MB_NH_RESETS]=resets;
+  memset(MB_KEY_HEADS, -1, MB_KEY_COUNT*2);
+  i=0;
+  loop(MB_MAX_STRINGS,
+    owner=mb_owner_ptr(i);
+    owner[MB_O_RECORD]=owner[MB_O_PITCH]=-1;
+    owner[MB_O_SOURCE_CHANNEL]=owner[MB_O_BEND_CHANNEL]=-1;
+    i+=1;
+  );
+  i=0;
+  loop(MB_CHANNELS,
+    channel=mb_channel_ptr(i);
+    channel[MB_CH_EPOCH]=1;
+    channel[MB_CH_WHEEL]=8192;
+    i+=1;
+  );
+);
+
+function mb_notes_begin(channel, pitch, velocity)
+local(index, rec, key, tail, ch)
+(
+  index=-1;
+  !MB_NOTES[MB_NH_FAULT] && channel>=0 && channel<MB_CHANNELS && pitch>=0 && pitch<128 ? (
+    MB_NOTES[MB_NH_SERIAL]>=MB_SERIAL_MAX ? mb_notes_fault(MB_FAULT_COUNTER) : (
+      MB_NOTES[MB_NH_FREE]>=0 ? (
+        index=MB_NOTES[MB_NH_FREE];
+        rec=mb_note_ptr(index);
+        MB_NOTES[MB_NH_FREE]=rec[MB_N_NEXT];
+      ) : MB_NOTES[MB_NH_NEXT]<MB_NOTE_LIMIT ? (
+        index=MB_NOTES[MB_NH_NEXT];
+        MB_NOTES[MB_NH_NEXT]+=1;
+      ) : mb_notes_fault(MB_FAULT_POOL);
+      index>=0 ? (
+        rec=mb_note_ptr(index);
+        memset(rec, 0, MB_NOTE_WORDS);
+        MB_NOTES[MB_NH_SERIAL]+=1;
+        rec[MB_N_SERIAL]=MB_NOTES[MB_NH_SERIAL];
+        rec[MB_N_CHANNEL]=channel;
+        rec[MB_N_PITCH]=pitch;
+        rec[MB_N_VELOCITY]=velocity;
+        rec[MB_N_STRING]=rec[MB_N_NEXT]=-1;
+        rec[MB_N_ALLOCATED]=1;
+        ch=mb_channel_ptr(channel);
+        rec[MB_N_EPOCH]=ch[MB_CH_EPOCH];
+        key=channel*128+pitch;
+        tail=MB_KEY_TAILS[key];
+        tail>=0 ? mb_note_ptr(tail)[MB_N_NEXT]=index : MB_KEY_HEADS[key]=index;
+        MB_KEY_TAILS[key]=index;
+        MB_NOTES[MB_NH_USED]+=1;
+        MB_NOTES[MB_NH_PEAK]=max(MB_NOTES[MB_NH_PEAK], MB_NOTES[MB_NH_USED]);
+      );
+    );
+  );
+  index;
+);
+
+// Advance generation on every physical reuse/mute. An inactive FIFO entry is
+// never removed here; source channel may be retained for controller tail kill.
+function mb_notes_retire_string(index, keep_source)
+local(owner, rec, slot)
+(
+  owner=mb_owner_ptr(index);
+  owner[MB_O_RECORD]>=0 ? (
+    rec=mb_note_ptr(owner[MB_O_RECORD]);
+    rec[MB_N_SERIAL]==owner[MB_O_SERIAL] && rec[MB_N_GENERATION]==owner[MB_O_GENERATION] ?
+      rec[MB_N_ACTIVE]=0;
+  );
+  owner[MB_O_GENERATION]>=MB_SERIAL_MAX ? mb_notes_fault(MB_FAULT_COUNTER) : owner[MB_O_GENERATION]+=1;
+  owner[MB_O_SERIAL]=owner[MB_O_KEY_DOWN]=0;
+  owner[MB_O_RECORD]=-1;
+  owner[MB_O_BEND_CHANNEL]=-1;
+  owner[MB_O_MIDI_BEND]=owner[MB_O_WHEEL_NORMAL]=owner[MB_O_BEND_CLIPPED]=0;
+  owner[MB_O_FRET_ANCHOR]=owner[MB_O_MIDI_SLIDE]=owner[MB_O_SLIDE_CLIPPED]=0;
+  slot=MB_RACK_SLOTS+index*MB_RACK_SLOT_WORDS;
+  slot[MB_RS_BEND_INPUT]=slot[MB_RS_SLIDE_INPUT]=0;
+  memset(MB_MOTIONS+index*MB_MOTION_WORDS, 0, MB_MOTION_WORDS);
+  memset(index*MB_STRING_WORDS+MB_RELEASE, 0, MB_RELEASE_WORDS);
+  keep_source ? (
+    owner[MB_O_STATE]>0 ? owner[MB_O_STATE]=MB_VOICE_DAMPING;
+  ) : (
+    owner[MB_O_PITCH]=owner[MB_O_SOURCE_CHANNEL]=-1;
+    owner[MB_O_STATE]=MB_VOICE_QUIET;
+  );
+  MB_NOTES[MB_NH_RETIRED]+=1;
+  !MB_NOTES[MB_NH_FAULT];
+);
+
+function mb_notes_reject(index, reason)
+local(rec)
+global(MB_N_ACTIVE, MB_N_REASON, MB_NH_REJECTED, MB_NOTES)
+(
+  rec=mb_note_ptr(index);
+  rec[MB_N_ACTIVE]=0;
+  rec[MB_N_REASON]=reason;
+  MB_NOTES[MB_NH_REJECTED]+=1;
+);
+
+function mb_notes_bind(index, string_index)
+local(rec, owner, channel)
+(
+  rec=mb_note_ptr(index);
+  owner=mb_owner_ptr(string_index);
+  memset(string_index*MB_STRING_WORDS+MB_RELEASE, 0, MB_RELEASE_WORDS);
+  channel=rec[MB_N_CHANNEL];
+  rec[MB_N_STRING]=string_index;
+  rec[MB_N_GENERATION]=owner[MB_O_GENERATION];
+  rec[MB_N_ACTIVE]=1;
+  owner[MB_O_SERIAL]=rec[MB_N_SERIAL];
+  owner[MB_O_RECORD]=index;
+  owner[MB_O_PITCH]=rec[MB_N_PITCH];
+  owner[MB_O_VELOCITY]=rec[MB_N_VELOCITY];
+  owner[MB_O_KEY_DOWN]=1;
+  owner[MB_O_SOURCE_CHANNEL]=owner[MB_O_BEND_CHANNEL]=channel;
+  owner[MB_O_STATE]=MB_VOICE_HELD;
+  owner[MB_O_EPOCH]=rec[MB_N_EPOCH];
+  MB_NOTES[MB_NH_ACCEPTED]+=1;
+);
+
+// Consume exactly one oldest unpaired entry. Return a currently owned string
+// index or -1 for orphan, retired, rejected, epoch-invalidated or replaced.
+// Physical voice serial/source/bend binding survive a normal key release.
+function mb_notes_off(channel, pitch, damping)
+local(key, index, rec, owner, ch, string_index, result)
+(
+  result=-1;
+  key=channel*128+pitch;
+  index=MB_KEY_HEADS[key];
+  MB_NOTES[MB_NH_OFF_ROLE]=MB_NOTES[MB_NH_OFF_SERIAL]=MB_NOTES[MB_NH_OFF_VALID]=0;
+  index>=0 ? (
+    rec=mb_note_ptr(index);
+    MB_KEY_HEADS[key]=rec[MB_N_NEXT];
+    MB_KEY_HEADS[key]<0 ? MB_KEY_TAILS[key]=-1;
+    string_index=rec[MB_N_STRING];
+    ch=mb_channel_ptr(channel);
+    MB_NOTES[MB_NH_OFF_ROLE]=rec[MB_N_ROLE];
+    MB_NOTES[MB_NH_OFF_SERIAL]=rec[MB_N_SERIAL];
+    MB_NOTES[MB_NH_OFF_VALID]=rec[MB_N_ACTIVE] && rec[MB_N_EPOCH]==ch[MB_CH_EPOCH];
+    MB_NOTES[MB_NH_OFF_VALID] && rec[MB_N_ROLE]==MB_ROLE_NOTE && string_index>=0 ? (
+      owner=mb_owner_ptr(string_index);
+      owner[MB_O_SERIAL]==rec[MB_N_SERIAL] && owner[MB_O_GENERATION]==rec[MB_N_GENERATION]
+        && owner[MB_O_KEY_DOWN] && owner[MB_O_RECORD]==index ? (
+        result=string_index;
+        owner[MB_O_KEY_DOWN]=0;
+        owner[MB_O_RECORD]=-1;
+        owner[MB_O_STATE]=damping ? MB_VOICE_DAMPING : MB_VOICE_RINGING;
+      );
+    );
+    rec[MB_N_ACTIVE]=rec[MB_N_ALLOCATED]=0;
+    rec[MB_N_NEXT]=MB_NOTES[MB_NH_FREE];
+    MB_NOTES[MB_NH_FREE]=index;
+    MB_NOTES[MB_NH_USED]-=1;
+    MB_NOTES[MB_NH_OFFS]+=1;
+  ) : MB_NOTES[MB_NH_ORPHAN_OFFS]+=1;
+  result;
+);
+
+function mb_notes_advance_epoch(channel)
+local(ch)
+global(MB_CH_EPOCH, MB_FAULT_COUNTER, MB_SERIAL_MAX)
+(
+  ch=mb_channel_ptr(channel);
+  ch[MB_CH_EPOCH]>=MB_SERIAL_MAX ? mb_notes_fault(MB_FAULT_COUNTER) : ch[MB_CH_EPOCH]+=1;
+);
+
+function mb_notes_quiet(index)
+local(owner)
+global(MB_O_STATE)
+(
+  owner=mb_owner_ptr(index);
+  owner[MB_O_STATE]>0 ? mb_notes_retire_string(index, 0);
+);

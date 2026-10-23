@@ -1,0 +1,145 @@
+// Contact sleep uses a conservative displacement envelope, never a timed cutoff.
+// Inaudible homogeneous response motion can be advanced when it is next needed.
+@init
+function mb_contact_ptr(st, base)
+global(MB_FRET_POINT, MB_FP_WORDS, MB_BANK_A)
+( st+MB_FRET_POINT+(base!=st+MB_BANK_A)*MB_FP_WORDS; );
+
+function mb_contact_lazy_ptr(st, base)
+global(MB_CONTACT_LAZY, MB_CL_WORDS, MB_BANK_A)
+( st+MB_CONTACT_LAZY+(base!=st+MB_BANK_A)*MB_CL_WORDS; );
+
+function mb_contact_lazy_clear(st, base)
+global(MB_CL_HEADER)
+( memset(mb_contact_lazy_ptr(st,base),0,MB_CL_HEADER); );
+
+// Frozen response coordinates and cached rotations describe the same linear
+// motion. Integer complex powers avoid per-mode trig and preserve the exact
+// stored rotation, including any extra passive loss. Only rounding differs.
+function mb_contact_lazy_flush(st, base)
+local(lazy, b, i, n, rr, ri, pr, pi, nr, q, im, gain, fq, fi, ptr, alpha, omega, velocity)
+(
+  lazy=mb_contact_lazy_ptr(st,base);
+  lazy[MB_CL_ACTIVE] ? (
+    b=mb_contact_ptr(st,base); gain=lazy[MB_CL_DAMP]; i=0;
+    loop(lazy[MB_CL_COUNT],
+      rr=lazy[MB_CL_ROT_R+i]; ri=lazy[MB_CL_ROT_I+i];
+      pr=1; pi=0; n=lazy[MB_CL_STEPS];
+      while(n>0)(
+        n%2 ? (nr=pr*rr-pi*ri; pi=pr*ri+pi*rr; pr=nr;);
+        n=floor(n*0.5);
+        n>0 ? (nr=rr*rr-ri*ri; ri=2*rr*ri; rr=nr;);
+      );
+      q=(b+MB_FP_RESPONSE_Q)[i]; im=(b+MB_FP_RESPONSE_I)[i];
+      fq=(q*pr-im*pi)*gain; fi=(q*pi+im*pr)*gain;
+      lazy[MB_CL_ACTIVE]==2 ? (
+        // Stored coordinates are the uncontacted continuation A-C. Actual A
+        // still receives every collision. Rebase() may call after retuning A;
+        // return C in its cached old interpretation for the existing q/v map.
+        ptr=base+i*MB_MODE_STRIDE;
+        alpha=(b+MB_FP_RESPONSE_ALPHA)[i]; omega=(b+MB_FP_RESPONSE_OMEGA)[i];
+        q=ptr[MB_M_R]-fq;
+        abs(alpha-ptr[MB_M_ALPHA])+abs(omega-ptr[MB_M_OMEGA])>0 ? (
+          velocity=-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I]+alpha*fq+omega*fi;
+          im=-(velocity+alpha*q)/omega;
+        ) : im=ptr[MB_M_I]-fi;
+        (b+MB_FP_RESPONSE_Q)[i]=q; (b+MB_FP_RESPONSE_I)[i]=im;
+      ) : ((b+MB_FP_RESPONSE_Q)[i]=fq; (b+MB_FP_RESPONSE_I)[i]=fi;);
+      i+=1;
+    );
+    lazy[MB_CL_ACTIVE]=lazy[MB_CL_STEPS]=0; lazy[MB_CL_FLUSHES]+=1;
+  );
+);
+
+// At neutral observation gain: mode 1 freezes a homogeneous contact response;
+// mode 2 stores the uncontacted continuation, excluding real collision forces.
+// Count actual render advances and common damping, including fading old banks.
+function mb_contact_lazy_tick(st, base, count, reference)
+local(lazy, ptr, i, b)
+(
+  lazy=mb_contact_lazy_ptr(st,base);
+  reference && lazy[MB_CL_ACTIVE]==1 ? mb_contact_lazy_flush(st,base);
+  !lazy[MB_CL_ACTIVE] ? (
+    b=mb_contact_ptr(st,base);
+    reference && (st+MB_POP)[MB_POP_STYLE] ? count=min(count,b[MB_FP_RENDER_COUNT]);
+    lazy[MB_CL_ACTIVE]=reference ? 2 : 1; lazy[MB_CL_STEPS]=0;
+    lazy[MB_CL_DAMP]=1; lazy[MB_CL_COUNT]=count; i=0;
+    loop(count,
+      ptr=base+i*MB_MODE_STRIDE;
+      lazy[MB_CL_ROT_R+i]=ptr[MB_M_ROT_R]; lazy[MB_CL_ROT_I+i]=ptr[MB_M_ROT_I];
+      reference ? (
+        (b+MB_FP_RESPONSE_Q)[i]=ptr[MB_M_R]-(b+MB_FP_RESPONSE_Q)[i];
+        (b+MB_FP_RESPONSE_I)[i]=ptr[MB_M_I]-(b+MB_FP_RESPONSE_I)[i];
+      );
+      i+=1;
+    );
+  );
+  lazy[MB_CL_STEPS]+=1; lazy[MB_CL_DAMP]*=st[MB_S_MUTE];
+);
+
+// |q(x,t)| <= sum |phi_n(x)|*sqrt(R_n^2+I_n^2), for passive unchanged
+// rotations. If this fits every site's gap, future contact is impossible until
+// excitation/geometry invalidates the cache. No extrapolated contact timeout.
+function mb_pop_contact_sleep(st, base, count)
+local(b, pc, site, point, ptr, i, amplitude, safe, n, p1, p2, p3, x1, x2, x3)
+(
+  b=mb_contact_ptr(st,base); pc=st+MB_POP_CONTACT;
+  b[MB_FP_READY] && !b[MB_FP_SLEEP] && (st+MB_SLAP)[MB_SL_LEFT]<=0 ? (
+    b[MB_FP_SLEEP_CLOCK]-=1;
+    b[MB_FP_SLEEP_CLOCK]<=0 ? (
+      b[MB_FP_SLEEP_CLOCK]=MB_CONTACT_SLEEP_INTERVAL;
+      n=pc[MB_PCC_COUNT]; p1=pc+MB_PCC_HEADER;
+      p2=p1+MB_PCC_POINT_WORDS; p3=p2+MB_PCC_POINT_WORDS;
+      x1=x2=x3=i=0;
+      loop(count,
+        ptr=base+i*MB_MODE_STRIDE;
+        amplitude=sqrt(ptr[MB_M_R]^2+ptr[MB_M_I]^2);
+        x1+=abs((p1+MB_FP_PHI)[i])*amplitude;
+        n>1 ? x2+=abs((p2+MB_FP_PHI)[i])*amplitude;
+        n>2 ? x3+=abs((p3+MB_FP_PHI)[i])*amplitude;
+        i+=1;
+      );
+      safe=n>0 && x1<p1[MB_FP_GAP]*0.999999;
+      n>1 ? safe=safe && x2<p2[MB_FP_GAP]*0.999999;
+      n>2 ? safe=safe && x3<p3[MB_FP_GAP]*0.999999;
+      safe ? (
+        b[MB_FP_SLEEP]=1; b[MB_FP_FORCE]=b[MB_FP_WORK]=b[MB_FP_TOUCHING]=0;
+        site=0; loop(n,
+          point=pc+MB_PCC_HEADER+site*MB_PCC_POINT_WORDS;
+          point[MB_FP_TOUCHING]=0; site+=1;
+        );
+      );
+    );
+  );
+  b[MB_FP_READY] && b[MB_FP_SLEEP];
+);
+
+// The same passive-motion bound for the ordinary single fret. This only
+// skips contact after proving every future free displacement fits the gap.
+// State/geometry/coefficient writers already invalidate READY and SLEEP.
+function mb_contact_sleep(st, base, count)
+local(b, i, ptr, bound)
+global(MB_POP, MB_POP_STYLE, MB_FP_READY, MB_FP_SLEEP, MB_FP_SLEEP_CLOCK,
+       MB_CONTACT_SLEEP_INTERVAL, MB_FP_PHI, MB_M_R, MB_M_I, MB_MODE_STRIDE,
+       MB_FP_GAP, MB_FP_FORCE, MB_FP_WORK, MB_FP_TOUCHING)
+(
+  (st+MB_POP)[MB_POP_STYLE] ? mb_pop_contact_sleep(st, base, count) : (
+    b=mb_contact_ptr(st,base);
+    b[MB_FP_READY] && !b[MB_FP_SLEEP] ? (
+      b[MB_FP_SLEEP_CLOCK]-=1;
+      b[MB_FP_SLEEP_CLOCK]<=0 ? (
+        b[MB_FP_SLEEP_CLOCK]=MB_CONTACT_SLEEP_INTERVAL;
+        bound=i=0;
+        loop(count,
+          ptr=base+i*MB_MODE_STRIDE;
+          bound+=abs((b+MB_FP_PHI)[i])*sqrt(ptr[MB_M_R]^2+ptr[MB_M_I]^2);
+          i+=1;
+        );
+        bound<b[MB_FP_GAP]*0.999999 ? (
+          b[MB_FP_SLEEP]=1; b[MB_FP_FORCE]=b[MB_FP_WORK]=b[MB_FP_TOUCHING]=0;
+        );
+      );
+    );
+    b[MB_FP_READY] && b[MB_FP_SLEEP];
+  );
+);

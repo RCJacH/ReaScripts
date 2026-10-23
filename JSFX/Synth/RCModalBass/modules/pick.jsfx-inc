@@ -1,0 +1,101 @@
+// Pick controls are captured per accepted gesture; no coefficient work at idle.
+@init
+function mb_pick_request()
+(
+  pick_width_request=mb_clamp(p_pick_contact_width,0,10);
+  pick_depth_request=mb_clamp(p_pick_depth,0.05,5)*0.001;
+  pick_k_request=mb_clamp(p_pick_stiffness,10,100000);
+  pick_c_request=mb_clamp(p_pick_damping,0,10);
+  pick_angle_request=mb_clamp(p_pick_edge_angle,0,75);
+  pick_gain_request=10^(mb_clamp(p_pick_level,-24,12)/20)-1;
+);
+
+function mb_pick_apply()
+local(angle, i, b)
+(
+  pick_width_current=pick_width_request; pick_depth_current=pick_depth_request;
+  pick_k_current=pick_k_request; pick_c_current=pick_c_request;
+  pick_angle_current=pick_angle_request;
+  pick_gain_current=pick_gain_request;
+  i=0; loop(MB_MAX_STRINGS,
+    b=i*MB_STRING_WORDS+MB_PICK;
+    b[MB_PK_VOICE]==MB_TRIM_PICK ? b[MB_PK_GAIN_TARGET]=pick_gain_current;
+    i+=1;
+  );
+  pick_normal_current=1; pick_edge_slope_current=0;
+  pick_angle_current>0 ? (
+    angle=pick_angle_current*$pi/180;
+    pick_normal_current=cos(angle)^2;
+    pick_edge_slope_current=tan(angle);
+  );
+);
+
+function mb_pick_configuration(st, cfg)
+local(b)
+(
+  b=st+MB_PICK;
+  b[MB_PK_K]=pick_k_current; b[MB_PK_C]=pick_c_current;
+  b[MB_PK_ANGLE]=pick_angle_current; b[MB_PK_EDGE_SLOPE]=pick_edge_slope_current;
+  // Project the tilted edge's normal spring/damper into the modeled stroke.
+  // A fixed projection stays passive; this does not scale the pickup output.
+  pick_angle_current>0 ? (b[MB_PK_K]*=pick_normal_current; b[MB_PK_C]*=pick_normal_current;);
+  b[MB_PK_DEPTH]=pick_depth_current;
+  b[MB_PK_DIRECTION]=pick_last;
+  b[MB_PK_SIGN]=pick_last==0 ? 1 : -1;
+  cfg[MB_C_CONTACT_WIDTH]=pick_width_current;
+  cfg[MB_C_SOFTNESS]=cfg[MB_C_DISPLACEMENT]=0;
+);
+
+// Run after passive q/v carry. The pick initially meets the moving string at
+// its current averaged contact position: no hard reset or initial force jump.
+function mb_pick_arm(st, velocity)
+local(b, cfg, g, base, last, mass, strength, depth, speed, release, sweep, i, ptr,
+      phi, alpha, omega, stiffness, aq, av, ai, origin, compliance, partial)
+(
+  b=st+MB_PICK; cfg=st+MB_CONFIG; g=st+MB_GEOMETRY; base=st[MB_S_ACTIVE];
+  mb_contact_lazy_flush(st,base);
+  mass=cfg[MB_C_TENSION]/(2*g[MB_G_LENGTH]*g[MB_G_F1])^2*g[MB_G_LENGTH]/2;
+  strength=(mb_clamp(velocity,1,127)/127)^velocity_curve_current;
+  depth=mb_variation_strength(st,b[MB_PK_DEPTH]*strength)*b[MB_PK_SIGN];
+  speed=MB_PICK_SPEED*sqrt(strength);
+  b[MB_PK_PULL]=max(4,ceil(min(MB_PICK_MAX_MS*0.001,abs(depth)/max(0.001,speed))*srate));
+  release=mb_variation_softness(st,0.00010+0.00035*low_velocity_attack_softness_current*(1-velocity/127));
+  release=mb_clamp(release,0.00005,0.001);
+  b[MB_PK_RELEASE]=max(2,ceil(release*srate));
+  b[MB_PK_ESCAPE_START]=b[MB_PK_PULL];
+  b[MB_PK_ANGLE]>0 ? (
+    // An oblique edge releases its finite footprint progressively. Collapse
+    // width*tan(angle)/stroke_speed to one smooth escape, not extra contacts.
+    // Keep the existing <=1-ms release budget (with sample rounding).
+    sweep=min(max(0,0.001*srate-b[MB_PK_RELEASE]),
+      g[MB_G_WIDTH]*b[MB_PK_EDGE_SLOPE]/max(0.001,speed)*srate);
+    sweep=floor(sweep);
+    b[MB_PK_ESCAPE_START]=max(1,b[MB_PK_PULL]-floor(0.5*sweep));
+    b[MB_PK_RELEASE]+=sweep;
+  );
+  b[MB_PK_TOTAL]=b[MB_PK_LEFT]=b[MB_PK_ESCAPE_START]+b[MB_PK_RELEASE];
+  b[MB_PK_BANK]=base; b[MB_PK_COUNT]=st[MB_S_COUNT]; b[MB_PK_LENGTH]=g[MB_G_LENGTH];
+  b[MB_PK_MASS]=mass; b[MB_PK_DEPTH]=depth;
+  origin=compliance=i=0; partial=st[MB_S_HARMONIC];
+  loop(st[MB_S_COUNT],
+    ptr=base+i*MB_MODE_STRIDE; alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
+    phi=sin((i+1)*$pi*g[MB_G_P])*mb_sinc((i+1)*$pi*g[MB_G_WIDTH]/(2*g[MB_G_LENGTH]));
+    phi*=mb_band_taper(ptr[MB_M_FREQ]);
+    partial>1 && (i+1)%partial ? phi=0;
+    stiffness=omega*omega+alpha*alpha;
+    aq=phi*(1-ptr[MB_M_ROT_R]-alpha/omega*ptr[MB_M_ROT_I])/(mass*stiffness);
+    av=phi*ptr[MB_M_ROT_I]/(mass*omega);
+    ai=-(av+alpha*aq)/omega;
+    b[MB_PK_PHI+i]=phi; b[MB_PK_Q+i]=aq; b[MB_PK_I+i]=ai;
+    compliance+=phi*aq; origin+=phi*ptr[MB_M_R]; i+=1;
+  );
+  b[MB_PK_COMPLIANCE]=max(0,compliance);
+  b[MB_PK_ORIGIN]=b[MB_PK_ANCHOR]=origin;
+  b[MB_PK_FORCE]=b[MB_PK_WORK]=b[MB_PK_LOSS]=b[MB_PK_STORED]=b[MB_PK_STEPS]=b[MB_PK_MAX_FORCE]=0;
+  b[MB_PK_OMEGA]=base[MB_M_OMEGA]; b[MB_PK_ALPHA]=base[MB_M_ALPHA];
+  last=base+max(0,st[MB_S_COUNT]-1)*MB_MODE_STRIDE;
+  b[MB_PK_LAST_OMEGA]=last[MB_M_OMEGA]; b[MB_PK_LAST_ALPHA]=last[MB_M_ALPHA];
+  mb_pick_friction_arm(st);
+  st[MB_S_COUNT]<=0 ? mb_pick_cancel(st);
+  mb_contact_invalidate(st);
+);

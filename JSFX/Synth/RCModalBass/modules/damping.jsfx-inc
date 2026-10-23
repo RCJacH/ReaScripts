@@ -1,0 +1,17 @@
+@init
+function mb_modal_alpha(freq, cfg, g)
+global(MB_C_HF_LOSS, MB_C_LOSS_EXPONENT, MB_C_T60, MB_G_AGE, MB_G_END_LOSS)
+(
+  log(1000)/cfg[MB_C_T60] + cfg[MB_C_HF_LOSS]*(freq/1000)^cfg[MB_C_LOSS_EXPONENT]
+  + g[MB_G_AGE]*(0.15+14*(freq/1000)^1.2)
+  + g[MB_G_END_LOSS]*2*sqrt(freq/1000);
+);
+
+// Extra multiplicative damping applies to active and fading banks.
+// Baseline/age/endpoint losses remain latched; spatial palm loss is live.
+function mb_engine_damp(st, t60_ms)
+global(MB_S_CHANNEL, MB_S_MUTE, MB_S_NOTE, srate)
+(
+  st[MB_S_MUTE]=exp(-log(1000)/(max(1, t60_ms)*0.001*srate));
+  st[MB_S_NOTE]=st[MB_S_CHANNEL]=-1;
+);

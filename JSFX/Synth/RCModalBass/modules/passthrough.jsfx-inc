@@ -1,0 +1,139 @@
+// Short-message forwarding in @block. Independent of voice allocation/faults.
+// Notes use FIFO per source channel/key, including consumed and rejected ons.
+@init
+// Receive-time classification mirrors the actual active note matchers, using
+// native values because @block applies their requests after collecting MIDI.
+// Unimplemented assignments never claim a key. The LH range follows the configured fret count.
+function mb_passthrough_keyswitch(channel, note)
+local(found, k, mapping)
+(
+  found=0;
+  p_keyswitch_channel==0 || floor(p_keyswitch_channel)==channel+1 ? (
+    found=(p_legato_slide_controller<128 && note==floor(p_legato_slide_controller)) ||
+      (p_ho_po_controller<128 && note==floor(p_ho_po_controller)) ||
+      (p_ghost_controller<128 && note==floor(p_ghost_controller)) ||
+      (p_tapping_style_controller<128 && note==floor(p_tapping_style_controller)) ||
+      (p_harmonics_controller<128 && note==floor(p_harmonics_controller)) ||
+      (p_let_ring_controller<128 && note==floor(p_let_ring_controller)) ||
+      (p_chord_mode_controller<128 && note==floor(p_chord_mode_controller)) ||
+      (p_pick_style_controller<128 && note==floor(p_pick_style_controller));
+    floor(p_midi_channel_mode)==0 ? found=found ||
+      note==floor(p_force_c_string) || note==floor(p_force_g_string) ||
+      note==floor(p_force_d_string) || note==floor(p_force_a_string) ||
+      note==floor(p_force_e_string) || note==floor(p_force_b_string);
+    k=0;
+    loop(MB_PERF_MAPS,
+      mapping=mb_performance_mapping(k);
+      mapping>=0 && (k==0 ? mapping<128 && mapping==note :
+        k==3 ? mapping>=1 && mapping<=128 && note==mapping-1 :
+        k==4 ? note>=mapping && note<=min(127,mapping+mb_clamp(floor(p_fret_count),12,24)) :
+        mapping<128 && note==mapping) ? found=1;
+      k+=1;
+    );
+  );
+  found;
+);
+
+function mb_passthrough_record(index)
+global(MB_PASS_RECORDS, MB_PASS_WORDS)
+( MB_PASS_RECORDS+index*MB_PASS_WORDS; );
+
+// Keep invalidated FIFO entries: their delayed offs must not release newer ons.
+// If the original channel panic is filtered, send only the required note-offs.
+function mb_passthrough_channel_off(offset, channel, forwarded)
+local(note, key, index, record)
+global(MB_PASS_HEADS, MB_PT_NEXT, MB_PT_SENT)
+(
+  note=0;
+  loop(128,
+    key=channel*128+note; index=MB_PASS_HEADS[key];
+    while(index>=0) (
+      record=mb_passthrough_record(index);
+      record[MB_PT_SENT] && !forwarded ? midisend(offset,$x80+channel,note,0);
+      record[MB_PT_SENT]=0; index=record[MB_PT_NEXT];
+    );
+    note+=1;
+  );
+);
+
+function mb_passthrough_reset(offset, release)
+local(channel)
+(
+  release ? (
+    channel=0; loop(MB_CHANNELS,
+      mb_passthrough_channel_off(offset,channel,0); channel+=1;
+    );
+  );
+  memset(MB_PASSTHROUGH,0,MB_PASS_END-MB_PASSTHROUGH);
+  memset(MB_PASS_HEADS,-1,2*MB_KEY_COUNT);
+  MB_PASSTHROUGH[MB_PT_FREE]=-1;
+);
+
+function mb_passthrough_init()
+global(p_midi_reset, passthrough_reset_seen)
+(
+  passthrough_reset_seen=p_midi_reset;
+  mb_passthrough_reset(0,0);
+);
+
+// Explicit instrument Reset also releases output notes before clearing history.
+function mb_passthrough_sync(offset)
+global(p_midi_reset, passthrough_reset_seen)
+(
+  p_midi_reset!=passthrough_reset_seen ? (
+    mb_passthrough_reset(offset,1);
+    passthrough_reset_seen=p_midi_reset;
+  );
+);
+
+function mb_passthrough_receive(offset, status, data1, data2)
+local(kind, channel, note, key, mask, category, send, index, record, tail)
+(
+  mb_passthrough_sync(0);
+  kind=status&$xF0; channel=status&15; note=data1&127;
+  mask=mb_clamp(floor(p_passthrough),0,7);
+  kind==$x90 || kind==$x80 ? (
+    key=channel*128+note;
+    category=mb_passthrough_keyswitch(channel,note) ? MB_PASS_SWITCHES : MB_PASS_NOTES;
+    send=(mask&category)!=0;
+    kind==$x90 && (data2&127)>0 ? (
+      index=-1;
+      !MB_PASSTHROUGH[MB_PT_FAULT] ? (
+        MB_PASSTHROUGH[MB_PT_FREE]>=0 ? (
+          index=MB_PASSTHROUGH[MB_PT_FREE];
+          MB_PASSTHROUGH[MB_PT_FREE]=mb_passthrough_record(index)[MB_PT_NEXT];
+        ) : MB_PASSTHROUGH[MB_PT_ALLOCATED]<MB_PASS_LIMIT ? (
+          index=MB_PASSTHROUGH[MB_PT_ALLOCATED];
+          MB_PASSTHROUGH[MB_PT_ALLOCATED]+=1;
+        ) : (
+          // Bounded fail-safe: close forwarded notes, then block new output ons
+          // until explicit MIDI Reset. Instrument ownership is never modified.
+          mb_passthrough_reset(offset,1); MB_PASSTHROUGH[MB_PT_FAULT]=1;
+        );
+      );
+      index>=0 ? (
+        record=mb_passthrough_record(index);
+        record[MB_PT_NEXT]=-1; record[MB_PT_SENT]=send;
+        tail=MB_PASS_TAILS[key];
+        tail>=0 ? mb_passthrough_record(tail)[MB_PT_NEXT]=index : MB_PASS_HEADS[key]=index;
+        MB_PASS_TAILS[key]=index; MB_PASSTHROUGH[MB_PT_USED]+=1;
+      ) : send=0;
+    ) : (
+      index=MB_PASS_HEADS[key];
+      index>=0 ? (
+        record=mb_passthrough_record(index); send=record[MB_PT_SENT];
+        MB_PASS_HEADS[key]=record[MB_PT_NEXT];
+        MB_PASS_HEADS[key]<0 ? MB_PASS_TAILS[key]=-1;
+        record[MB_PT_SENT]=0;
+        record[MB_PT_NEXT]=MB_PASSTHROUGH[MB_PT_FREE];
+        MB_PASSTHROUGH[MB_PT_FREE]=index; MB_PASSTHROUGH[MB_PT_USED]-=1;
+      );
+    );
+    send ? midisend(offset,status,data1,data2);
+  ) : (
+    // CC (mapped or unassigned), wheel, all pressure, program/system messages.
+    send=(mask&MB_PASS_CONTROLS)!=0;
+    send ? midisend(offset,status,data1,data2);
+    kind==$xB0 && (note==120 || note==123) ? mb_passthrough_channel_off(offset,channel,send);
+  );
+);

@@ -1,0 +1,173 @@
+// Audio-owned Ghost and spatial Palm damping.
+@init
+
+// ---- ghost ----
+// Muted pluck approximation: persistent uniform loss, with optional diagonal
+// spatial damping over a finite finger patch. No collision or contact texture.
+// Twice the mean squared mode shape over the patch. Coordinate 0 is the
+// saddle; the patch is 35 mm into the speaking span from its stopped end.
+// Finite width avoids the perfectly undamped nodes of a point approximation.
+function mb_ghost_overlap(n, length)
+local(offset, width, center)
+global(MB_GHOST_OFFSET, MB_GHOST_WIDTH)
+(
+  offset=min(MB_GHOST_OFFSET, length*0.25);
+  width=min(MB_GHOST_WIDTH, offset);
+  center=1-offset/length;
+  max(0, 1-cos(2*$pi*n*center)*mb_sinc($pi*n*width/length));
+);
+
+// Called ONLY on fresh base coefficients (after pluck or geometry rebuild).
+// Diagonal loss omits coupling between modes. Retain q/v and omega^2+alpha^2,
+// so adding damping neither injects energy nor changes modal stiffness.
+// The underdamped oscillator cannot represent real roots: cap added loss at
+// alpha=0.95*natural frequency for extreme low tunings, never reduce base loss.
+function mb_ghost_coefficients(st, base, count, length)
+local(amount, i, ptr, q, v, natural2, alpha, omega, loss, radius)
+(
+  amount=(st+MB_LIVE)[MB_L_GHOST_AMOUNT];
+  amount>0 ? (
+    i=0;
+    loop(count,
+      ptr=base+i*MB_MODE_STRIDE;
+      q=ptr[MB_M_R]; v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*ptr[MB_M_I];
+      natural2=ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2;
+      loss=amount*MB_GHOST_LOSS*mb_ghost_overlap(i+1, length);
+      loss=min(loss, max(0, 0.95*sqrt(natural2)-ptr[MB_M_ALPHA]));
+      alpha=ptr[MB_M_ALPHA]+loss;
+      omega=sqrt(max(0.000000000001, natural2-alpha*alpha));
+      ptr[MB_M_I]=-(v+alpha*q)/omega;
+      ptr[MB_M_ALPHA]=alpha; ptr[MB_M_OMEGA]=omega;
+      radius=exp(-alpha/srate);
+      ptr[MB_M_ROT_R]=radius*cos(omega/srate);
+      ptr[MB_M_ROT_I]=radius*sin(omega/srate);
+      i+=1;
+    );
+    mb_contact_rebase(st, base);
+  );
+);
+
+function mb_ghost_excite(st)
+local(i, ptr, damp)
+(
+  // Capture per gesture; later knob edits cannot relax an existing ghost mute.
+  damp=exp(-log(1000)/(ghost_decay_ms_current*0.001*srate));
+  (st+MB_LIVE)[MB_L_GHOST_DAMP]=damp;
+  st[MB_S_MUTE]=min(st[MB_S_MUTE], damp);
+  mb_contact_response_scale(st, st[MB_S_ACTIVE], st[MB_S_COUNT], MB_GHOST_GAIN);
+  i=0;
+  loop(st[MB_S_COUNT],
+    ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+    ptr[MB_M_R]*=MB_GHOST_GAIN;
+    ptr[MB_M_I]*=MB_GHOST_GAIN;
+    ptr[MB_M_INITIAL]*=MB_GHOST_GAIN;
+    i+=1;
+  );
+  (st+MB_LIVE)[MB_L_GHOST_AMOUNT]=ghost_damping_current;
+  mb_ghost_coefficients(st, st[MB_S_ACTIVE], st[MB_S_COUNT], (st+MB_GEOMETRY)[MB_G_LENGTH]);
+  mb_magnet_loss_rebase(st, st[MB_S_ACTIVE]);
+  MB_ARTICULATION[MB_A_GHOSTS]+=1;
+);
+
+// Enforce before observation: note-off/CC123 may request slower release, but
+// cannot relax a ghost's existing mute. A fresh explicit pluck clears this word
+// through mb_live_seed; changing/releasing the switch cannot revive vibration.
+function mb_ghost_enforce(st)
+local(l)
+global(MB_LIVE, MB_L_GHOST_DAMP, MB_L_GHOST_AMOUNT, MB_S_COUNT, MB_S_PREVIOUS_LEFT, MB_S_MUTE)
+(
+  l=st+MB_LIVE;
+  l[MB_L_GHOST_DAMP]>0 ? (
+    st[MB_S_COUNT]>0 || st[MB_S_PREVIOUS_LEFT]>0 ?
+      st[MB_S_MUTE]=min(st[MB_S_MUTE], l[MB_L_GHOST_DAMP]) :
+      (l[MB_L_GHOST_DAMP]=0; l[MB_L_GHOST_AMOUNT]=0;);
+  );
+);
+
+// ---- palm ----
+// Finite bridge-relative palm patch. Diagonal viscous loss, not a new voice.
+// Preparation runs on gestures/geometry edits and block-rate control changes.
+function mb_palm_request()
+global(p_palm, p_palm_position, p_palm_width, palm_amount_request, palm_position_request, palm_width_request)
+(
+  palm_amount_request=mb_clamp(p_palm*0.01, 0, 1);
+  palm_position_request=mb_clamp(p_palm_position, 0, 150);
+  palm_width_request=mb_clamp(p_palm_width, 1, 80);
+);
+
+function mb_palm_bank(st, base)
+global(MB_PALM, MB_PM_HEADER, MB_BANK_A, MB_PB_WORDS)
+( st+MB_PALM+MB_PM_HEADER+(base!=st+MB_BANK_A)*MB_PB_WORDS; );
+
+// Twice the integral of sin^2 over the patch / requested width. Clipping at
+// either endpoint removes coverage; it never relocates the hand into the span.
+function mb_palm_overlap(n, length, position, width)
+global()
+( 2*mb_magnet_overlap(n, position, width, length); );
+
+// Existing q/v and natural stiffness are invariant at the edit boundary.
+// The independent modes omit the off-diagonal coupling of a real local damper.
+function mb_palm_coefficients(st, base, count, length, fresh)
+local(p, b, i, ptr, old, loss, alpha, omega, natural2, q, v, radius, changed)
+(
+  p=st+MB_PALM; b=mb_palm_bank(st, base);
+  changed=p[MB_PM_AMOUNT]>0 || (!fresh && b[MB_PB_AMOUNT]>0);
+  fresh ? memset(b+MB_PB_LOSS, 0, MB_MAX_MODES);
+  changed && count>0 && length>0 ? (
+    mb_contact_lazy_flush(st, base);
+    i=0; loop(count,
+      ptr=base+i*MB_MODE_STRIDE;
+      old=(b+MB_PB_LOSS)[i];
+      natural2=ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2;
+      alpha=max(0, ptr[MB_M_ALPHA]-old);
+      loss=p[MB_PM_AMOUNT]*MB_PALM_LOSS*
+        mb_palm_overlap(i+1, length, p[MB_PM_POSITION], p[MB_PM_WIDTH]);
+      loss=min(loss, max(0, 0.95*sqrt(natural2)-alpha));
+      loss!=old ? (
+        q=ptr[MB_M_R]; v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*ptr[MB_M_I];
+        alpha+=loss; omega=sqrt(max(0.000000000001, natural2-alpha*alpha));
+        ptr[MB_M_I]=-(v+alpha*q)/omega;
+        ptr[MB_M_ALPHA]=alpha; ptr[MB_M_OMEGA]=omega;
+        radius=exp(-alpha/srate);
+        ptr[MB_M_ROT_R]=radius*cos(omega/srate); ptr[MB_M_ROT_I]=radius*sin(omega/srate);
+      );
+      (b+MB_PB_LOSS)[i]=loss; i+=1;
+    );
+    mb_contact_rebase(st, base);
+    !fresh ? mb_magnet_loss_rebase(st, base);
+  );
+  b[MB_PB_AMOUNT]=p[MB_PM_AMOUNT]; b[MB_PB_REVISION]=p[MB_PM_REVISION];
+  b[MB_PB_COUNT]=count; b[MB_PB_LENGTH]=length;
+);
+
+// A finite pick already owns cached force responses. Defer a live palm edit
+// until it releases (<8 ms including Scratch lead); do not restart the gesture.
+function mb_palm_apply(st)
+local(p, b, bank, base, count, length, fraction, busy, changed)
+(
+  p=st+MB_PALM;
+  busy=st[MB_S_COUNT]>0 || st[MB_S_PREVIOUS_LEFT]>0;
+  fraction=busy ? 1-exp(-samplesblock/(0.015*srate)) : 1;
+  changed=p[MB_PM_AMOUNT]!=palm_amount_request || p[MB_PM_POSITION]!=palm_position_request ||
+    p[MB_PM_WIDTH]!=palm_width_request;
+  changed ? (
+    p[MB_PM_AMOUNT]+=(palm_amount_request-p[MB_PM_AMOUNT])*fraction;
+    p[MB_PM_POSITION]+=(palm_position_request-p[MB_PM_POSITION])*fraction;
+    p[MB_PM_WIDTH]+=(palm_width_request-p[MB_PM_WIDTH])*fraction;
+    abs(p[MB_PM_AMOUNT]-palm_amount_request)<0.000001 ? p[MB_PM_AMOUNT]=palm_amount_request;
+    abs(p[MB_PM_POSITION]-palm_position_request)<0.0001 ? p[MB_PM_POSITION]=palm_position_request;
+    abs(p[MB_PM_WIDTH]-palm_width_request)<0.0001 ? p[MB_PM_WIDTH]=palm_width_request;
+    p[MB_PM_REVISION]+=1;
+  );
+  bank=0; loop(2,
+    base=st+(bank==0 ? MB_BANK_A : MB_BANK_B);
+    count=base==st[MB_S_ACTIVE] ? st[MB_S_COUNT] :
+      st[MB_S_PREVIOUS_LEFT]>0 ? st[MB_S_PREVIOUS_COUNT] : 0;
+    b=mb_palm_bank(st, base);
+    length=st[bank==0 ? MB_S_LENGTH_A : MB_S_LENGTH_B];
+    count>0 && b[MB_PB_REVISION]!=p[MB_PM_REVISION] &&
+      !(base==st[MB_S_ACTIVE] && (st+MB_PICK)[MB_PK_LEFT]>0) ?
+        mb_palm_coefficients(st, base, count, length, 0);
+    bank+=1;
+  );
+);

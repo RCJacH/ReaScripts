@@ -1,0 +1,231 @@
+// Optional per-coil, single-plane displacement-to-flux-gradient observation.
+// Band-limited aperture mean q/v, then 4x Hermite reconstruction and filtered
+// nonlinear correction. Never advances or alters a physical mode.
+@init
+function mb_nonlinear_request()
+global(p_pickup_nonlinearity_amount, nonlinear_amount_request)
+(
+  nonlinear_amount_request=mb_clamp(p_pickup_nonlinearity_amount*0.01, 0, 1);
+);
+
+function mb_nonlinear_ptr(st, weights)
+global(MB_PICKUP_NL, MB_PICKUP_A, MB_NL_A, MB_NL_B)
+( st+MB_PICKUP_NL+(weights==st+MB_PICKUP_A ? MB_NL_A : MB_NL_B); );
+
+// Normalized gradient S(q)/S(0)-1. Positive q is toward the pickup. Softly
+// continue the field at impossible excursions; relative travel stays <1/2.
+// Pole factor 0=Rail, 1=Poles; intermediate values smooth a geometry edit.
+function mb_nonlinear_gradient(q, depth, pole)
+local(relative, ratio)
+global()
+(
+  relative=q/max(depth, 0.000001);
+  relative/=sqrt(1+4*relative*relative);
+  ratio=1/(1-relative);
+  (ratio-1)*(1+pole*ratio);
+);
+
+function mb_nonlinear_filter(st)
+local(nl, i, x, value, sum)
+global(MB_PICKUP_NL, MB_NL_FIR, MB_NL_TAPS, MB_NL_CONFIGURED)
+(
+  nl=st+MB_PICKUP_NL; sum=i=0;
+  loop(MB_NL_TAPS,
+    x=i-0.5*(MB_NL_TAPS-1);
+    value=0.125*mb_sinc($pi*0.125*x)*(0.42-0.5*cos(2*$pi*i/(MB_NL_TAPS-1))+0.08*cos(4*$pi*i/(MB_NL_TAPS-1)));
+    (nl+MB_NL_FIR)[i]=value; sum+=value; i+=1;
+  );
+  i=0; loop(MB_NL_TAPS, (nl+MB_NL_FIR)[i]/=sum; i+=1;);
+  nl[MB_NL_CONFIGURED]=1;
+);
+
+// Rebuild only on observation/span edits. Four geometric aperture means, not
+// four differently scaled displacements. Coverage/height/wiring enter once.
+function mb_nonlinear_build(st, weights, count, length, open_length, immediate)
+local(nl, b, c, record, field, pickup, coil, target, current, i, n, gap, width)
+(
+  nl=st+MB_PICKUP_NL;
+  nl[MB_NL_ON] && count>0 && length>0 && open_length>0 ? (
+    b=mb_nonlinear_ptr(st, weights); field=st+MB_PICKUP_FIELD;
+    mb_coils_prepare(st, weights, length, open_length);
+    c=st+MB_PICKUP_COILS+(weights==st+MB_PICKUP_A ? MB_PC_A : MB_PC_B);
+    b[MB_NLB_COUNT]=count;
+    b[MB_NLB_LEFT]=immediate ? 0 : max(1, ceil(MB_PICKUP_SMOOTH_MS*0.001*srate));
+    immediate ? (
+      b[MB_NLB_CURSOR]=b[MB_NLB_OUTPUT1]=b[MB_NLB_OUTPUT2]=0;
+      memset(b+MB_NLB_COILS, 0, 4*MB_NLC_WORDS);
+    );
+    coil=0; loop(4,
+      pickup=coil>=2; record=b+MB_NLB_COILS+coil*MB_NLC_WORDS;
+      gap=max(0, c[MB_CO_GAP]);
+      width=MB_PICKUP_REFERENCE_FIELD_WIDTH+field[pickup ? MB_PF_WIDTH2 : MB_PF_WIDTH1];
+      record[MB_NLC_GAIN_TARGET]=c[MB_CO_GAIN];
+      record[MB_NLC_DEPTH_TARGET]=0.001*(gap+mb_field_source_depth(width));
+      record[MB_NLC_POLE_TARGET]=field[pickup ? MB_PF_GEOMETRY2 : MB_PF_GEOMETRY1]==MB_POLE_POLES;
+      target=b+MB_NLB_TARGETS+coil*MB_MAX_MODES; current=b+MB_NLB_WEIGHTS+coil*MB_MAX_MODES;
+      i=0; loop(count,
+        n=i+1;
+        target[i]=c[MB_CO_COVERAGE]>0 ? sin(n*$pi*c[MB_CO_Q])*mb_sinc(n*$pi*c[MB_CO_WIDTH]) : 0;
+        i+=1;
+      );
+      immediate ? (
+        memcpy(current, target, count);
+        memcpy(record+MB_NLC_GAIN, record+MB_NLC_GAIN_TARGET, 3);
+      );
+      c+=MB_COIL_WORDS; coil+=1;
+    );
+  );
+);
+
+function mb_nonlinear_clear(st)
+global(MB_PICKUP_NL, MB_NL_A, MB_NL_BANK_WORDS)
+( memset(st+MB_PICKUP_NL+MB_NL_A, 0, 2*MB_NL_BANK_WORDS); );
+
+// One control-rate request application. Enabling an already vibrating string
+// warms its own observer; zero/default does not touch reserved RAM.
+function mb_nonlinear_apply(st)
+local(nl, bank, weights, meta, initial)
+(
+  nl=st+MB_PICKUP_NL;
+  nonlinear_amount_request>0 || nl[MB_NL_ON] ? (
+    initial=!nl[MB_NL_ON];
+    !nl[MB_NL_CONFIGURED] ? mb_nonlinear_filter(st);
+    initial ? (
+      nl[MB_NL_ON]=1; bank=0;
+      loop(2,
+        weights=st+(bank==0 ? MB_PICKUP_A : MB_PICKUP_B);
+        meta=st+MB_PICKUP_STATE+(bank==0 ? MB_PU_A : MB_PU_B);
+        mb_nonlinear_build(st, weights, meta[MB_PUB_COUNT], meta[MB_PUB_LENGTH], meta[MB_PUB_OPEN_LENGTH], 1);
+        bank+=1;
+      );
+    );
+    initial || nl[MB_NL_TARGET]!=nonlinear_amount_request ? (
+      nl[MB_NL_TARGET]=nonlinear_amount_request;
+      nl[MB_NL_LEFT]=max(1, ceil(MB_PICKUP_SMOOTH_MS*0.001*srate));
+      st[MB_S_COUNT]==0 && st[MB_S_PREVIOUS_LEFT]<=0 ? (
+        nl[MB_NL_AMOUNT]=nl[MB_NL_TARGET]; nl[MB_NL_LEFT]=0;
+        nl[MB_NL_AMOUNT]==0 ? (nl[MB_NL_ON]=0; mb_nonlinear_clear(st););
+      );
+    );
+  );
+);
+
+function mb_nonlinear_tick(st)
+local(nl, bank, b, fraction, coil, c, i, current, target)
+(
+  nl=st+MB_PICKUP_NL;
+  nl[MB_NL_ON] ? (
+    nl[MB_NL_LEFT]>0 ? (
+      nl[MB_NL_AMOUNT]+=(nl[MB_NL_TARGET]-nl[MB_NL_AMOUNT])/nl[MB_NL_LEFT];
+      nl[MB_NL_LEFT]-=1;
+      nl[MB_NL_LEFT]<=0 ? (
+        nl[MB_NL_AMOUNT]=nl[MB_NL_TARGET];
+        nl[MB_NL_AMOUNT]==0 ? (nl[MB_NL_ON]=0; mb_nonlinear_clear(st););
+      );
+    );
+    bank=0; loop(2,
+      b=nl+(bank==0 ? MB_NL_A : MB_NL_B);
+      b[MB_NLB_LEFT]>0 ? (
+        fraction=1/b[MB_NLB_LEFT]; coil=0;
+        loop(4,
+          c=b+MB_NLB_COILS+coil*MB_NLC_WORDS;
+          c[MB_NLC_GAIN]+=(c[MB_NLC_GAIN_TARGET]-c[MB_NLC_GAIN])*fraction;
+          c[MB_NLC_DEPTH]+=(c[MB_NLC_DEPTH_TARGET]-c[MB_NLC_DEPTH])*fraction;
+          c[MB_NLC_POLE]+=(c[MB_NLC_POLE_TARGET]-c[MB_NLC_POLE])*fraction;
+          current=b+MB_NLB_WEIGHTS+coil*MB_MAX_MODES; target=b+MB_NLB_TARGETS+coil*MB_MAX_MODES;
+          i=0; loop(b[MB_NLB_COUNT], current[i]+=(target[i]-current[i])*fraction; i+=1;);
+          b[MB_NLB_LEFT]==1 ? (
+            memcpy(current, target, b[MB_NLB_COUNT]);
+            memcpy(c+MB_NLC_GAIN, c+MB_NLC_GAIN_TARGET, 3);
+          );
+          coil+=1;
+        );
+        b[MB_NLB_LEFT]-=1;
+      );
+      bank+=1;
+    );
+  );
+);
+
+// Hermite interpolation of displacement and its derivative between observations.
+// Only the nonlinear correction is delayed (~7.875 base-rate samples); the
+// approved linear signal is never delayed, filtered or differentiated again.
+function mb_nonlinear_coil_step(st, c, cursor, q, v, observe)
+local(q0, v0, i, qi, vi, ring, output, index, fir, ring_mask, depth, pole)
+(
+  c[MB_NLC_GAIN]>0 ? (
+    c[MB_NLC_VALID] ? (q0=c[MB_NLC_Q]; v0=c[MB_NLC_V];) : (q0=q; v0=v; c[MB_NLC_VALID]=1;);
+    ring=c+MB_NLC_RING; ring_mask=MB_NL_TAPS-1;
+    depth=c[MB_NLC_DEPTH]; pole=c[MB_NLC_POLE];
+    // Exact binary Hermite coefficients at 1/4, 1/2, 3/4 and 1. Preserve
+    // arithmetic order; the last sub-sample is the current observation itself.
+    qi=0.84375*q0+0.140625*v0/srate+0.15625*q-0.046875*v/srate;
+    vi=-1.125*(q0-q)*srate+0.1875*v0-0.3125*v;
+    ring[cursor&ring_mask]=mb_nonlinear_gradient(qi, depth, pole)*vi;
+    qi=0.5*q0+0.125*v0/srate+0.5*q-0.125*v/srate;
+    vi=-1.5*(q0-q)*srate-0.25*v0-0.25*v;
+    ring[(cursor+1)&ring_mask]=mb_nonlinear_gradient(qi, depth, pole)*vi;
+    qi=0.15625*q0+0.046875*v0/srate+0.84375*q-0.140625*v/srate;
+    vi=-1.125*(q0-q)*srate-0.3125*v0+0.1875*v;
+    ring[(cursor+2)&ring_mask]=mb_nonlinear_gradient(qi, depth, pole)*vi;
+    ring[(cursor+3)&ring_mask]=mb_nonlinear_gradient(q, depth, pole)*v;
+    c[MB_NLC_Q]=q; c[MB_NLC_V]=v;
+    // Keep all 64 taps and their accumulation order. Eight taps per iteration
+    // remove loop bookkeeping without changing the filter or its delay.
+    output=0;
+    observe ? (
+      fir=st+MB_PICKUP_NL+MB_NL_FIR; i=0; index=cursor+3;
+      loop(MB_NL_TAPS/8,
+        output+=fir[i]*ring[index&ring_mask];
+        output+=fir[i+1]*ring[(index-1)&ring_mask];
+        output+=fir[i+2]*ring[(index-2)&ring_mask];
+        output+=fir[i+3]*ring[(index-3)&ring_mask];
+        output+=fir[i+4]*ring[(index-4)&ring_mask];
+        output+=fir[i+5]*ring[(index-5)&ring_mask];
+        output+=fir[i+6]*ring[(index-6)&ring_mask];
+        output+=fir[i+7]*ring[(index-7)&ring_mask];
+        i+=8; index-=8;
+      );
+    );
+    c[MB_NLC_GAIN]*output;
+  ) : (
+    c[MB_NLC_VALID] ? (memset(c+MB_NLC_RING, 0, MB_NL_TAPS); c[MB_NLC_VALID]=0;);
+    0;
+  );
+);
+
+// Standalone coil-observation API, also used by the antialias fixtures.
+function mb_nonlinear_coil(st, c, cursor, q, v)
+global()
+( mb_nonlinear_coil_step(st, c, cursor, q, v, 1); );
+
+// Complete pickup observation after the fused synthesis traversal.
+function mb_nonlinear_finish(st, weights, q1, v1, q2, v2, q3, v3, q4, v4)
+local(b, coil, cursor, p, needed1, needed2)
+(
+  b=mb_nonlinear_ptr(st, weights); coil=b+MB_NLB_COILS;
+  cursor=b[MB_NLB_CURSOR]; p=st+MB_PICKUP_STATE;
+  // Circuit loading can need either source even at a blend endpoint. Direct
+  // and Simple need only contributing pickups; histories still advance.
+  needed1=circuit_observe_current || ((1-p[MB_PU_MIX])*p[MB_PU_GAIN1]!=0);
+  needed2=circuit_observe_current || (p[MB_PU_MIX]*p[MB_PU_GAIN2]!=0);
+  b[MB_NLB_OUTPUT1]=mb_nonlinear_coil_step(st, coil, cursor, q1, v1, needed1)
+    +mb_nonlinear_coil_step(st, coil+MB_NLC_WORDS, cursor, q2, v2, needed1);
+  b[MB_NLB_OUTPUT2]=mb_nonlinear_coil_step(st, coil+2*MB_NLC_WORDS, cursor, q3, v3, needed2)
+    +mb_nonlinear_coil_step(st, coil+3*MB_NLC_WORDS, cursor, q4, v4, needed2);
+  b[MB_NLB_CURSOR]=(cursor+MB_NL_OVERSAMPLE)&(MB_NL_TAPS-1);
+);
+
+// Called after the ordinary renderer's single physical state advance. Both
+// circuit buses receive their own correction; their shared residual stays linear.
+function mb_nonlinear_mix(st, base, weights, signal)
+local(nl, b, p, h, first, second, offset)
+(
+  nl=st+MB_PICKUP_NL; b=mb_nonlinear_ptr(st, weights); p=st+MB_PICKUP_STATE;
+  first=nl[MB_NL_AMOUNT]*b[MB_NLB_OUTPUT1]; second=nl[MB_NL_AMOUNT]*b[MB_NLB_OUTPUT2];
+  circuit_observe_current ? (
+    h=st+MB_CIR_PICKUP; offset=base==st+MB_BANK_A ? MB_CP_A_OUTPUT1 : MB_CP_B_OUTPUT1;
+    h[offset]+=first; h[offset+1]+=second;
+  );
+  signal+(1-p[MB_PU_MIX])*p[MB_PU_GAIN1]*first+p[MB_PU_MIX]*p[MB_PU_POLARITY]*p[MB_PU_GAIN2]*second;
+);

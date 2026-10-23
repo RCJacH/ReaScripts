@@ -1,0 +1,132 @@
+// One right hand per instrument: every string/channel shares alternation and gap.
+// Alternation advances on accepted ordinary plucks; per-string views are history.
+// Index/Middle share a footprint; RHPos is the midpoint between their centers.
+@init
+function mb_fingers_request()
+(
+  finger_style_request=mb_clamp(floor(p_excitation_style), 0, MB_STYLE_TAP);
+  finger_spacing_request=mb_clamp(p_finger_spacing, 0, 20);
+  pick_spacing_request=mb_clamp(p_pick_stroke_spacing, 0, 20);
+  slap_pop_spacing_request=mb_clamp(p_slap_pop_spacing, 0, 100);
+);
+
+function mb_fingers_apply_requests()
+global(finger_style_current, finger_spacing_current, finger_style_request, finger_spacing_request,
+       pick_spacing_current, pick_spacing_request, slap_pop_spacing_current, slap_pop_spacing_request)
+(
+  finger_style_current=finger_style_request;
+  finger_spacing_current=finger_spacing_request;
+  pick_spacing_current=pick_spacing_request;
+  slap_pop_spacing_current=slap_pop_spacing_request;
+);
+
+function mb_fingers_reset()
+(
+  finger_next=MB_FINGER_MIDDLE; finger_last=-1; finger_plucks=0;
+  finger_last_trigger=-1; slap_pop_anchor=0;
+  pick_next=pick_last=0;
+  finger_restart_samples=max(1, ceil(MB_FINGER_RESET_MS*0.001*srate));
+);
+
+function mb_fingers_init()
+global()
+(
+  mb_fingers_request();
+  mb_fingers_apply_requests();
+  mb_fingers_reset();
+);
+
+// Excitation gap, independent of key releases, sustain, output level or GUI time.
+// Check only at an accepted RH pluck; no idle polling or audio-sample work.
+function mb_fingers_phrase_start()
+global(finger_last_trigger, instrument_sample_clock, finger_restart_samples)
+(
+  finger_last_trigger<0 || instrument_sample_clock-finger_last_trigger>=finger_restart_samples;
+);
+
+function mb_fingers_trigger()
+local(restart)
+global(finger_last_trigger, instrument_sample_clock, slap_pop_anchor)
+(
+  restart=mb_fingers_phrase_start();
+  restart ? slap_pop_anchor=0;
+  finger_last_trigger=instrument_sample_clock;
+  restart;
+);
+
+// Commit only an accepted RH gesture. Pop keeps the last Slap boundary;
+// another RH technique clears it. Slides, taps and switches never call this.
+function mb_slap_pop_remember(index, style)
+global(slap_pop_anchor, MB_STYLE_SLAP, MB_STYLE_POP)
+(
+  style==MB_STYLE_SLAP ? slap_pop_anchor=mb_string_number(index) :
+    style!=MB_STYLE_POP ? slap_pop_anchor=0;
+);
+
+// Resolve a held stroke within the selected family, without changing that
+// selection. Stroke 1/2 selects Up/Down in the Pick family.
+function mb_fingers_style()
+local(style)
+global(finger_style_current, stroke_override_current, MB_STYLE_FINGER_MIDDLE,
+       MB_STYLE_PICK_AUTO, MB_STYLE_PICK_DOWN, MB_STYLE_SLAP_POP_AUTO, MB_STYLE_POP)
+(
+  style=finger_style_current;
+  stroke_override_current>0 ? (
+    style=style<=MB_STYLE_FINGER_MIDDLE ? stroke_override_current :
+      style<=MB_STYLE_PICK_DOWN ? MB_STYLE_PICK_AUTO+stroke_override_current :
+      style<=MB_STYLE_POP ? MB_STYLE_SLAP_POP_AUTO+stroke_override_current : style;
+  );
+  style;
+);
+
+// Called after rack acceptance, before geometry capture. No per-sample work.
+// RHPos is the midpoint. Down is bridgeward, Up nutward; history is global.
+function mb_fingers_prepare(cfg)
+local(restart, style)
+(
+  restart=mb_fingers_trigger();
+  style=mb_fingers_style();
+  style<=2 ? (
+    style==0 && restart ? finger_next=MB_FINGER_MIDDLE;
+    finger_last=style==0 ? finger_next : style-1;
+    cfg[MB_C_PLUCK_POSITION]+=(finger_last==MB_FINGER_MIDDLE ? -0.5 : 0.5)*finger_spacing_current;
+    finger_next=1-finger_last;
+    finger_plucks+=1;
+  );
+  style>=MB_STYLE_PICK_AUTO && style<=MB_STYLE_PICK_DOWN ? (
+    restart ? pick_next=0;
+    pick_last=style==MB_STYLE_PICK_AUTO ? pick_next : style==MB_STYLE_PICK_UP;
+    pick_next=1-pick_last;
+    pick_spacing_current>0 ?
+      cfg[MB_C_PLUCK_POSITION]+=(pick_last ? 0.5 : -0.5)*pick_spacing_current;
+  );
+);
+
+// Use the resolved attack, including Auto and held stroke overrides. RHPos is
+// the midpoint: thumb nutward, popping finger bridgeward. Next gesture only.
+function mb_slap_pop_position(cfg, style)
+global(MB_C_PLUCK_POSITION, MB_STYLE_SLAP, MB_STYLE_POP, slap_pop_spacing_current)
+(
+  slap_pop_spacing_current>0 && (style==MB_STYLE_SLAP || style==MB_STYLE_POP) ?
+    cfg[MB_C_PLUCK_POSITION]+=(style==MB_STYLE_SLAP ? 0.5 : -0.5)*slap_pop_spacing_current;
+);
+
+function mb_fingers_view(index)
+global(MB_FINGER_VIEWS, MB_FINGER_VIEW_WORDS)
+( MB_FINGER_VIEWS+index*MB_FINGER_VIEW_WORDS; );
+
+// Remember the actual guarded center relative to the captured open scale.
+// Positive values identify the actual Finger/Slap/Pop/Pick stroke, 0=no RH gesture.
+function mb_fingers_remember(st, index, pluck)
+local(view, g, cfg)
+(
+  view=mb_fingers_view(index); g=st+MB_GEOMETRY; cfg=st+MB_CONFIG;
+  view[MB_FV_FINGER]=pluck ? (finger_style_current<=2 ? finger_last+1 : -1) : 0;
+  pluck && finger_style_current>=MB_STYLE_PICK_AUTO && finger_style_current<=MB_STYLE_PICK_DOWN ?
+    view[MB_FV_FINGER]=pick_last ? MB_RH_PICK_UP : MB_RH_PICK_DOWN;
+  view[MB_FV_POSITION]=pluck ? g[MB_G_P]*g[MB_G_LENGTH]/(cfg[MB_C_SCALE]*0.001) : 0;
+);
+
+function mb_fingers_forget(index)
+global(MB_FINGER_VIEW_WORDS)
+( memset(mb_fingers_view(index), 0, MB_FINGER_VIEW_WORDS); );

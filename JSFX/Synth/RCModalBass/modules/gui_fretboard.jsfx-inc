@@ -1,0 +1,365 @@
+// Nut-left display only. Snapshot fields are published by @block; no audio RAM
+// is read here. String rows follow stable numbers 1..6, never sorting by tuning.
+@init
+// Follow the published audio clock, then let transient labels expire even when
+// audio processing stops. These clocks are GUI state, never synthesis state.
+function mb_gui_audio_time()
+local(now)
+global(pub_audio_time, ui_audio_seen, ui_audio_seen_time, ui_audio_clock)
+(
+  now=time_precise();
+  pub_audio_time!=ui_audio_seen ? (
+    ui_audio_seen=pub_audio_time;
+    ui_audio_seen_time=now;
+  );
+  ui_audio_clock=pub_audio_time+max(0, now-ui_audio_seen_time);
+);
+
+function mb_gui_note_name(note)
+local(pitch)
+global(#ui_note_name, #ui_pitch_name)
+(
+  pitch=floor(note)%12;
+  strcpy(#ui_pitch_name, pitch==0 ? "C" : pitch==1 ? "C#" : pitch==2 ? "D" :
+    pitch==3 ? "D#" : pitch==4 ? "E" : pitch==5 ? "F" : pitch==6 ? "F#" :
+    pitch==7 ? "G" : pitch==8 ? "G#" : pitch==9 ? "A" : pitch==10 ? "A#" : "B");
+  sprintf(#ui_note_name, "%s%d", #ui_pitch_name, floor(note/12)-1);
+);
+
+// Nearest note of the sounding fret, including fine tuning but excluding bend.
+// Use the string's captured reference while a new A4 setting is pending.
+function mb_gui_unbent_note(frequency, bend, a4)
+global()
+(
+  floor(69+12*log(max(frequency, 0.000001)/max(a4, 1))/log(2)-bend+0.5);
+);
+
+// Gauge in 0.001 inches; signed fine detuning in cents, without trailing zeros.
+function mb_gui_string_label(construction, gauge, open, fine)
+global(#ui_note_name, #ui_setup_label)
+(
+  mb_gui_note_name(open);
+  sprintf(#ui_setup_label, "%s%g | %s %+g",
+    construction==0 ? "P" : construction==1 ? "R" : construction==2 ? "F" : "T",
+    gauge, #ui_note_name, fine);
+);
+
+function mb_gui_text_width(text)
+local(width, height)
+global()
+(
+  gfx_measurestr(text, width, height);
+  width;
+);
+
+// Published hand range, padded by a quarter fret space or a marker + margin.
+// Open strings do not occupy the hand. Mapped channels have no shared hand.
+function mb_gui_hand_span(nut, bridge, top, bottom, theme)
+local(first, last, span, low, high, left_pad, right_pad)
+global(pub_hand_enabled, pub_hand_start, pub_hand_end, pub_hand_conflict, pub_fret_count,
+       p_contact_surface, ui_scale, ui_lh_left, ui_lh_right, MB_UI_LH)
+(
+  ui_lh_left=ui_lh_right=-1;
+  pub_hand_enabled ? (
+    first=mb_clamp(pub_hand_start, p_contact_surface>=0.5 ? 0 : 1, pub_fret_count);
+    last=mb_clamp(pub_hand_end, first, pub_fret_count);
+    span=bridge-nut;
+    low=1-2^(-first/12); high=1-2^(-last/12);
+    left_pad=max(6*ui_scale, (2^(-max(0,first-1)/12)-2^(-first/12))*span*0.25);
+    right_pad=max(6*ui_scale, (2^(-last/12)-2^(-(last+1)/12))*span*0.25);
+    ui_lh_left=pub_hand_start<=0 ? nut : max(nut, nut+low*span-left_pad);
+    ui_lh_right=min(bridge, nut+high*span+right_pad);
+    pub_hand_conflict ? gfx_set(0.95, 0.47, 0.35, 0.16) : mb_gui_color(theme+MB_UI_LH, 0.14);
+    gfx_rect(ui_lh_left, top-9*ui_scale, ui_lh_right-ui_lh_left, bottom-top+18*ui_scale, 1);
+    pub_hand_conflict ? gfx_set(0.95, 0.47, 0.35, 0.5) : mb_gui_color(theme+MB_UI_LH, 0.32);
+    gfx_rect(ui_lh_left, top-9*ui_scale, ui_lh_right-ui_lh_left, bottom-top+18*ui_scale, 0);
+  );
+);
+
+function mb_gui_string_view(number)
+(
+  ui_view_enabled=number==1 ? pub_s1_enabled : number==2 ? pub_s2_enabled : number==3 ? pub_s3_enabled :
+    number==4 ? pub_s4_enabled : number==5 ? pub_s5_enabled : pub_s6_enabled;
+  ui_view_open=number==1 ? pub_s1_open : number==2 ? pub_s2_open : number==3 ? pub_s3_open :
+    number==4 ? pub_s4_open : number==5 ? pub_s5_open : pub_s6_open;
+  ui_view_winding=number==1 ? pub_s1_winding : number==2 ? pub_s2_winding : number==3 ? pub_s3_winding :
+    number==4 ? pub_s4_winding : number==5 ? pub_s5_winding : pub_s6_winding;
+  ui_view_gauge=number==1 ? pub_s1_gauge : number==2 ? pub_s2_gauge : number==3 ? pub_s3_gauge :
+    number==4 ? pub_s4_gauge : number==5 ? pub_s5_gauge : pub_s6_gauge;
+  ui_view_fine=number==1 ? pub_s1_fine : number==2 ? pub_s2_fine : number==3 ? pub_s3_fine :
+    number==4 ? pub_s4_fine : number==5 ? pub_s5_fine : pub_s6_fine;
+  ui_view_fret=number==1 ? pub_s1_fret : number==2 ? pub_s2_fret : number==3 ? pub_s3_fret :
+    number==4 ? pub_s4_fret : number==5 ? pub_s5_fret : pub_s6_fret;
+  ui_view_freq=number==1 ? pub_s1_freq : number==2 ? pub_s2_freq : number==3 ? pub_s3_freq :
+    number==4 ? pub_s4_freq : number==5 ? pub_s5_freq : pub_s6_freq;
+  ui_view_a4=number==1 ? pub_s1_a4 : number==2 ? pub_s2_a4 : number==3 ? pub_s3_a4 :
+    number==4 ? pub_s4_a4 : number==5 ? pub_s5_a4 : pub_s6_a4;
+  ui_view_bend=number==1 ? pub_s1_bend : number==2 ? pub_s2_bend : number==3 ? pub_s3_bend :
+    number==4 ? pub_s4_bend : number==5 ? pub_s5_bend : pub_s6_bend;
+  ui_view_note=number==1 ? pub_s1_note : number==2 ? pub_s2_note : number==3 ? pub_s3_note :
+    number==4 ? pub_s4_note : number==5 ? pub_s5_note : pub_s6_note;
+  ui_view_level=number==1 ? pub_s1_level : number==2 ? pub_s2_level : number==3 ? pub_s3_level :
+    number==4 ? pub_s4_level : number==5 ? pub_s5_level : pub_s6_level;
+  ui_view_busy=number==1 ? pub_s1_busy : number==2 ? pub_s2_busy : number==3 ? pub_s3_busy :
+    number==4 ? pub_s4_busy : number==5 ? pub_s5_busy : pub_s6_busy;
+  ui_view_note_active=number==1 ? pub_s1_note_active : number==2 ? pub_s2_note_active : number==3 ? pub_s3_note_active :
+    number==4 ? pub_s4_note_active : number==5 ? pub_s5_note_active : pub_s6_note_active;
+  ui_view_rh_finger=number==1 ? pub_s1_rh_finger : number==2 ? pub_s2_rh_finger : number==3 ? pub_s3_rh_finger :
+    number==4 ? pub_s4_rh_finger : number==5 ? pub_s5_rh_finger : pub_s6_rh_finger;
+  ui_view_rh_position=number==1 ? pub_s1_rh_position : number==2 ? pub_s2_rh_position : number==3 ? pub_s3_rh_position :
+    number==4 ? pub_s4_rh_position : number==5 ? pub_s5_rh_position : pub_s6_rh_position;
+  ui_view_ghost=number==1 ? pub_s1_ghost : number==2 ? pub_s2_ghost : number==3 ? pub_s3_ghost :
+    number==4 ? pub_s4_ghost : number==5 ? pub_s5_ghost : pub_s6_ghost;
+  ui_view_harmonic=number==1 ? pub_s1_harmonic : number==2 ? pub_s2_harmonic : number==3 ? pub_s3_harmonic :
+    number==4 ? pub_s4_harmonic : number==5 ? pub_s5_harmonic : pub_s6_harmonic;
+  ui_view_pending=number==1 ? pub_s1_pending : number==2 ? pub_s2_pending : number==3 ? pub_s3_pending :
+    number==4 ? pub_s4_pending : number==5 ? pub_s5_pending : pub_s6_pending;
+  ui_view_ho_from=number==1 ? pub_s1_ho_from : number==2 ? pub_s2_ho_from : number==3 ? pub_s3_ho_from :
+    number==4 ? pub_s4_ho_from : number==5 ? pub_s5_ho_from : pub_s6_ho_from;
+  ui_view_ho_to=number==1 ? pub_s1_ho_to : number==2 ? pub_s2_ho_to : number==3 ? pub_s3_ho_to :
+    number==4 ? pub_s4_ho_to : number==5 ? pub_s5_ho_to : pub_s6_ho_to;
+  ui_view_ho_kind=number==1 ? pub_s1_ho_kind : number==2 ? pub_s2_ho_kind : number==3 ? pub_s3_ho_kind :
+    number==4 ? pub_s4_ho_kind : number==5 ? pub_s5_ho_kind : pub_s6_ho_kind;
+  ui_view_ho_until=number==1 ? pub_s1_ho_until : number==2 ? pub_s2_ho_until : number==3 ? pub_s3_ho_until :
+    number==4 ? pub_s4_ho_until : number==5 ? pub_s5_ho_until : pub_s6_ho_until;
+);
+
+// One short connector per string: the latest accepted gesture replaces the old
+// label. Both endpoints use the same physical fret geometry as the note marker.
+function mb_gui_hopo_marker(nut, span, yy, theme)
+local(source_x, target_x, center, opacity)
+(
+  opacity=mb_clamp((ui_view_ho_until-ui_audio_clock)/(MB_HOPO_DISPLAY_MS*0.001), 0, 1);
+  ui_view_ho_kind && opacity>0 ? (
+    source_x=nut+(1-2^(-ui_view_ho_from/12))*span;
+    target_x=nut+(1-2^(-ui_view_ho_to/12))*span;
+    center=(source_x+target_x)*0.5;
+    mb_gui_color(MB_UI_BASE+ui_tab*MB_UI_THEME_STRIDE+MB_UI_ACCENT, opacity);
+    gfx_line(source_x, yy-2*ui_scale, source_x, yy-7*ui_scale, 1);
+    gfx_line(source_x, yy-7*ui_scale, target_x, yy-7*ui_scale, 1);
+    gfx_line(target_x, yy-7*ui_scale, target_x, yy-2*ui_scale, 1);
+    mb_gui_color(theme+MB_UI_PANEL_BG, opacity);
+    gfx_rect(center-16*ui_scale, yy-23*ui_scale, 32*ui_scale, 14*ui_scale, 1);
+    mb_gui_color(theme+MB_UI_PANEL_TEXT, opacity);
+    gfx_setfont(1, "Arial", 11*ui_scale);
+    mb_gui_text(ui_view_ho_kind==MB_TAP_KIND ? "tap" : ui_view_ho_kind>0 ? "h.o." : "p.o.", center-16*ui_scale, yy-23*ui_scale,
+      32*ui_scale, 14*ui_scale, 1);
+    gfx_setfont(1, "Arial", 12*ui_scale);
+  );
+);
+
+// Each footprint shows its own modeled sensing width.
+function mb_gui_fretboard_pickup(center, width, top, bottom, label, active)
+local(draw_width, color)
+global(ui_scale, MB_UI_BASE, MB_UI_THEME_STRIDE, MB_UI_PICKUP1, MB_UI_PICKUP2)
+(
+  draw_width=max(2*ui_scale, width);
+  color=MB_UI_BASE+5*MB_UI_THEME_STRIDE+(label==1 ? MB_UI_PICKUP1 : MB_UI_PICKUP2);
+  mb_gui_color(color, active ? 0.30 : 0.12);
+  gfx_rect(center-draw_width*0.5, top-8*ui_scale, draw_width, bottom-top+16*ui_scale, 1);
+  mb_gui_color(color, active ? 1 : 0.55);
+  gfx_rect(center-draw_width*0.5, top-8*ui_scale, draw_width, bottom-top+16*ui_scale, 0);
+);
+
+// Read native controls and published row snapshots only; no observation RAM.
+function mb_gui_pickup_coils(position, width, mode, spacing, stagger, bridge, span, top, bottom, count, label, active)
+local(side, number, row, yy, group_top, group_bottom, center, draw_width, coil)
+global(MB_COIL_SPLIT, MB_COIL_SERIES, MB_COIL_PARALLEL, p_scale_length, ui_view_enabled)
+(
+  mode=mb_coil_mode(mode); spacing=mb_clamp(spacing, 0, 40); stagger=mb_clamp(stagger, -40, 40);
+  draw_width=mb_clamp(width, 0, 80)/p_scale_length*span;
+  mode==MB_COIL_SPLIT ? (
+    side=-1; loop(2,
+      row=0; number=1; group_top=bottom+1; group_bottom=top-1;
+      loop(6,
+        mb_gui_string_view(number);
+        ui_view_enabled ? (
+          yy=count>1 ? top+row*(bottom-top)/(count-1) : (top+bottom)*0.5;
+          mb_coil_split_side(mb_string_index(number), count)==side ? (
+            group_top=min(group_top, yy); group_bottom=max(group_bottom, yy);
+          );
+          row+=1;
+        );
+        number+=1;
+      );
+      group_top<=group_bottom ? (
+        center=bridge-mb_coil_center(position, mode, spacing, stagger, side, 0)/p_scale_length*span;
+        mb_gui_fretboard_pickup(center, draw_width, group_top, group_bottom, label, active);
+      );
+      side+=2;
+    );
+  ) : (
+    coil=0; loop(mode==MB_COIL_SERIES || mode==MB_COIL_PARALLEL ? 2 : 1,
+      center=bridge-mb_coil_center(position, mode, spacing, stagger, 0, coil)/p_scale_length*span;
+      mb_gui_fretboard_pickup(center, draw_width, top, bottom, label, active);
+      coil+=1;
+    );
+  );
+);
+
+// Display-only palm footprint. Coordinates match the bridge-relative DSP patch;
+// no note marker or transient is implied by the shaded region.
+function mb_gui_palm(bridge, span, top, bottom)
+local(left, right, center, strength)
+global(pub_palm_amount, pub_palm_position, pub_palm_width, p_scale_length, ui_scale,
+       ui_palm_left, ui_palm_right)
+(
+  ui_palm_left=ui_palm_right=-1;
+  pub_palm_amount>0.000001 ? (
+    left=bridge-mb_clamp(pub_palm_position+pub_palm_width*0.5, 0, p_scale_length)/p_scale_length*span;
+    right=bridge-mb_clamp(pub_palm_position-pub_palm_width*0.5, 0, p_scale_length)/p_scale_length*span;
+    ui_palm_left=left; ui_palm_right=right;
+    strength=sqrt(pub_palm_amount);
+    gfx_set(0.83, 0.70, 0.48, 0.12+0.25*strength);
+    gfx_rect(left, top-7*ui_scale, right-left, bottom-top+14*ui_scale, 1);
+    gfx_set(0.92, 0.79, 0.56, 0.35+0.55*strength);
+    gfx_rect(left, top-7*ui_scale, right-left, bottom-top+14*ui_scale, 0);
+    center=(left+right)*0.5;
+    mb_gui_text("P.M.", center-16*ui_scale, top-18*ui_scale, 32*ui_scale, 12*ui_scale, 1);
+  );
+);
+
+function mb_gui_fretboard(x, y, w, h, theme)
+local(nut, bridge, span, top, bottom, rows, number, row, yy, fret, xx, selected, activity, pos1,
+      pos2, pick, width, label1, label2, level, touch, finger_label_x, setup_width, status_width, meter_width, gap,
+      mount1, mount2)
+(
+  // Keep the existing row layout; reserve text widths plus small, explicit gaps.
+  gap=6*ui_scale; setup_width=0;
+  status_width=mb_gui_text_width("C#3 999.9 Hz");
+  number=1; loop(6,
+    mb_gui_string_view(number);
+    ui_view_enabled ? (
+      mb_gui_string_label(ui_view_winding, ui_view_gauge, ui_view_open, ui_view_fine);
+      setup_width=max(setup_width, mb_gui_text_width(#ui_setup_label));
+      ui_view_freq>0 ? (
+        mb_gui_note_name(mb_gui_unbent_note(ui_view_freq, ui_view_bend, ui_view_a4));
+        sprintf(#ui_string_status, "%s %.1f Hz", #ui_note_name, ui_view_freq);
+        status_width=max(status_width, mb_gui_text_width(#ui_string_status));
+      );
+    );
+    number+=1;
+  );
+  meter_width=mb_gui_text_width("-120.0 dBFS");
+  nut=x+MB_UI_BOARD_INSET*ui_scale+setup_width+gap;
+  bridge=x+w-MB_UI_BOARD_INSET*ui_scale-meter_width-gap-status_width-gap;
+  span=max(12, bridge-nut);
+  ui_board_nut=nut; ui_board_bridge=bridge;
+  top=y+40*ui_scale; bottom=y+h-28*ui_scale;
+  mb_gui_color(theme+MB_UI_PANEL_BG, 1);
+  gfx_rect(nut, top-10*ui_scale, bridge-nut, bottom-top+20*ui_scale, 1);
+  mb_gui_hand_span(nut, bridge, top, bottom, theme);
+  rows=max(1, pub_s1_enabled+pub_s2_enabled+pub_s3_enabled+pub_s4_enabled+pub_s5_enabled+pub_s6_enabled); row=0;
+  mb_gui_color(theme+MB_UI_PANEL_TEXT, 1);
+  mb_gui_text("Nut", nut-12*ui_scale, y+4*ui_scale, 44*ui_scale, 18*ui_scale, 0);
+  mb_gui_text("Bridge", bridge-15*ui_scale, y+4*ui_scale, 62*ui_scale, 18*ui_scale, 0);
+  fret=1; loop(pub_fret_count,
+    xx=nut+(1-2^(-fret/12))*span;
+    mb_gui_color(theme+MB_UI_PANEL_TEXT, 0.24); gfx_line(xx, top-9*ui_scale, xx, bottom+7*ui_scale, 1);
+    fret==3 || fret==5 || fret==7 || fret==9 || fret==12 || (fret==15 && w>800*ui_scale) ||
+    (fret==17 && w>800*ui_scale) || (fret==19 && w>800*ui_scale) || (fret==24 && w>800*ui_scale) ? (
+      mb_gui_color(theme+MB_UI_PANEL_TEXT, 0.9); sprintf(#ui_fret_label, "%d", fret);
+      mb_gui_text(#ui_fret_label, xx-10*ui_scale, y+4*ui_scale, 20*ui_scale, 18*ui_scale, 1);
+    );
+    fret+=1;
+  );
+  mb_gui_color(theme+MB_UI_PANEL_TEXT, 0.85);
+  gfx_rect(nut-2*ui_scale, top-10*ui_scale, 3*ui_scale, bottom-top+20*ui_scale, 1);
+  gfx_rect(bridge, top-10*ui_scale, 3*ui_scale, bottom-top+20*ui_scale, 1);
+  mb_gui_color(theme+MB_UI_PANEL_TEXT, 0.4);
+  gfx_line(nut, top-10*ui_scale, bridge, top-10*ui_scale, 1);
+  gfx_line(nut, bottom+10*ui_scale, bridge, bottom+10*ui_scale, 1);
+  // DSP distances remain measured from the saddle at the bridge endpoint.
+  mount1=mb_coil_mount(p_pickup_1_distance_from_bridge, p_pickup_1_sensing_width,
+    p_pickup_1_coil_configuration, p_pickup_1_coil_spacing, p_pickup_1_split_stagger, p_scale_length);
+  mount2=mb_coil_mount(p_pickup_2_distance_from_bridge, p_pickup_2_sensing_width,
+    p_pickup_2_coil_configuration, p_pickup_2_coil_spacing, p_pickup_2_split_stagger, p_scale_length);
+  pos1=bridge-mount1/p_scale_length*span; pos2=bridge-mount2/p_scale_length*span;
+  mb_gui_pickup_coils(mount1, p_pickup_1_sensing_width, p_pickup_1_coil_configuration,
+    p_pickup_1_coil_spacing, p_pickup_1_split_stagger, bridge, span, top, bottom, rows, 1,
+    p_pickup_1_enable>=0.5 && p_pickup_1_sensitivity>0 && p_pickup_mix<100);
+  mb_gui_pickup_coils(mount2, p_pickup_2_sensing_width, p_pickup_2_coil_configuration,
+    p_pickup_2_coil_spacing, p_pickup_2_split_stagger, bridge, span, top, bottom, rows, 2,
+    p_pickup_2_enable>=0.5 && p_pickup_2_sensitivity>0 && p_pickup_mix>0);
+  mb_gui_palm(bridge, span, top, bottom);
+  // Keep the shared RH guide visible; only ringing strings receive row markers.
+  pick=bridge-mb_clamp(mb_picking_distance(p_picking_position, p_max_excitation_distance_from_bridge)/p_scale_length, 0, 1)*span;
+  gfx_set(0.94, 0.69, 0.32, 0.8);
+  gfx_rect(pick-ui_scale, top-2*ui_scale, 2*ui_scale, bottom-top+4*ui_scale, 1);
+  gfx_triangle(pick-4*ui_scale, top-10*ui_scale, pick+4*ui_scale, top-10*ui_scale, pick, top-3*ui_scale);
+  // Separate label anchors when pickups share a position; geometry stays exact.
+  label1=pos1; label2=pos2;
+  abs(label1-label2)<32*ui_scale ? (
+    label1=min(pos1, pos2)-17*ui_scale; label2=max(pos1, pos2)+17*ui_scale;
+  );
+  mb_gui_color(theme+MB_UI_PICKUP1, p_pickup_1_enable>=0.5 && p_pickup_1_sensitivity>0 && p_pickup_mix<100 ? 1 : 0.55);
+  mb_gui_text("PU1", label1-16*ui_scale, bottom+10*ui_scale, 32*ui_scale, 14*ui_scale, 1);
+  mb_gui_color(theme+MB_UI_PICKUP2, p_pickup_2_enable>=0.5 && p_pickup_2_sensitivity>0 && p_pickup_mix>0 ? 1 : 0.55);
+  mb_gui_text("PU2", label2-16*ui_scale, bottom+10*ui_scale, 32*ui_scale, 14*ui_scale, 1);
+  number=1; loop(6,
+    mb_gui_string_view(number);
+    ui_view_enabled ? (
+      yy=rows>1 ? top+row*(bottom-top)/(rows-1) : (top+bottom)*0.5;
+      selected=number==mb_string_number(selected_string_current);
+      activity=mb_clamp(sqrt(max(0, ui_view_level))*12, 0, 1);
+      mb_gui_color(theme+MB_UI_PANEL_TEXT, 0.5); gfx_line(nut, yy, bridge, yy, 1);
+      ui_view_busy ? (
+        // Friction-only sound lights the string without inventing a stopped note.
+        xx=ui_view_note_active ? nut+(1-2^(-ui_view_fret/12))*span : nut;
+        mb_gui_color(MB_UI_BASE+ui_tab*MB_UI_THEME_STRIDE+MB_UI_ACCENT, 0.5+activity*0.5);
+        ui_view_note_active || ui_view_level*pub_output_gain>MB_UI_METER_FLOOR ? gfx_line(xx, yy, bridge, yy, 1);
+        ui_view_note_active ? (
+          ui_view_ghost ? (
+            gfx_line(xx-4*ui_scale, yy-4*ui_scale, xx+4*ui_scale, yy+4*ui_scale, 1);
+            gfx_line(xx-4*ui_scale, yy+4*ui_scale, xx+4*ui_scale, yy-4*ui_scale, 1);
+          ) : gfx_circle(xx, yy, 4*ui_scale, 1, 1);
+          ui_view_harmonic ? (
+            touch=xx+(bridge-xx)/ui_view_harmonic;
+            gfx_line(touch-4*ui_scale, yy, touch, yy-4*ui_scale, 1);
+            gfx_line(touch, yy-4*ui_scale, touch+4*ui_scale, yy, 1);
+            gfx_line(touch+4*ui_scale, yy, touch, yy+4*ui_scale, 1);
+            gfx_line(touch, yy+4*ui_scale, touch-4*ui_scale, yy, 1);
+            sprintf(#ui_harmonic_label, "h%d", ui_view_harmonic);
+            mb_gui_text(#ui_harmonic_label, touch-16*ui_scale, yy-21*ui_scale, 32*ui_scale, 14*ui_scale, 1);
+          );
+        );
+      );
+      mb_gui_string_label(ui_view_winding, ui_view_gauge, ui_view_open, ui_view_fine);
+      mb_gui_color(theme+MB_UI_PANEL_TEXT, selected ? 1 : 0.85);
+      mb_gui_text(#ui_setup_label, x+MB_UI_BOARD_INSET*ui_scale, yy-9*ui_scale, setup_width, 18*ui_scale, 0);
+      ui_view_pending ? (gfx_set(1, 0.7, 0.3, 1); gfx_circle(nut, yy-10*ui_scale, 2*ui_scale, 1, 1););
+      ui_view_busy && ui_view_note_active && ui_view_rh_finger ? (
+        // Each sounding string retains its own latest RH gesture, including the
+        // engine's endpoint guard. The shared line above remains the RH midpoint.
+        pick=bridge-mb_clamp(ui_view_rh_position, 0, 1)*span;
+        gfx_set(0.94, 0.69, 0.32, 1);
+        gfx_circle(pick, yy, 5*ui_scale, 1, 1);
+        ui_view_rh_finger>0 ? (
+          finger_label_x=pick+(pick>bridge-28*ui_scale ? -20 : 8)*ui_scale;
+          mb_gui_text(ui_view_rh_finger==MB_RH_PICK_UP ? "U" : ui_view_rh_finger==MB_RH_PICK_DOWN ? "D" :
+            ui_view_rh_finger==MB_RH_SLAP ? "S" : ui_view_rh_finger==MB_RH_POP ? "P" : ui_view_rh_finger==2 ? "M" : "I", finger_label_x, yy-8*ui_scale,
+            14*ui_scale, 16*ui_scale, 0);
+        );
+      );
+      mb_gui_color(theme+MB_UI_PANEL_TEXT, ui_view_busy ? 1 : 0.65);
+      ui_view_freq>0 ? (
+        mb_gui_note_name(mb_gui_unbent_note(ui_view_freq, ui_view_bend, ui_view_a4));
+        sprintf(#ui_string_status, "%s %.1f Hz", #ui_note_name, ui_view_freq);
+      ) : strcpy(#ui_string_status, "--");
+      mb_gui_text(#ui_string_status, bridge+gap, yy-9*ui_scale,
+        status_width, 18*ui_scale, 0);
+      // Existing pre-gain peak envelope, scaled by the published output gain.
+      // Idle strings may retain an old envelope after their renderer sleeps.
+      level=ui_view_busy ? max(0, ui_view_level)*pub_output_gain : 0;
+      level>MB_UI_METER_FLOOR ? (
+        level>1 ? gfx_set(1, 0.4, 0.32, 1);
+        sprintf(#ui_string_level, "%.1f dBFS", 20*log(level)/log(10));
+        gfx_x=x+w-MB_UI_BOARD_INSET*ui_scale-meter_width; gfx_y=yy-9*ui_scale;
+        gfx_drawstr(#ui_string_level, 6, x+w-MB_UI_BOARD_INSET*ui_scale, yy+9*ui_scale);
+      );
+      mb_gui_hopo_marker(nut, span, yy, theme);
+      row+=1;
+    );
+    number+=1;
+  );
+);

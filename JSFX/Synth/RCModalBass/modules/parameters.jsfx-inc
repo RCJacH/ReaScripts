@@ -1,0 +1,197 @@
+@init
+// @slider writes requests only. Engine/output state is applied in @block.
+// Like the prototype, multiple requests within one block coalesce.
+function mb_parameters_request()
+(
+  mb_fingers_request();
+  mb_pop_request();
+  mb_slap_request();
+  mb_pick_request();
+  mb_pick_friction_request();
+  mb_pick_scrape_request();
+  mb_palm_request();
+  mb_impact_compress_request();
+  mb_variation_request();
+  mb_vibrato_request();
+  mb_ring_request();
+  mb_output_request();
+  mb_fret_response_request();
+  mb_action_request();
+  mb_pickup_request();
+  mb_magnet_request();
+  mb_circuit_request();
+  mb_friction_request();
+  mb_fretting_request();
+  gain_request=10^(p_output_db/20);
+  velocity_curve_request=mb_clamp(p_velocity_curve, 0.25, 3);
+  low_velocity_attack_softness_request=mb_clamp(p_low_velocity_attack_softness*0.01, 0, 1);
+  repluck_grip_request=mb_clamp(p_repluck_grip*0.01, 0, 1);
+  vibration_pitch_rise_request=mb_clamp(p_vibration_pitch_rise*0.01, 0, 1);
+  p_midi_reset!=last_midi_reset_switch ? (param_midi_resets+=1; last_midi_reset_switch=p_midi_reset;);
+  fret_count_request=mb_clamp(floor(p_fret_count), 12, 24);
+  live_fret_request=mb_clamp(p_capo, 0, fret_count_request);
+  mb_fingering_request();
+  hand_position_request=mb_clamp(p_playing_position, 0, fret_count_request);
+  hand_span_request=mb_clamp(floor(p_hand_span), 1, 12);
+  hand_open_request=mb_clamp(floor(p_prefer_open_strings), MB_OPEN_FRETTED_FIRST, MB_OPEN_PREFER_ALL);
+  hand_fretless_request=p_contact_surface>=0.5;
+  art_channel_request=mb_clamp(floor(p_keyswitch_channel), 0, 16);
+  art_mapping_request=mb_midi_mapping_index(p_legato_slide_controller, MB_NOTE_CC_MAX);
+  hopo_mapping_request=mb_midi_mapping_index(p_ho_po_controller, MB_NOTE_CC_MAX);
+  ghost_mapping_request=mb_midi_mapping_index(p_ghost_controller, MB_NOTE_CC_MAX);
+  tap_mapping_request=mb_midi_mapping_index(p_tapping_style_controller, MB_NOTE_CC_MAX);
+  harmonic_mapping_request=mb_midi_mapping_index(p_harmonics_controller, MB_NOTE_CC_MAX);
+  mb_force_request();
+  ghost_damping_request=mb_clamp(p_ghost_damping*0.01, 0, 1);
+  ghost_decay_ms_request=mb_clamp(p_ghost_decay_ms, 20, 500);
+  mb_force_selection_request();
+  legato_slide_ms_request=p_legato_slide_controller_ms;
+  bend_damping_request=p_bend_damping;
+  channel_mode_request=mb_clamp(floor(p_midi_channel_mode), 0, 2);
+  bend_controller_request=mb_midi_selector_source(p_bend_controller);
+  slide_controller_request=mb_midi_selector_source(p_slide_controller);
+  midi_bend_range_request=mb_clamp(p_midi_pitch_bend_range, 0, 2);
+  midi_slide_range_request=mb_clamp(p_midi_slide_range, 0, 24);
+  contact_amount_request=p_fret_contact;
+  contact_level_request=p_fret_noise_level;
+  contact_stiffness_request=p_contact_stiffness;
+  contact_damping_request=p_contact_damping;
+  contact_surface_request=p_contact_surface;
+  mb_tuning_request();
+);
+
+function mb_parameters_apply()
+local(i, st, action_before, index, slot, surface, target, placement_changed, fret_count_changed, panic_request)
+(
+  // GUI edits publish native values/counter; @block captures requests.
+  gui_parameter_requests!=seen_gui_parameter_requests ? (
+    mb_parameters_request();
+    seen_gui_parameter_requests=gui_parameter_requests;
+  );
+  // @gfx only publishes a counter. Reset is consumed by @sample, like MIDI Reset.
+  panic_request=gui_panic_requests;
+  panic_request!=seen_gui_panic_requests ? (
+    midi_reset_pending=1;
+    seen_gui_panic_requests=panic_request;
+  );
+  mb_instrument_cc_apply();
+  fret_count_changed=fret_count_current!=fret_count_request;
+  fret_count_current=fret_count_request;
+  fret_count_changed ? (
+    mb_pickup_request();
+    p_capo>fret_count_current ? (p_capo=fret_count_current; sliderchange(p_capo););
+    p_playing_position>fret_count_current ? (
+      p_playing_position=fret_count_current; sliderchange(p_playing_position);
+    );
+  );
+  mb_pickup_profiles_apply() ? (mb_pickup_request(); mb_circuit_request(););
+  mb_active_voicing_apply() ? mb_circuit_request();
+  gain_target=gain_request;
+  mb_fret_response_controls();
+  mb_fretting_apply();
+  mb_pickup_publish();
+  mb_fingers_apply_requests();
+  mb_pop_apply();
+  mb_slap_apply();
+  mb_pick_apply();
+  mb_pick_friction_publish();
+  mb_impact_compress_apply();
+  velocity_curve_current=velocity_curve_request;
+  low_velocity_attack_softness_current=low_velocity_attack_softness_request;
+  repluck_grip_current=repluck_grip_request;
+  vibration_pitch_rise_current=vibration_pitch_rise_request;
+  ghost_damping_current=ghost_damping_request;
+  ghost_decay_ms_current=ghost_decay_ms_request;
+  tap_gain_current=tap_gain_request;
+  !memory_fault ? (
+    mb_variation_apply();
+    string_selection_current=string_selection_request;
+    rack_configuration_revision!=seen_rack_configuration_revision ? (
+      mb_rack_apply_requests();
+      seen_rack_configuration_revision=rack_configuration_revision;
+    );
+    mb_midi_bend_apply_requests();
+    mb_vibrato_apply_requests();
+    mb_fingering_apply();
+    mb_hand_apply_requests();
+    mb_art_apply_requests();
+    mb_ring_apply_requests();
+    mb_force_apply_requests();
+    mb_performance_apply();
+    mb_pick_scrape_apply_requests();
+    mb_circuit_apply();
+    i=0;
+    loop(MB_MAX_STRINGS,
+      st=mb_rack_string(i);
+      fret_count_changed ? (
+        mb_contact_invalidate(st);
+        (st+MB_POP_CONTACT)[MB_PCC_SELECT]=1;
+        ((st+MB_LIVE)[MB_L_FRET]>fret_count_current || (st+MB_LIVE)[MB_L_FRET_TARGET]>fret_count_current ||
+          (mb_motion_ptr(i)[MB_MO_ACTIVE] && mb_motion_ptr(i)[MB_MO_TARGET]>fret_count_current)) ? (
+          mb_motion_stop(i); mb_notes_retire_string(i, 1);
+          (st+MB_LIVE)[MB_L_JOB]=0;
+          (st+MB_LIVE)[MB_L_FRET_TARGET]=(st+MB_LIVE)[MB_L_FRET];
+          mb_engine_damp(st, p_mute_t60);
+        );
+        (st+MB_FRICTION)[MB_FR_FROM]>fret_count_current || (st+MB_FRICTION)[MB_FR_TO]>fret_count_current ?
+          mb_friction_stop(st);
+      );
+      mb_output_configure(st, i, !mb_rack_slot(i)[MB_RS_BUSY]);
+      mb_fret_response_apply(st);
+      action_before=(st+MB_ACTION)[MB_ACT_HEIGHT];
+      mb_action_configure(st, i);
+      abs(action_before-(st+MB_ACTION)[MB_ACT_HEIGHT])>0 ? mb_contact_invalidate(st);
+      mb_pickup_apply(st);
+      mb_nonlinear_apply(st);
+      mb_palm_apply(st);
+      mb_magnet_apply(st);
+      surface=(st+MB_CONTACT)[MB_K_SURFACE];
+      mb_engine_contact_configure(st, contact_amount_request, contact_stiffness_request,
+                                  contact_damping_request, contact_surface_request);
+      placement_changed=surface!=(st+MB_CONTACT)[MB_K_SURFACE] ? mb_variation_surface(st) : 0;
+      mb_contact_level_configure(st, contact_level_request);
+      mb_friction_apply(st);
+      mb_pick_friction_apply(st);
+      surface!=(st+MB_CONTACT)[MB_K_SURFACE] && (st+MB_LIVE)[MB_L_HAS_CONFIG] ? (
+        target=mb_owner_ptr(i)[MB_O_BEND_CHANNEL]>=0 ? mb_midi_slide_target(i) :
+          mb_engine_fret_position(st, (st+MB_LIVE)[MB_L_FRET_TARGET]);
+        placement_changed || abs(target-(st+MB_LIVE)[MB_L_FRET_TARGET])>0.000000001 ? (
+          mb_engine_fret_transition(st, target, MB_FRET_TRANSITION_MS*0.001*srate);
+          placement_changed ? mb_live_start_fret(st);
+        );
+      );
+      i+=1;
+    );
+    param_midi_resets!=seen_param_midi_resets ? (
+      midi_reset_pending=1;
+      seen_param_midi_resets=param_midi_resets;
+    );
+    abs(bend_damping_request-seen_damping_request)>0.000000001 ? (
+      i=0;
+      loop(MB_MAX_STRINGS,
+        mb_engine_bend_damping(mb_rack_string(i), bend_damping_request);
+        i+=1;
+      );
+      seen_damping_request=bend_damping_request;
+    );
+    abs(live_fret_request-seen_fret_request)>0.000000001 ? (
+      // Auto is a future routing constraint; Manual is an explicit live move.
+      mb_string_selection()>0 ? (
+        index=mb_routing_target();
+        st=mb_rack_string(index);
+        slot=mb_rack_slot(index);
+        slot[MB_RS_ENABLED] ? (
+          mb_owner_ptr(index)[MB_O_BEND_CHANNEL]>=0 ? (
+            // The manual fret becomes the wheel's new unshifted position.
+            mb_motion_ptr(index)[MB_MO_ACTIVE]=0;
+            mb_owner_ptr(index)[MB_O_FRET_ANCHOR]=live_fret_request;
+            mb_engine_fret_transition(st, mb_midi_slide_target(index), MB_FRET_TRANSITION_MS*0.001*srate);
+          ) : mb_engine_fret_transition(st, live_fret_request, MB_FRET_TRANSITION_MS*0.001*srate);
+          slot[MB_RS_BUSY]=1;
+        );
+      );
+      seen_fret_request=live_fret_request;
+      mb_hand_follow(-1);
+    );
+  );
+);

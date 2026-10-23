@@ -1,0 +1,149 @@
+// Seeded gesture variation. No random draws, timers or voice processing at audio rate.
+// Each physical string has an independent stream, separate from friction noise.
+@init
+function mb_variation_request()
+(
+  variation_seed_request=mb_clamp(floor(p_random_seed), 0, 2147483647);
+  variation_position_request=mb_clamp(p_rh_position_variation, 0, 20);
+  variation_strength_request=mb_clamp(p_excitation_strength_variation*0.01, 0, 1);
+  variation_softness_request=mb_clamp(p_release_softness_variation*0.01, 0, 1);
+  variation_width_request=mb_clamp(p_finger_footprint_variation*0.01, 0, 1);
+  variation_error_chance_request=mb_clamp(p_fretting_placement_error_probability*0.01, 0, 1);
+  variation_error_max_request=mb_clamp(p_maximum_fretting_placement_error_mm, 0, 30);
+);
+
+function mb_variation_reset()
+local(i)
+global(MB_MAX_STRINGS, MB_VARIATION, MB_VARIATION_WORDS, MB_STRING_WORDS)
+(
+  i=0; loop(MB_MAX_STRINGS,
+    memset(i*MB_STRING_WORDS+MB_VARIATION, 0, MB_VARIATION_WORDS); i+=1;
+  );
+);
+
+// Seed edits restart streams without reshaping an already sounding gesture.
+function mb_variation_apply()
+local(i, v)
+(
+  variation_seed_current!=variation_seed_request ? (
+    i=0; loop(MB_MAX_STRINGS,
+      v=i*MB_STRING_WORDS+MB_VARIATION;
+      v[MB_VA_RNG]=v[MB_VA_EVENTS]=0; i+=1;
+    );
+  );
+  variation_seed_current=variation_seed_request;
+  variation_position_current=variation_position_request;
+  variation_strength_current=variation_strength_request;
+  variation_softness_current=variation_softness_request;
+  variation_width_current=variation_width_request;
+  variation_error_chance_current=variation_error_chance_request;
+  variation_error_max_current=variation_error_max_request;
+);
+
+// Park-Miller: the largest integer product is below 2^46, exactly representable
+// in EEL doubles. Six fixed draws per varied gesture, independent of mode count.
+function mb_variation_draw(v)
+global(MB_VA_RNG)
+(
+  v[MB_VA_RNG]=(v[MB_VA_RNG]*16807)%2147483647;
+  v[MB_VA_RNG]/2147483647;
+);
+
+// Called only after acceptance, once per actual RH/LH excitation. Slides,
+// controllers, rejected notes, page changes and preparation jobs never roll.
+function mb_variation_begin(st, cfg, right_hand, fret)
+local(v, stopped, position, strength, softness, width, chance, error, cell)
+(
+  v=st+MB_VARIATION;
+  memset(v+MB_VA_POSITION, 0, MB_VARIATION_WORDS-MB_VA_POSITION);
+  stopped=fret>0;
+  variation_seed_current>0 && ((right_hand && variation_position_current>0) ||
+    variation_strength_current>0 || variation_softness_current>0 || variation_width_current>0 ||
+    (stopped && variation_error_chance_current>0 && variation_error_max_current>0)) ? (
+    !v[MB_VA_RNG] ? v[MB_VA_RNG]=
+      (variation_seed_current+104729*(floor(st/MB_STRING_WORDS)+1))%2147483646+1;
+    position=2*mb_variation_draw(v)-1;
+    strength=2*mb_variation_draw(v)-1;
+    softness=2*mb_variation_draw(v)-1;
+    width=2*mb_variation_draw(v)-1;
+    chance=mb_variation_draw(v); error=mb_variation_draw(v);
+    v[MB_VA_POSITION]=right_hand ? position*variation_position_current : 0;
+    v[MB_VA_STRENGTH]=strength*variation_strength_current;
+    v[MB_VA_SOFTNESS]=softness*variation_softness_current;
+    v[MB_VA_WIDTH]=width*variation_width_current;
+    stopped && chance<variation_error_chance_current ? (
+      cell=cfg[MB_C_SCALE]*2^(-fret/12)*MB_VARIATION_FRET_CELL;
+      (st+MB_CONTACT)[MB_K_SURFACE] ? (
+        // Fretless: physical stopping error in either direction, not tension.
+        v[MB_VA_ERROR]=(2*error-1)*min(variation_error_max_current, 0.8*cell);
+        v[MB_VA_STOP_ERROR]=v[MB_VA_ERROR];
+      ) : (
+        // Fretted: retain the existing poor-seating/contact-clearance proxy.
+        v[MB_VA_ERROR]=error*min(variation_error_max_current, 0.8*cell);
+        v[MB_VA_SEATING]=0.9*min(1, v[MB_VA_ERROR]/max(0.001, 0.5*cell));
+      );
+    );
+    v[MB_VA_EVENTS]+=1;
+  );
+);
+
+// Convert nominal fret to the actual stopping span only at geometry updates.
+// Keep nominal routing/slide state intact. Bank configuration snapshots contain
+// the resulting effective fret, so old tails retain their own geometry.
+function mb_variation_fret(st, fret, scale)
+local(error, span, limit)
+global(MB_VARIATION, MB_VA_STOP_ERROR, MB_VARIATION_FRET_CELL)
+(
+  error=(st+MB_VARIATION)[MB_VA_STOP_ERROR];
+  error!=0 && fret>0 ? (
+    span=scale*2^(-fret/12);
+    // Stay inside the nut, fade continuously to open, and bound extreme errors
+    // during slides to 0.8 of the current fret cell (less than a semitone).
+    limit=min(max(0, scale-span), 0.8*span*MB_VARIATION_FRET_CELL);
+    error=mb_clamp(error, -limit, limit);
+    -12*log((span-error)/scale)/log(2);
+  ) : fret;
+);
+
+// A surface change removes captured placement, without a new random draw.
+// Caller schedules a passive geometry rebuild if a fretless offset was active.
+function mb_variation_surface(st)
+local(v, changed)
+global(MB_VARIATION, MB_VA_STOP_ERROR, MB_VA_ERROR, MB_VA_SEATING)
+(
+  v=st+MB_VARIATION; changed=v[MB_VA_STOP_ERROR]!=0;
+  v[MB_VA_STOP_ERROR]=v[MB_VA_ERROR]=v[MB_VA_SEATING]=0;
+  changed;
+);
+
+// Always start from a fresh nominal configuration; never perturb last note's
+// snapshot again. Existing geometry guards the actual excitation center/width.
+function mb_variation_configuration(st, cfg)
+local(v)
+global(MB_VARIATION, MB_VA_POSITION, MB_VA_STRENGTH, MB_VA_SOFTNESS, MB_VA_WIDTH,
+       MB_C_PLUCK_POSITION, MB_C_DISPLACEMENT, MB_C_SOFTNESS, MB_C_CONTACT_WIDTH)
+(
+  v=st+MB_VARIATION;
+  v[MB_VA_POSITION]!=0 ? cfg[MB_C_PLUCK_POSITION]+=v[MB_VA_POSITION];
+  v[MB_VA_STRENGTH]!=0 ? cfg[MB_C_DISPLACEMENT]*=1+v[MB_VA_STRENGTH];
+  v[MB_VA_SOFTNESS]!=0 ? cfg[MB_C_SOFTNESS]*=1+v[MB_VA_SOFTNESS];
+  v[MB_VA_WIDTH]!=0 ? cfg[MB_C_CONTACT_WIDTH]*=1+v[MB_VA_WIDTH];
+);
+
+function mb_variation_strength(st, amount)
+global(MB_VARIATION, MB_VA_STRENGTH)
+(
+  (st+MB_VARIATION)[MB_VA_STRENGTH]!=0 ? amount*(1+(st+MB_VARIATION)[MB_VA_STRENGTH]) : amount;
+);
+
+function mb_variation_softness(st, softness)
+global(MB_VARIATION, MB_VA_SOFTNESS)
+(
+  (st+MB_VARIATION)[MB_VA_SOFTNESS]!=0 ? softness*(1+(st+MB_VARIATION)[MB_VA_SOFTNESS]) : softness;
+);
+
+function mb_variation_width(st, width)
+global(MB_VARIATION, MB_VA_WIDTH)
+(
+  (st+MB_VARIATION)[MB_VA_WIDTH]!=0 ? width*(1+(st+MB_VARIATION)[MB_VA_WIDTH]) : width;
+);

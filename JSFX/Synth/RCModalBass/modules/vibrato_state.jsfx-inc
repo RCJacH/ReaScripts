@@ -1,0 +1,150 @@
+// Vibrato requests, controller scopes and unmodulated bank configurations.
+// All RAM writes run on the audio thread. Depth zero leaves string RAM alone.
+@init
+function mb_vibrato_input(scope)
+global(MB_VIBRATO_INPUTS, MB_VI_WORDS)
+( MB_VIBRATO_INPUTS+scope*MB_VI_WORDS; );
+
+function mb_vibrato_bank(st, base)
+global(MB_VIBRATO, MB_VB_HEADER_WORDS, MB_VB_BANK_WORDS, MB_BANK_A)
+( st+MB_VIBRATO+MB_VB_HEADER_WORDS+(base!=st+MB_BANK_A)*MB_VB_BANK_WORDS; );
+
+// Shared menu: Aftertouch, CC1..119. No implicit CC0 assignment.
+function mb_vibrato_source(selection)
+local(index)
+global(MB_CTRL_PRESSURE, MB_CTRL_CC_FIRST, MB_MIDI_CC_MAX)
+(
+  index=mb_midi_mapping_index(selection, MB_MIDI_CC_MAX);
+  index<0 ? -1 : index==0 ? MB_CTRL_PRESSURE : MB_CTRL_CC_FIRST+index;
+);
+
+function mb_vibrato_selected(source)
+global(p_vibrato_depth_controller, p_vibrato_rate_controller)
+(
+  source>=0 && (source==mb_vibrato_source(p_vibrato_depth_controller) ||
+               source==mb_vibrato_source(p_vibrato_rate_controller));
+);
+
+function mb_vibrato_request()
+(
+  vibrato_rate_request=mb_clamp(p_vibrato_rate, 0.1, 12);
+  vibrato_depth_request=mb_clamp(p_vibrato_depth, 0, 200)*0.01;
+  vibrato_delay_request=mb_clamp(p_vibrato_delay, 0, 2000)*0.001*srate;
+  vibrato_build_up_request=mb_clamp(p_vibrato_build_up_cycles, 0, 4);
+  vibrato_depth_source_request=mb_vibrato_source(p_vibrato_depth_controller);
+  vibrato_rate_source_request=mb_vibrato_source(p_vibrato_rate_controller);
+);
+
+function mb_vibrato_controller(channel, source, value)
+local(input)
+global(vibrato_depth_source_current, vibrato_rate_source_current, channel_mode_current,
+       MB_BEND_SHARED, MB_VI_DEPTH, MB_VI_RATE)
+(
+  source==vibrato_depth_source_current || source==vibrato_rate_source_current ? (
+    input=mb_vibrato_input(channel);
+    source==vibrato_depth_source_current ? input[MB_VI_DEPTH]=value;
+    source==vibrato_rate_source_current ? input[MB_VI_RATE]=value;
+    channel_mode_current==0 ? (
+      input=mb_vibrato_input(MB_BEND_SHARED);
+      source==vibrato_depth_source_current ? input[MB_VI_DEPTH]=value;
+      source==vibrato_rate_source_current ? input[MB_VI_RATE]=value;
+    );
+  );
+);
+
+function mb_vibrato_reset()
+global(MB_VIBRATO_INPUTS, MB_VI_WORDS, MB_CHANNELS)
+( memset(MB_VIBRATO_INPUTS, -1, (MB_CHANNELS+1)*MB_VI_WORDS); );
+
+function mb_vibrato_init()
+(
+  mb_vibrato_request();
+  vibrato_rate_current=vibrato_rate_request; vibrato_depth_current=vibrato_depth_request;
+  vibrato_delay_current=vibrato_delay_request;
+  vibrato_build_up_current=vibrato_build_up_request;
+  vibrato_build_up_step=vibrato_build_up_current>0 ? 1/(srate*vibrato_build_up_current) : 0;
+  vibrato_depth_source_current=vibrato_depth_source_request;
+  vibrato_rate_source_current=vibrato_rate_source_request;
+  vibrato_channel_mode=channel_mode_current;
+  vibrato_running=vibrato_depth_current>0;
+  vibrato_retuning=mb_vibrato_budgeted=0; mb_vibrato_allowance=MB_MAX_MODES;
+  vibrato_smooth=1-exp(-1/(MB_VIBRATO_SMOOTH_MS*0.001*srate));
+  mb_vibrato_reset();
+);
+
+function mb_vibrato_apply_requests()
+local(i, st, v, input)
+(
+  vibrato_channel_mode!=channel_mode_current ? (mb_vibrato_reset(); vibrato_channel_mode=channel_mode_current;);
+  vibrato_depth_source_current!=vibrato_depth_source_request ||
+    vibrato_rate_source_current!=vibrato_rate_source_request ? (
+    i=0; loop(MB_CHANNELS+1,
+      input=mb_vibrato_input(i);
+      vibrato_depth_source_current!=vibrato_depth_source_request ? input[MB_VI_DEPTH]=-1;
+      vibrato_rate_source_current!=vibrato_rate_source_request ? input[MB_VI_RATE]=-1;
+      i+=1;
+    );
+    vibrato_depth_source_current=vibrato_depth_source_request;
+    vibrato_rate_source_current=vibrato_rate_source_request;
+  );
+  vibrato_rate_current=vibrato_rate_request; vibrato_depth_current=vibrato_depth_request;
+  vibrato_delay_current=vibrato_delay_request;
+  vibrato_build_up_current=vibrato_build_up_request;
+  vibrato_build_up_step=vibrato_build_up_current>0 ? 1/(srate*vibrato_build_up_current) : 0;
+  vibrato_running=vibrato_depth_current>0;
+  i=0; loop(MB_MAX_STRINGS,
+    st=i*MB_STRING_WORDS; v=st+MB_VIBRATO;
+    v[MB_VB_ACTIVE] || v[MB_VB_AMOUNT]>0 ? vibrato_running=1;
+    i+=1;
+  );
+);
+
+// Called after a non-vibrato coefficient job. Its cfg is the nominal tension,
+// including manual bend/stretch, never the previous vibrato multiplier.
+function mb_vibrato_capture(st, base, cfg)
+local(b)
+global(vibrato_running, vibrato_retuning, MB_VBB_CFG, MB_CONFIG_WORDS, MB_VBB_VALID,
+       MB_VBB_APPLIED, MB_VBB_DIRTY)
+(
+  vibrato_running && !vibrato_retuning ? (
+    b=mb_vibrato_bank(st, base);
+    memcpy(b+MB_VBB_CFG, cfg, MB_CONFIG_WORDS);
+    b[MB_VBB_VALID]=b[MB_VBB_DIRTY]=1; b[MB_VBB_APPLIED]=0;
+  );
+);
+
+// An ordinary pluck/fresh tap starts a phrase; legato and HO/PO do not call it.
+function mb_vibrato_seed(st)
+local(v, b)
+(
+  vibrato_running ? (
+    v=st+MB_VIBRATO;
+    v[MB_VB_AGE]=v[MB_VB_PHASE]=v[MB_VB_AMOUNT]=v[MB_VB_CLOCK]=0;
+    v[MB_VB_BUILD]=0;
+    v[MB_VB_CEILING]=0; v[MB_VB_WORK]=1;
+    v[MB_VB_ACTIVE]=1;
+    b=mb_vibrato_bank(st, st[MB_S_PREVIOUS]);
+    b[MB_VBB_GHOST]=(st+MB_LIVE)[MB_L_GHOST_AMOUNT];
+    mb_vibrato_capture(st, st[MB_S_ACTIVE], st+MB_CONFIG);
+  );
+);
+
+function mb_vibrato_work(st)
+global(vibrato_running, MB_VIBRATO, MB_VB_WORK)
+( vibrato_running ? (st+MB_VIBRATO)[MB_VB_WORK]=1; );
+
+function mb_vibrato_clear(st)
+global(MB_VIBRATO, MB_VIBRATO_WORDS, MB_VB_ACTIVE, MB_S_F1, MB_GEOMETRY, MB_G_F1)
+(
+  // Keep idle note/frequency telemetry nominal once the sounding state is gone.
+  (st+MB_VIBRATO)[MB_VB_ACTIVE] ? st[MB_S_F1]=(st+MB_GEOMETRY)[MB_G_F1];
+  memset(st+MB_VIBRATO, 0, MB_VIBRATO_WORDS);
+);
+
+function mb_vibrato_display_bend(st)
+local(b)
+global(MB_S_ACTIVE, MB_LIVE, MB_L_BEND, MB_VBB_APPLIED)
+(
+  b=mb_vibrato_bank(st, st[MB_S_ACTIVE]);
+  (st+MB_LIVE)[MB_L_BEND]+b[MB_VBB_APPLIED];
+);

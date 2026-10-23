@@ -1,0 +1,272 @@
+// Linear pickup electronics. Trapezoidal companion network, shared by all
+// strings. Four nodal unknowns after eliminating the resistive blend bus.
+@init
+function mb_circuit_request()
+local(r1, l1, c1, r2, l2, c2, tone, volume, ct, load, cable, rv, rt, rb, mode1, mode2, en1, en2, mix, active)
+(
+  mb_active_request(); active=p_electronics_model>=2.5;
+  r1=mb_clamp(p_pickup_1_coil_resistance, 0.1, 30); l1=mb_clamp(p_pickup_1_coil_inductance, 0.1, 20);
+  c1=mb_clamp(p_pickup_1_internal_capacitance, 10, 2000);
+  r2=mb_clamp(p_pickup_2_coil_resistance, 0.1, 30); l2=mb_clamp(p_pickup_2_coil_inductance, 0.1, 20);
+  c2=mb_clamp(p_pickup_2_internal_capacitance, 10, 2000);
+  tone=mb_clamp(p_passive_tone_position*0.01, 0, 1); volume=mb_clamp(p_instrument_volume_position*0.01, 0, 1);
+  ct=mb_clamp(p_tone_capacitor, 1, 220); load=mb_clamp(p_electrical_load_resistance, 10, 20000);
+  cable=mb_clamp(p_cable_load_capacitance, 0, 3000);
+  rv=mb_clamp(p_volume_pot_resistance, 10, 2000); rt=mb_clamp(p_tone_pot_resistance, 10, 2000);
+  rb=mb_clamp(p_blend_pot_resistance, 10, 2000);
+  mode1=mb_coil_mode(p_pickup_1_coil_configuration); mode2=mb_coil_mode(p_pickup_2_coil_configuration);
+  en1=p_pickup_1_enable>=0.5; en2=p_pickup_2_enable>=0.5; mix=mb_clamp(p_pickup_mix*0.01, 0, 1);
+  r1!=circuit_r1_request || l1!=circuit_l1_request || c1!=circuit_c1_request ||
+    r2!=circuit_r2_request || l2!=circuit_l2_request || c2!=circuit_c2_request ||
+    tone!=circuit_tone_request || volume!=circuit_volume_request || ct!=circuit_ct_request ||
+    load!=circuit_load_request || cable!=circuit_cable_request || rv!=circuit_rv_request ||
+    rt!=circuit_rt_request || rb!=circuit_rb_request || mode1!=circuit_mode1_request ||
+    mode2!=circuit_mode2_request || en1!=circuit_en1_request || en2!=circuit_en2_request || mix!=circuit_mix_request ||
+    active!=circuit_active_request || (active && active_revision_request!=circuit_active_seen) ?
+      circuit_revision_request+=1;
+  circuit_r1_request=r1; circuit_l1_request=l1; circuit_c1_request=c1;
+  circuit_r2_request=r2; circuit_l2_request=l2; circuit_c2_request=c2;
+  circuit_tone_request=tone; circuit_volume_request=volume; circuit_ct_request=ct;
+  circuit_load_request=load; circuit_cable_request=cable; circuit_rv_request=rv;
+  circuit_rt_request=rt; circuit_rb_request=rb;
+  circuit_mode1_request=mode1; circuit_mode2_request=mode2;
+  circuit_en1_request=en1; circuit_en2_request=en2; circuit_mix_request=mix;
+  circuit_active_request=active; circuit_active_seen=active_revision_request;
+  circuit_model_request=p_electronics_model>=1.5;
+  circuit_gain1_request=mb_clamp(p_pickup_1_sensitivity*0.01, 0, 2);
+  circuit_gain2_request=mb_clamp(p_pickup_2_sensitivity*0.01, 0, 2)*(p_pickup_polarity>=0.5 ? -1 : 1);
+);
+
+function mb_circuit_pickup_ptr(st, weights, pickup)
+global(MB_CIR_PICKUP, MB_CP_A1, MB_MAX_MODES, MB_PICKUP_A)
+( st+MB_CIR_PICKUP+MB_CP_A1+(weights==st+MB_PICKUP_A ? 0 : 2*MB_MAX_MODES)+pickup*MB_MAX_MODES; );
+
+function mb_circuit_pickup_build(st, weights, count, immediate)
+local(first, second)
+global(MB_PICKUP_A, MB_PU_1_A, MB_PU_2_A, MB_PU_1_B, MB_PU_2_B, circuit_observe_current)
+(
+  circuit_observe_current && immediate ? (
+    first=st+(weights==st+MB_PICKUP_A ? MB_PU_1_A : MB_PU_1_B);
+    second=st+(weights==st+MB_PICKUP_A ? MB_PU_2_A : MB_PU_2_B);
+    memcpy(mb_circuit_pickup_ptr(st, weights, 0), first, count);
+    memcpy(mb_circuit_pickup_ptr(st, weights, 1), second, count);
+  );
+);
+
+function mb_circuit_pickup_tick(st, weights, count, fraction)
+local(first, second, a, b, i)
+global(MB_PICKUP_A, MB_PU_1_A, MB_PU_1_B, MB_PU_2_A, MB_PU_2_B)
+(
+  a=mb_circuit_pickup_ptr(st, weights, 0); b=mb_circuit_pickup_ptr(st, weights, 1);
+  first=st+(weights==st+MB_PICKUP_A ? MB_PU_1_A : MB_PU_1_B);
+  second=st+(weights==st+MB_PICKUP_A ? MB_PU_2_A : MB_PU_2_B);
+  i=0; loop(count, a[i]+=(first[i]-a[i])*fraction; b[i]+=(second[i]-b[i])*fraction; i+=1;);
+);
+
+// Read velocity without advancing a mode or its band mask. The following
+// ordinary renderer performs the one actual state update for this sample.
+function mb_circuit_bank(st, base, weights, count)
+local(a, b, h, l, masks, targets, flag, i, ptr, v, mask, sum1, sum2)
+(
+  h=st+MB_CIR_PICKUP; l=st+MB_LIVE;
+  a=mb_circuit_pickup_ptr(st, weights, 0); b=mb_circuit_pickup_ptr(st, weights, 1);
+  flag=l[base==st+MB_BANK_A ? MB_L_FLAG_A : MB_L_FLAG_B];
+  masks=st+(base==st+MB_BANK_A ? MB_MASK_A : MB_MASK_B);
+  targets=st+(base==st+MB_BANK_A ? MB_MASK_TARGET_A : MB_MASK_TARGET_B);
+  sum1=sum2=i=0; loop(count,
+    ptr=base+i*MB_MODE_STRIDE; v=-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I];
+    mask=flag ? masks[i]+(targets[i]-masks[i])*l[MB_L_MASK_SMOOTH] : 1;
+    sum1+=v*a[i]*mask; sum2+=v*b[i]*mask; i+=1;
+  );
+  h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT1 : MB_CP_B_OUTPUT1]=sum1;
+  h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT2 : MB_CP_B_OUTPUT2]=sum2;
+);
+
+// Each pickup observes the actual modal motion, including fret contact.
+// Preserve the combined nonlinear observer residual as a common source.
+function mb_circuit_string(st, signal, main, previous_weight)
+local(h, p, a, b, first, second, active_gain, gain, residual)
+(
+  h=st+MB_CIR_PICKUP; p=st+MB_PICKUP_STATE;
+  a=st[MB_S_ACTIVE]==st+MB_BANK_A ? MB_CP_A_OUTPUT1 : MB_CP_B_OUTPUT1;
+  b=st[MB_S_ACTIVE]==st+MB_BANK_A ? MB_CP_B_OUTPUT1 : MB_CP_A_OUTPUT1;
+  active_gain=(st+MB_LIVE)[MB_L_FADE_KIND] ? 1-previous_weight : 1;
+  first=active_gain*h[a]+previous_weight*h[b];
+  second=active_gain*h[a+1]+previous_weight*h[b+1];
+  gain=(1-p[MB_PU_MIX])*p[MB_PU_GAIN1]+p[MB_PU_MIX]*p[MB_PU_GAIN2];
+  residual=gain>0.0001 ? (signal-main)/gain : 0;
+  h[MB_CP_OUTPUT1]=first+residual; h[MB_CP_OUTPUT2]=second+residual;
+);
+
+// Identical uncoupled coil equivalents. P-style halves remain electrically in
+// series although each string is observed by just one half. No mutual L model.
+function mb_circuit_coil_factor(mode)
+global(MB_COIL_SPLIT, MB_COIL_SERIES, MB_COIL_PARALLEL)
+( mode==MB_COIL_SPLIT || mode==MB_COIL_SERIES ? 2 : mode==MB_COIL_PARALLEL ? 0.5 : 1; );
+
+function mb_circuit_configure(bank)
+local(g, work, factor, r, l, c, level, i, j, k, total, pivot, value, branch, diagonal)
+(
+  work=MB_CIRCUIT+MB_CI_SCRATCH; branch=MB_CIRCUIT+MB_CI_BRANCH; diagonal=branch+4;
+  i=0; loop(2,
+    factor=mb_circuit_coil_factor(i==0 ? circuit_mode1_request : circuit_mode2_request);
+    r=1000*factor*(i==0 ? circuit_r1_request : circuit_r2_request);
+    l=factor*(i==0 ? circuit_l1_request : circuit_l2_request);
+    c=0.000000000001/factor*(i==0 ? circuit_c1_request : circuit_c2_request);
+    bank[MB_CN_GL+i]=1/(r+2*srate*l); bank[MB_CN_RATIO+i]=(2*srate*l-r)*bank[MB_CN_GL+i];
+    bank[MB_CN_GC+i]=2*srate*c; bank[MB_CN_L+i]=l; bank[MB_CN_C+i]=c;
+    level=min(1, 2*(i==0 ? 1-circuit_mix_request : circuit_mix_request));
+    branch[i]=(i==0 ? circuit_en1_request : circuit_en2_request) ?
+      1/max(1, 1000*circuit_rb_request*(1-level)) : 0;
+    g=(i==0 ? circuit_en1_request : circuit_en2_request) ? 1/max(1, 1000*circuit_rb_request*level) : 0;
+    diagonal[i]=bank[MB_CN_GL+i]+bank[MB_CN_GC+i]+g;
+    i+=1;
+  );
+  bank[MB_CN_C+2]=circuit_ct_request*0.000000001;
+  bank[MB_CN_ACTIVE]=circuit_active_request;
+  bank[MB_CN_C+3]=bank[MB_CN_ACTIVE] ? 0 : circuit_cable_request*0.000000000001;
+  bank[MB_CN_GC+2]=2*srate*bank[MB_CN_C+2]; bank[MB_CN_GC+3]=2*srate*bank[MB_CN_C+3];
+  bank[MB_CN_GC+3]<=0 ? bank[MB_CN_IC+3]=0;
+  branch[2]=1/max(1, 1000*circuit_rt_request*circuit_tone_request);
+  branch[3]=bank[MB_CN_ACTIVE] ? 1 : 1/max(1, 1000*circuit_rv_request*(1-circuit_volume_request));
+  diagonal[2]=bank[MB_CN_GC+2];
+  diagonal[3]=bank[MB_CN_ACTIVE] ? 1/(1000*active_input_request) :
+    bank[MB_CN_GC+3]+1/max(1, 1000*circuit_rv_request*circuit_volume_request)+1/(1000*circuit_load_request);
+  bank[MB_CN_MUTED]=!bank[MB_CN_ACTIVE] && circuit_volume_request<=0;
+  total=branch[0]+branch[1]+branch[2]+branch[3];
+  // Schur complement of the common resistive bus. Positive components make
+  // this symmetric positive definite; fixed four-pivot Gauss-Jordan inversion.
+  i=0; loop(4,
+    j=0; loop(4,
+      work[i*8+j]=(i==j ? diagonal[i]+branch[i] : 0)-branch[i]*branch[j]/total;
+      work[i*8+4+j]=i==j; j+=1;
+    ); i+=1;
+  );
+  k=0; loop(4,
+    pivot=work[k*8+k]; j=0; loop(8, work[k*8+j]/=pivot; j+=1;);
+    i=0; loop(4,
+      i!=k ? (value=work[i*8+k]; j=0; loop(8, work[i*8+j]-=value*work[k*8+j]; j+=1;););
+      i+=1;
+    ); k+=1;
+  );
+  i=0; loop(4, j=0; loop(4, bank[MB_CN_INV+i*4+j]=work[i*8+4+j]; j+=1;); i+=1;);
+  bank[MB_CN_ACTIVE] ? mb_active_configure(bank);
+);
+
+function mb_circuit_network(bank, first, second)
+local(h1, h2, r1, r2, rt, ro, v1, v2, vt, vo, g)
+(
+  h1=bank[MB_CN_RATIO]*bank[MB_CN_IL]+bank[MB_CN_GL]*(bank[MB_CN_INPUT]-bank[MB_CN_V]);
+  h2=bank[MB_CN_RATIO+1]*bank[MB_CN_IL+1]+bank[MB_CN_GL+1]*(bank[MB_CN_INPUT+1]-bank[MB_CN_V+1]);
+  r1=bank[MB_CN_GL]*first+h1+bank[MB_CN_GC]*bank[MB_CN_V]+bank[MB_CN_IC];
+  r2=bank[MB_CN_GL+1]*second+h2+bank[MB_CN_GC+1]*bank[MB_CN_V+1]+bank[MB_CN_IC+1];
+  rt=bank[MB_CN_GC+2]*bank[MB_CN_V+2]+bank[MB_CN_IC+2];
+  ro=bank[MB_CN_GC+3]*bank[MB_CN_V+3]+bank[MB_CN_IC+3];
+  g=bank+MB_CN_INV;
+  v1=g[0]*r1+g[1]*r2+g[2]*rt+g[3]*ro;
+  v2=g[4]*r1+g[5]*r2+g[6]*rt+g[7]*ro;
+  vt=g[8]*r1+g[9]*r2+g[10]*rt+g[11]*ro;
+  vo=g[12]*r1+g[13]*r2+g[14]*rt+g[15]*ro;
+  bank[MB_CN_IL]=bank[MB_CN_GL]*(first-v1)+h1;
+  bank[MB_CN_IL+1]=bank[MB_CN_GL+1]*(second-v2)+h2;
+  bank[MB_CN_IC]=bank[MB_CN_GC]*(v1-bank[MB_CN_V])-bank[MB_CN_IC];
+  bank[MB_CN_IC+1]=bank[MB_CN_GC+1]*(v2-bank[MB_CN_V+1])-bank[MB_CN_IC+1];
+  bank[MB_CN_IC+2]=bank[MB_CN_GC+2]*(vt-bank[MB_CN_V+2])-bank[MB_CN_IC+2];
+  bank[MB_CN_IC+3]=bank[MB_CN_GC+3]*(vo-bank[MB_CN_V+3])-bank[MB_CN_IC+3];
+  bank[MB_CN_V]=v1; bank[MB_CN_V+1]=v2; bank[MB_CN_V+2]=vt; bank[MB_CN_V+3]=vo;
+  bank[MB_CN_INPUT]=first; bank[MB_CN_INPUT+1]=second;
+  bank[MB_CN_OUTPUT]=bank[MB_CN_ACTIVE] ? mb_active_render(mb_active_ptr(bank), vo) : bank[MB_CN_MUTED] ? 0 : vo;
+);
+
+function mb_circuit_clear()
+global(MB_CIRCUIT, MB_CI_A, MB_CI_B, MB_CN_V, MB_CN_OUTPUT, MB_CI_SUM1, MB_CI_SUM2)
+(
+  memset(MB_CIRCUIT+MB_CI_A+MB_CN_V, 0, MB_CN_OUTPUT-MB_CN_V+1);
+  memset(MB_CIRCUIT+MB_CI_B+MB_CN_V, 0, MB_CN_OUTPUT-MB_CN_V+1);
+  MB_CIRCUIT[MB_CI_SUM1]=MB_CIRCUIT[MB_CI_SUM2]=0;
+  mb_active_clear();
+);
+
+function mb_circuit_init()
+global(MB_CIRCUIT, MB_CIRCUIT_WORDS, circuit_observe_current)
+( memset(MB_CIRCUIT, 0, MB_CIRCUIT_WORDS); mb_active_init(); circuit_observe_current=0; );
+
+// An individual channel kill must retain other strings' shared circuit tail.
+// The last explicit string kill can silence the complete network immediately.
+function mb_circuit_stop_if_idle()
+local(i, busy)
+global(MB_MAX_STRINGS, MB_RACK_SLOTS, MB_RACK_SLOT_WORDS, MB_RS_BUSY)
+(
+  i=busy=0; loop(MB_MAX_STRINGS, busy+=(MB_RACK_SLOTS+i*MB_RACK_SLOT_WORDS)[MB_RS_BUSY]; i+=1;);
+  !busy ? mb_circuit_clear();
+);
+
+function mb_circuit_apply()
+local(c, a, b, weight, i, st, meta, weights)
+(
+  c=MB_CIRCUIT; a=c+MB_CI_A; b=c+MB_CI_B;
+  c[MB_CI_TARGET]!=circuit_model_request ? (
+    c[MB_CI_TARGET]=circuit_model_request; c[MB_CI_WET_LEFT]=max(1, ceil(0.005*srate));
+  );
+  circuit_model_request && !circuit_observe_current ? (
+    circuit_observe_current=1; i=0; loop(MB_MAX_STRINGS,
+      st=i*MB_STRING_WORDS;
+      weights=st+MB_PICKUP_A; meta=st+MB_PICKUP_STATE+MB_PU_A;
+      mb_circuit_pickup_build(st, weights, meta[MB_PUB_COUNT], 1);
+      weights=st+MB_PICKUP_B; meta=st+MB_PICKUP_STATE+MB_PU_B;
+      mb_circuit_pickup_build(st, weights, meta[MB_PUB_COUNT], 1); i+=1;
+    );
+  );
+  circuit_observe_current && (!c[MB_CI_CONFIGURED] || c[MB_CI_REVISION]!=circuit_revision_request) &&
+    (c[MB_CI_FADE_LEFT]<=0 || !(circuit_active_request || a[MB_CN_ACTIVE] || b[MB_CN_ACTIVE])) ? (
+    c[MB_CI_CONFIGURED] ? (
+      // Fold an interrupted edit in physical voltage/current coordinates.
+      weight=c[MB_CI_FADE_LEFT]/max(1, c[MB_CI_FADE_TOTAL]);
+      mb_active_transition();
+      i=MB_CN_V; loop(MB_CN_OUTPUT-MB_CN_V+1, a[i]+=(b[i]-a[i])*weight; i+=1;);
+      memcpy(b, a, MB_CN_WORDS);
+      c[MB_CI_FADE_TOTAL]=c[MB_CI_FADE_LEFT]=max(1, ceil(0.005*srate));
+    ) : (
+      c[MB_CI_GAIN1]=circuit_gain1_request; c[MB_CI_GAIN2]=circuit_gain2_request;
+      c[MB_CI_SMOOTH]=1-exp(-1/(0.005*srate)); c[MB_CI_CONFIGURED]=1;
+    );
+    mb_circuit_configure(a); c[MB_CI_REVISION]=circuit_revision_request;
+  );
+);
+
+function mb_circuit_start()
+global(MB_CIRCUIT, MB_CI_SUM1, MB_CI_SUM2, circuit_observe_current)
+( circuit_observe_current ? MB_CIRCUIT[MB_CI_SUM1]=MB_CIRCUIT[MB_CI_SUM2]=0; );
+
+function mb_circuit_add(st)
+local(gain, h)
+global(MB_OUTPUT, MB_OUT_CURRENT, MB_CIR_PICKUP, MB_CP_OUTPUT1, MB_CP_OUTPUT2, MB_CIRCUIT, MB_CI_SUM1, MB_CI_SUM2,
+       MB_FRET_RESPONSE, MB_UF_CURRENT)
+(
+  gain=1+(st+MB_OUTPUT)[MB_OUT_CURRENT]; h=st+MB_CIR_PICKUP;
+  abs((st+MB_FRET_RESPONSE)[MB_UF_CURRENT])>0 ? gain*=1+(st+MB_FRET_RESPONSE)[MB_UF_CURRENT];
+  MB_CIRCUIT[MB_CI_SUM1]+=gain*h[MB_CP_OUTPUT1]; MB_CIRCUIT[MB_CI_SUM2]+=gain*h[MB_CP_OUTPUT2];
+);
+
+function mb_circuit_render(simple)
+local(c, first, second, wet, old, result)
+(
+  circuit_observe_current ? (
+    c=MB_CIRCUIT;
+    c[MB_CI_GAIN1]+=(circuit_gain1_request-c[MB_CI_GAIN1])*c[MB_CI_SMOOTH];
+    c[MB_CI_GAIN2]+=(circuit_gain2_request-c[MB_CI_GAIN2])*c[MB_CI_SMOOTH];
+    first=c[MB_CI_SUM1]*c[MB_CI_GAIN1]; second=c[MB_CI_SUM2]*c[MB_CI_GAIN2];
+    result=mb_circuit_network(c+MB_CI_A, first, second);
+    c[MB_CI_FADE_LEFT]>0 ? (
+      old=mb_circuit_network(c+MB_CI_B, first, second);
+      wet=c[MB_CI_FADE_LEFT]/c[MB_CI_FADE_TOTAL]; result+=(old-result)*wet;
+      c[MB_CI_FADE_LEFT]-=1;
+    );
+    c[MB_CI_WET_LEFT]>0 ? (
+      c[MB_CI_WET]+=(c[MB_CI_TARGET]-c[MB_CI_WET])/c[MB_CI_WET_LEFT]; c[MB_CI_WET_LEFT]-=1;
+    );
+    c[MB_CI_WET]<1 ? result=simple+(result-simple)*c[MB_CI_WET];
+    !c[MB_CI_TARGET] && c[MB_CI_WET_LEFT]<=0 ? (circuit_observe_current=0; mb_circuit_clear(););
+    result;
+  ) : simple;
+);

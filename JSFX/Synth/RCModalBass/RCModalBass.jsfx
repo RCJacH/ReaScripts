@@ -1,0 +1,488 @@
+/*
+JSFX Name: RCModalBass
+Author: RCJacH
+License:
+  Copyright (c) 2026 RCJacH.
+  You may use, modify, and redistribute this software (including its modules)
+  and modified versions free of charge, provided this notice is retained.
+  You may not sell this software or modified versions, or include them in a
+  paid software bundle, without the copyright holder's written permission.
+  Commercial music and audio production are permitted. These restrictions
+  do not apply to music or audio created using the software.
+  This software is provided "as is", without warranty of any kind.
+Version:0.1.0
+Link: https://github.com/RCJacH/ReaScripts
+Provides:
+  modules/*.jsfx-inc
+Release Date: Oct 2026
+Changelog:
+  0.1.0:
+    initial release
+
+Reference:
+  IK MODO Bass
+  [Euphonics — Motion of a plucked string as a modal sum](https://euphonics.org/5-4-1-motion-of-a-plucked-string-as-a-modal-sum/)
+    Original modal string and triangular-pluck derivation.
+  [Bank (2009) — Energy-Based Synthesis of Tension Modulation in Strings](https://dafx.de/paper-archive/2009/papers/paper_76.pdf)
+    Averaged stretching and vibration-induced pitch rise.
+  [Hodgkinson, Timoney & Lazzarini (2010) — A Model of Partial Tracks for Tension-Modulated Steel-String Guitar Tones](https://dafx.de/paper-archive/2010/DAFx10/HodgkinsonTimoneyLazzarini_DAFx10_P69.pdf)
+    Background on changing pitch and inharmonicity during decay.
+  [Evangelista & Eckerholm (2010) — Player–Instrument Interaction Models for Digital Waveguide Synthesis of Guitar: Touch and Collisions](https://www.diva-portal.org/smash/get/diva2%3A316228/FULLTEXT01.pdf)
+    Plucking/contact interaction and the distinction between excitation and obstacle contact.
+  [Bilbao & Torin (2015) — Numerical Modeling and Sound Synthesis for Articulated String/Fretboard Interactions](https://www.research.ed.ac.uk/en/publications/numerical-modeling-and-sound-synthesis-for-articulated-stringfret/)
+    Early fretboard-contact research.
+  [Issanchou et al. (2018) — String/frets contacts in the electric bass sound: Simulations and experiments](https://researchportal.ip-paris.fr/en/publications/stringfrets-contacts-in-the-electric-bass-sound-simulations-and-e/)
+    Bass fret collisions, particularly Slap/Pop and multiple-contact behavior.
+  [Pakarinen, Penttinen & Bank (2007) — Analysis of handling noises on wound strings](https://doi.org/10.1121/1.2786607)
+    Sliding speed, winding texture and handling-noise spectrum. These were acoustic-microphone measurements.
+  [Novak et al. (2018) — Experimental Study of Guitar Pickup Nonlinearity](https://dafx.de/paper-archive/2018/papers/DAFx2018_paper_39.pdf)
+    Pickup nonlinearity and pickup/string-distance effects.
+  [Feinberg & Yang (2018) — Natural-frequency splitting of a guitar string caused by a non-uniform magnetic field](https://doi.org/10.1121/1.5080465)
+    Background for magnetic loading and changes to string vibration.
+  [Giampiccolo, Bernardini & Sarti (2023) — Virtualization of Guitar Pickups through Circuit Inversion](https://re.public.polimi.it/handle/11311/1236166)
+    Pickup/electronics circuit background. The circuit solver is an independent approximation.
+  [Robert Bristow-Johnson / W3C — Audio EQ Cookbook](https://www.w3.org/TR/audio-eq-cookbook/)
+    Resonant low-pass, shelving and peaking-EQ coefficients, including Active Mid Q.
+  [Fender — What’s a Pickup Pole?](https://www.fender.com/articles/maintenance/whats-a-pickup-pole-and-why-is-it-so-important)
+    pole geometry, string balance and pickup-height considerations.
+  [Seymour Duncan — Humbucker series/parallel wiring diagram](https://www.seymourduncan.com/images/wiring-diagrams/1H_1VppSP.pdf)
+    coil connection topology.
+  [Fraunhofer IDMT — IDMT-SMT-Bass dataset](https://www.idmt.fraunhofer.de/en/publications/datasets/bass.html)
+    referenced as recorded articulation comparison material.
+*/
+
+desc:RCModalBass
+tags:instrument synthesis bass physical-model
+in_pin:none
+out_pin:Mono L
+out_pin:Mono R
+// Native parameter ABI v62: declare all 256 slots; hide empty reserves.
+
+
+
+// Navigation
+slider1:p_control_page=0<0,10,1{Play,Setup,Excitation,Instrument,Pickups,Electronics,Fretting,Noise,Variation,Mapping,Diagnostics}>Page
+
+// Play
+slider2:p_output_db=-6<-36,18,0.1>-Output (dB)
+slider3:p_excitation_style=0<0,9,1{Finger Auto,Finger Index,Finger Middle,Pick Auto,Pick Up,Pick Down,Slap/Pop Auto,Slap,Pop,Tapping}>-Playing style
+slider4:p_string_selection=0<0,6,1{Auto,String 6,String 5,String 4,String 3,String 2,String 1}>-String selection
+slider5:p_playing_position=0<0,24,0.01>-Fretting hand position
+slider6:p_picking_position=0.5<0,1,0.01>-Picking hand position (bridge to max)
+
+// Play: Expression
+slider7:p_palm=0<0,100,0.1>-Palm damping (%)
+slider8:p_palm_position=20<0,150,0.1>-Palm position from bridge (mm; patch center)
+slider9:p_palm_width=20<1,80,0.1>-Palm contact width (mm)
+slider10:p_vibrato_depth=0<0,200,0.1>-Vibrato depth (peak cents)
+slider11:p_vibrato_rate=5<0.1,12,0.01>-Vibrato rate (Hz)
+slider12:p_pick_scrape_position=0.15<0,1,0.001>-Pick scrape position (bridge to nut)
+
+// Play: Routing / sustain
+slider13:p_fingering_strategy=0<0,3,1{Low Position,Easy,Nearest,Lock LH Position}>-Auto fingering strategy
+slider14:p_prefer_open_strings=0<0,3,1{Fretted first,Low open,High open,All open}>-Open-string preference
+slider15:p_chord_mode=0<0,1,1{Off,On}>-Chord Mode
+slider16:p_let_ring=0<0,1,1{Off,On}>-Let Ring
+slider17:p_note_off_gesture=0<0,2,1{Mute held,Lift,Lift and mute}>-Note-off hand gesture
+
+// Setup
+
+// Setup: MIDI
+slider18:p_midi_channel_mode=0<0,2,1{Single channel,Ch1=6(B)-Ch6=1(C),Ch1=1(C)-Ch6=6(B)}>-MIDI channel mode
+slider19:p_keyswitch_channel=0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Keyswitch MIDI channel
+slider20:p_passthrough=7<0,7,1{None,Playing notes,Keyswitches,Notes + keyswitches,Controllers,Notes + controllers,Keyswitches + controllers,All}>-MIDI passthrough
+
+// Setup: Hand range
+slider21:p_capo=0<0,24,1.>-Capo Position
+slider22:p_hand_span=4<1,12,1>-Hand span (frets)
+slider23:p_max_excitation_distance_from_bridge=240.<5,650,0.1>-Maximum excitation distance from bridge (mm)
+
+// Setup: Bend / slide
+slider24:p_midi_pitch_bend_range=2<0,2,0.01>-MIDI bend-up range (semitones)
+slider25:p_midi_slide_range=12<0,24,0.01>-MIDI slide range (semitones)
+slider26:p_legato_slide_controller_ms=20<1,200,0.1>-Legato slide time (ms/semitone)
+
+// Setup: Velocity / muting
+slider27:p_velocity_curve=1.5<0.25,3,0.01>-Velocity-to-displacement curve
+slider28:p_repluck_grip=60.<0,100,0.1>-Repluck damping (%)
+slider29:p_mute_t60=70<5,500,1>-Note-off damping T60 (ms)
+
+// Setup: Vibrato onset
+slider30:p_vibrato_delay=0<0,2000,1>-Vibrato delay (ms)
+slider31:p_vibrato_build_up_cycles=1<0,4,0.01>-Vibrato build-up (cycles; 0 = immediate)
+
+// Excitation
+slider32:p_pluck_displacement=0.8<0.05,3,0.01>-Pluck displacement at velocity 127 (mm)
+slider33:p_low_velocity_attack_softness=20.<0,100,0.1>-Low-velocity attack softness (%)
+
+// Excitation: Finger
+slider34:p_finger_contact_width=4<0,30,0.1>-Finger contact width (mm)
+slider35:p_finger_softness=0.08<0,3,0.01>-Finger release softness (ms)
+slider36:p_finger_spacing=12<0,20,0.1>-Finger spacing (mm)
+
+// Excitation: Pick
+slider37:p_pick_contact_width=1<0,10,0.01>-Pick contact width (mm)
+slider38:p_pick_depth=2<0.05,5,0.01>-Pick depth (mm)
+slider39:p_pick_edge_angle=0<0,75,1>-Pick edge angle (degrees; 0 = square-on)
+slider40:p_pick_stiffness=1000<10,100000,10>-Pick stiffness (N/m)
+slider41:p_pick_damping=0.1<0,10,0.001>-Pick contact loss (N s/m)
+slider42:p_pick_drag=0<0,100,0.1>-Pick attack scratch (%)
+slider43:p_pick_stroke_spacing=0<0,20,0.1>-Pick stroke spacing (mm)
+
+// Excitation: Slap
+slider44:p_slap_strength=50<0,100,0.1>-Slap strength (%)
+slider45:p_slap_attack_character=50<0,100,0.1>-Slap attack (Thump to Snap)
+slider46:p_slap_clank=100<0,100,0.1>-Slap clank (%)
+
+// Excitation: Pop / shared Slap-Pop
+slider47:p_pop_displacement=2.0<0.05,4,0.01>-Pop pull (mm at velocity 127)
+slider48:p_pop_body=30<0,100,0.1>-Pop body (%)
+slider49:p_pop_contact_hardness=50<0,100,0.1>-Pop contact hardness (%)
+slider50:p_slap_pop_spacing=50<0,100,0.1>-Slap/Pop spacing (mm)
+slider51:p_slap_pop_compress=25<0,100,0.1>-Slap/Pop compression (%)
+
+// Excitation: Levels
+slider52:p_pick_level=0<-24,12,0.1>-Pick Level (dB; post pickup)
+slider53:p_slap_level=-6<-24,12,0.1>-Slap Level (dB; post pickup)
+slider54:p_pop_level=-6<-24,12,0.1>-Pop Level (dB; post pickup)
+slider55:p_tap_level=0<-24,12,0.1>-Tap level (dB; post pickup)
+
+// Instrument
+slider56:p_instrument_subpage=0<0,5,1{Basics,Tuning,Construction,Sustain/Tone,String Sustain/Tone,Neck/Action}>-Instrument Page
+
+// Instrument: Basics
+slider57:p_contact_surface=0<0,1,1{Fretted,Fretless}>-Fretted / fretless
+slider58:p_string_count=4<1,6,1>-Enabled strings
+slider59:p_fret_count=24<12,24,1>-Number of frets
+slider60:p_scale_length=863.6<600,1000,0.1>-Open scale length (mm)
+slider61:p_string_6_output_trim=0<-24,24,0.1>-String 6 Output trim (dB)
+slider62:p_string_5_output_trim=0<-24,24,0.1>-String 5 Output trim (dB)
+slider63:p_string_4_output_trim=0<-24,24,0.1>-String 4 Output trim (dB)
+slider64:p_string_3_output_trim=0<-24,24,0.1>-String 3 Output trim (dB)
+slider65:p_string_2_output_trim=0<-24,24,0.1>-String 2 Output trim (dB)
+slider66:p_string_1_output_trim=0<-24,24,0.1>-String 1 Output trim (dB)
+
+// Instrument: Tuning
+slider67:p_a4=440<400,480,0.01>-A4 reference (Hz)
+slider68:p_open6=23<0,127,1>-String 6 open MIDI note
+slider69:p_open5=28<0,127,1>-String 5 open MIDI note
+slider70:p_open4=33<0,127,1>-String 4 open MIDI note
+slider71:p_open3=38<0,127,1>-String 3 open MIDI note
+slider72:p_open2=43<0,127,1>-String 2 open MIDI note
+slider73:p_open1=48<0,127,1>-String 1 open MIDI note
+slider74:p_fine6=0<-100,100,0.1>-String 6 detune (cents)
+slider75:p_fine5=0<-100,100,0.1>-String 5 detune (cents)
+slider76:p_fine4=0<-100,100,0.1>-String 4 detune (cents)
+slider77:p_fine3=0<-100,100,0.1>-String 3 detune (cents)
+slider78:p_fine2=0<-100,100,0.1>-String 2 detune (cents)
+slider79:p_fine1=0<-100,100,0.1>-String 1 detune (cents)
+
+// Instrument: Construction
+slider80:p_string_pack_preset=0<0,1,1{Not implemented}>-String Pack Preset [Not implemented]
+slider81:p_reference_inharmonicity=0.0001<0,0.003,0.00001>-Reference inharmonicity (0 = harmonic)
+slider82:p_vibration_pitch_rise=0<0,1000,0.1>-Vibration-induced pitch rise (%)
+slider83:p_string_6_winding=1<0,3,1{Plain,Roundwound,Flatwound,Tapewound}>-String 6 winding
+slider84:p_string_5_winding=1<0,3,1{Plain,Roundwound,Flatwound,Tapewound}>-String 5 winding
+slider85:p_string_4_winding=1<0,3,1{Plain,Roundwound,Flatwound,Tapewound}>-String 4 winding
+slider86:p_string_3_winding=1<0,3,1{Plain,Roundwound,Flatwound,Tapewound}>-String 3 winding
+slider87:p_string_2_winding=1<0,3,1{Plain,Roundwound,Flatwound,Tapewound}>-String 2 winding
+slider88:p_string_1_winding=1<0,3,1{Plain,Roundwound,Flatwound,Tapewound}>-String 1 winding
+slider89:p_string_6_gauge=130<6,200,0.1>-String 6 gauge (0.001 in)
+slider90:p_string_5_gauge=105<6,200,0.1>-String 5 gauge (0.001 in)
+slider91:p_string_4_gauge=85<6,200,0.1>-String 4 gauge (0.001 in)
+slider92:p_string_3_gauge=65<6,200,0.1>-String 3 gauge (0.001 in)
+slider93:p_string_2_gauge=45<6,200,0.1>-String 2 gauge (0.001 in)
+slider94:p_string_1_gauge=32<6,200,0.1>-String 1 gauge (0.001 in)
+slider95:p_string_6_stiffness_multiplier=1<0.25,4,0.001>-String 6 stiffness (ratio)
+slider96:p_string_5_stiffness_multiplier=1<0.25,4,0.001>-String 5 stiffness (ratio)
+slider97:p_string_4_stiffness_multiplier=1<0.25,4,0.001>-String 4 stiffness (ratio)
+slider98:p_string_3_stiffness_multiplier=1<0.25,4,0.001>-String 3 stiffness (ratio)
+slider99:p_string_2_stiffness_multiplier=1<0.25,4,0.001>-String 2 stiffness (ratio)
+slider100:p_string_1_stiffness_multiplier=1<0.25,4,0.001>-String 1 stiffness (ratio)
+
+// Instrument: Sustain/Tone
+slider101:p_t60=12<0.2,40,0.1>-Sustain / tone: Low-frequency decay T60 (s)
+slider102:p_hf_loss=12<0,60,0.1>-Extra loss at 1 kHz (1/s)
+slider103:p_loss_exponent=1.4<0.5,3,0.01>-Frequency loss exponent
+slider104:p_bend_damping=0.6<0,3,0.01>-Bend motion damping (dB/semitone)
+slider105:p_fret_level_taper=-6<-18,0,0.1>-Fret level taper (dB at fret 24)
+slider106:p_fret_sustain_taper=100<25,100,0.1>-Fret sustain taper (% at fret 24)
+slider107:p_bridge_loss_frequency=250<20,4000,1>-Bridge-loss resonance frequency (Hz) [Not implemented]
+slider108:p_bridge_loss_width=1<0.1,4,0.01>-Bridge-loss width (octaves) [Not implemented]
+slider109:p_bridge_loss_strength=0<0,100,0.1>-Bridge-loss strength (%) [Not implemented]
+
+// Instrument: String Sustain/Tone
+slider110:p_string_6_age=30<0,100,0.1>-String 6 age (%)
+slider111:p_string_5_age=30<0,100,0.1>-String 5 age (%)
+slider112:p_string_4_age=30<0,100,0.1>-String 4 age (%)
+slider113:p_string_3_age=30<0,100,0.1>-String 3 age (%)
+slider114:p_string_2_age=30<0,100,0.1>-String 2 age (%)
+slider115:p_string_1_age=30<0,100,0.1>-String 1 age (%)
+slider116:p_string_6_high_frequency_loss_multiplier=1<0.25,4,0.001>-String 6 High-frequency loss (ratio)
+slider117:p_string_5_high_frequency_loss_multiplier=1<0.25,4,0.001>-String 5 High-frequency loss (ratio)
+slider118:p_string_4_high_frequency_loss_multiplier=1<0.25,4,0.001>-String 4 High-frequency loss (ratio)
+slider119:p_string_3_high_frequency_loss_multiplier=1<0.25,4,0.001>-String 3 High-frequency loss (ratio)
+slider120:p_string_2_high_frequency_loss_multiplier=1<0.25,4,0.001>-String 2 High-frequency loss (ratio)
+slider121:p_string_1_high_frequency_loss_multiplier=1<0.25,4,0.001>-String 1 High-frequency loss (ratio)
+slider122:p_string_6_low_frequency_decay_multiplier=1<0.25,4,0.001>-String 6 sustain (ratio)
+slider123:p_string_5_low_frequency_decay_multiplier=1<0.25,4,0.001>-String 5 sustain (ratio)
+slider124:p_string_4_low_frequency_decay_multiplier=1<0.25,4,0.001>-String 4 sustain (ratio)
+slider125:p_string_3_low_frequency_decay_multiplier=1<0.25,4,0.001>-String 3 sustain (ratio)
+slider126:p_string_2_low_frequency_decay_multiplier=1<0.25,4,0.001>-String 2 sustain (ratio)
+slider127:p_string_1_low_frequency_decay_multiplier=1<0.25,4,0.001>-String 1 sustain (ratio)
+
+// Instrument: Neck/Action
+slider128:p_action_height_open_string_above_fret_12=2<0,10,0.01>-Open-string action above fret 12 crown (mm)
+slider129:p_neck_relief=0.3<0,2,0.01>-Neck relief (mm) [Not implemented]
+slider130:p_fret_crown_contact_width=1<0.1,5,0.01>-Fret crown / contact width (mm) [Not implemented]
+slider131:p_string_6_action_clearance_offset=0<-5,5,0.01>-String 6 Action offset above fret 12 (mm)
+slider132:p_string_5_action_clearance_offset=0<-5,5,0.01>-String 5 Action offset above fret 12 (mm)
+slider133:p_string_4_action_clearance_offset=0<-5,5,0.01>-String 4 Action offset above fret 12 (mm)
+slider134:p_string_3_action_clearance_offset=0<-5,5,0.01>-String 3 Action offset above fret 12 (mm)
+slider135:p_string_2_action_clearance_offset=0<-5,5,0.01>-String 2 Action offset above fret 12 (mm)
+slider136:p_string_1_action_clearance_offset=0<-5,5,0.01>-String 1 Action offset above fret 12 (mm)
+
+// Pickups
+slider137:p_pickups_subpage=0<0,4,1{Controls,Pickup 1 Geometry,Pickup 1 Electrical,Pickup 2 Geometry,Pickup 2 Electrical}>-Pickups Page
+slider138:p_pickup_1_enable=1<0,1,1{Off,On}>-Pickup 1 enable
+slider139:p_pickup_2_enable=1<0,1,1{Off,On}>-Pickup 2 enable
+slider140:p_pickup_mix=0<0,100,0.1>-Pickup blend
+slider141:p_pickup_polarity=0<0,1,1{Same,Reversed}>-Pickup 2 polarity
+slider142:p_pickup_nonlinearity_amount=0<0,100,0.1>-Pickup nonlinearity amount (%)
+
+// Pickup 1
+slider143:p_pickup_1_profile=0<0,3,1{Custom,Single coil,Split coil,Dual coil}>-Pickup 1 profile
+slider144:p_pickup_1_coil_configuration=0<0,4,1{Single,Split P-style,Stacked (not implemented),Dual series,Dual parallel}>-Pickup 1 coil arrangement / wiring
+slider145:p_pickup_1_pole_geometry=0<0,1,1{Poles,Rail}>-Pickup 1 pole geometry
+slider146:p_pickup_1_distance_from_bridge=70<1,250,0.1>-Pickup 1 distance from bridge (mm)
+slider147:p_pickup_1_sensing_width=12<0,80,0.1>-Pickup 1 sensing width along string (mm)
+slider148:p_pickup_1_coil_spacing=18<0,40,0.1>-Pickup 1 coil spacing along string (mm)
+slider149:p_pickup_1_split_stagger=10<-40,40,0.1>-Pickup 1 split-coil stagger (treble toward bridge, mm)
+slider150:p_pickup_1_field_width=6<0.5,30,0.1>-Pickup 1 field width across string (mm)
+slider151:p_pickup_1_sensitivity=100<0,200,0.1>-Pickup 1 sensitivity (%)
+slider152:p_pickup_1_string_distance=3<0.5,25,0.1>-Pickup 1 string gap (mm)
+slider153:p_pickup_1_magnetic_pull=0<0,200,0.1>-Pickup 1 magnetic pull (mN/string at 3 mm)
+slider154:p_pickup_1_coil_resistance=6<0.1,30,0.01>-Pickup 1 per-coil resistance (kOhm)
+slider155:p_pickup_1_coil_inductance=2.5<0.1,20,0.01>-Pickup 1 per-coil inductance (H)
+slider156:p_pickup_1_internal_capacitance=150<10,2000,1>-Pickup 1 per-coil capacitance (pF)
+
+// Pickup 2
+slider157:p_pickup_2_profile=0<0,3,1{Custom,Single coil,Split coil,Dual coil}>-Pickup 2 profile
+slider158:p_pickup_2_coil_configuration=0<0,4,1{Single,Split P-style,Stacked (not implemented),Dual series,Dual parallel}>-Pickup 2 coil arrangement / wiring
+slider159:p_pickup_2_pole_geometry=0<0,1,1{Poles,Rail}>-Pickup 2 pole geometry
+slider160:p_pickup_2_distance_from_bridge=150<1,250,0.1>-Pickup 2 distance from bridge (mm)
+slider161:p_pickup_2_sensing_width=12<0,80,0.1>-Pickup 2 sensing width along string (mm)
+slider162:p_pickup_2_coil_spacing=18<0,40,0.1>-Pickup 2 coil spacing along string (mm)
+slider163:p_pickup_2_split_stagger=10<-40,40,0.1>-Pickup 2 split-coil stagger (treble toward bridge, mm)
+slider164:p_pickup_2_field_width=6<0.5,30,0.1>-Pickup 2 field width across string (mm)
+slider165:p_pickup_2_sensitivity=100<0,200,0.1>-Pickup 2 sensitivity (%)
+slider166:p_pickup_2_string_distance=3<0.5,25,0.1>-Pickup 2 string distance (mm)
+slider167:p_pickup_2_magnetic_pull=0<0,200,0.1>-Pickup 2 magnetic pull (mN/string at 3 mm)
+slider168:p_pickup_2_coil_resistance=6<0.1,30,0.01>-Pickup 2 per-coil resistance (kOhm)
+slider169:p_pickup_2_coil_inductance=2.5<0.1,20,0.01>-Pickup 2 per-coil inductance (H)
+slider170:p_pickup_2_internal_capacitance=150<10,2000,1>-Pickup 2 per-coil capacitance (pF)
+
+// Electronics
+slider171:p_electronics_model=2<0,3,1{Direct,Simple,Passive,Active}>-Electronics model
+slider172:p_instrument_volume_position=100<0,100,0.1>-Instrument volume position (%)
+slider173:p_passive_tone_position=85<0,100,0.1>-Instrument tone position (%)
+
+// Electronics: Simple
+slider174:p_resonance=5000<500,12000,1>-Simple resonance frequency (Hz)
+slider175:p_q=0.8<0.5,3,0.01>-Simple resonance Q
+
+// Electronics: Passive / shared circuit
+slider176:p_tone_capacitor=47<1,220,0.1>-Tone capacitor (nF)
+slider177:p_volume_pot_resistance=250<10,2000,1>-Volume-pot resistance (kOhm)
+slider178:p_tone_pot_resistance=250<10,2000,1>-Tone-pot resistance (kOhm)
+slider179:p_blend_pot_resistance=250<10,2000,1>-Blend-pot resistance (kOhm)
+slider180:p_electrical_load_resistance=1000<10,20000,1>-Input load resistance (kOhm)
+slider181:p_cable_load_capacitance=500<0,3000,1>-Cable / load capacitance (pF)
+
+// Electronics: Active
+slider182:p_active_eq_voicing=0<0,3,1{Custom,Deep Bass,Balanced Bass,Guitar}>-Active EQ voicing
+slider183:p_active_preamp_gain_db=0<-18,18,0.1>-Preamp gain (dB; Active)
+slider184:p_active_preamp_input_resistance=1000<100,20000,1>-Active Preamp input resistance (kOhm)
+slider185:p_active_preamp_output_resistance=100<1,2000,1>-Active Preamp output resistance (Ohm)
+slider186:p_active_bass_frequency=100<30,300,1>-Bass shelf frequency (Hz; Active)
+slider187:p_active_bass_db=0<-18,18,0.1>-Bass (dB; Active)
+slider188:p_active_mid_frequency=500<150,3000,1>-Mid frequency (Hz; Active)
+slider189:p_active_mid_q=0.7071067811865476<0.25,4,0.001>-Mid Q (Active; low = broad, high = narrow)
+slider190:p_active_mid_db=0<-18,18,0.1>-Mid (dB; Active)
+slider191:p_active_treble_frequency=6500<1500,10000,1>-Treble shelf frequency (Hz; Active)
+slider192:p_active_treble_db=0<-18,18,0.1>-Treble (dB; Active)
+
+// Fretting: Attack
+slider193:p_lh_impact_amount=25<0,100,0.1>-LH impact amount (%)
+slider194:p_lh_attack_sharpness=50<0,100,0.1>-LH attack sharpness (%)
+slider195:p_pull_off_strength=100<0,100,0.1>-Pull-off strength (%)
+
+// Fretting: Damping
+slider196:p_endpoint=20<0,100,0.1>-Stopped-end damping (%; fretted)
+slider197:p_fretless_finger_damping=0<0,100,0.1>-Stopped-end damping (%; fretless)
+slider198:p_ghost_decay_ms=120<20,500,1>-Ghost decay T60 (ms)
+slider199:p_ghost_damping=0<0,100,0.1>-Ghost-note spatial damping (%)
+
+// Fretting: Contact
+slider200:p_fret_contact=100<0,100,1>-Fret-contact interaction (%)
+slider201:p_contact_stiffness=10000<100,100000,100>-Contact stiffness (N/m)
+slider202:p_contact_damping=0.1<0,2,0.01>-Contact damping (N s/m)
+
+// Noise
+slider203:p_noise_subpage=0<0,1,1{Balance,Slide}>-Noise Page
+
+// Noise: Balance
+slider204:p_fret_noise_level=0<-60,24,0.1>-Fret buzz/clank level (dB; -60 = off)
+slider205:p_slide_noise_amount=10<0,100,0.1>-Slide friction amount (%)
+slider206:p_pick_scrape_amount=20<0,100,0.1>-Pick scrape amount (%)
+
+// Noise: Slide
+slider207:p_slide_noise_texture=35<0,100,0.1>-Slide noise texture (scrape to squeak, %)
+slider208:p_slide_noise_speed_response=0.8<0.25,16,0.01>-Slide noise level speed response
+slider209:p_slide_noise_spectrum_tracking=100<0,200,0.1>-Slide speed-to-spectrum tracking (%)
+
+// Noise: Slide spectral shaping
+slider210:p_slide_noise_reference_rate=250<20,6000,1>-Slide texture rate at 0.1 m/s (Hz; 105 gauge)
+slider211:p_slide_noise_fine_ratio=2.7<1,8,0.01>-Slide fine texture rate ratio
+slider212:p_slide_noise_highpass=1200<20,12000,1>-Slide noise high-pass (Hz)
+slider213:p_slide_noise_lowpass=7000<100,20000,1>-Slide noise low-pass (Hz)
+
+// Variation (sampled once per accepted playing gesture; seed 0 bypasses)
+slider214:p_random_seed=1<0,2147483647,1>-Variation seed (0 = bypass)
+slider215:p_rh_position_variation=2<0,20,0.1>-RH position variation (+/- mm)
+slider216:p_excitation_strength_variation=5<0,100,0.1>-Excitation strength variation (+/- %)
+slider217:p_release_softness_variation=10<0,100,0.1>-Release softness variation (+/- %)
+slider218:p_finger_footprint_variation=5<0,100,0.1>-Contact width variation (+/- %)
+slider219:p_fretting_placement_error_probability=2<0,100,0.1>-Fretting placement error probability (%)
+slider220:p_maximum_fretting_placement_error_mm=3<0,30,0.1>-Maximum fretting placement error (mm)
+
+// Controller mapping
+slider221:p_mapping_subpage=0<0,4,1{Styles,Articulations,Movement,Strings,Instrument}>-Mapping Page
+
+// Mapping: Styles
+slider222:p_finger_style_controller=18<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Finger style input (Note / CC)
+slider223:p_pick_style_controller=20<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Pick style input (Note / CC)
+slider224:p_slap_pop_style_controller=22<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Slap/Pop style input (Note / CC)
+slider225:p_tapping_style_controller=32<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Tapping style input (Note / CC)
+slider226:p_stroke_1_ks=25<0,127,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127}>-Stroke 1 input (Index / Slap / Up; momentary)
+slider227:p_stroke_2_ks=27<0,127,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127}>-Stroke 2 input (Middle / Pop / Down; momentary)
+
+// Mapping: Articulations
+slider228:p_legato_slide_controller=19<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Legato slide input (Note / CC)
+slider229:p_ho_po_controller=24<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Hammer-on / pull-off input (Note / CC)
+slider230:p_ghost_controller=30<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Ghost note input (Note / CC)
+slider231:p_harmonics_controller=29<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Harmonics input (Note / CC)
+slider232:p_let_ring_controller=191<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Let Ring input (Note / CC)
+slider233:p_muting_controller=0<0,247,1{Aftertouch,Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Muting input (AT / Note / CC)
+slider234:p_palm_controller=67<1,119,1>-Palm damping MIDI CC
+slider235:p_chord_mode_controller=13<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Chord mode input (Note / CC)
+
+// Mapping: Movement
+slider236:p_bend_controller=0<0,120,1{Pitch Wheel,AfterTouch,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Bend Control
+slider237:p_slide_controller=0<0,120,1{Pitch Wheel,AfterTouch,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Slide Control
+slider238:p_lh_pos_ks=84<0,127,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127}>-LH fret range start (Note)
+slider239:p_lh_pos_controller=141<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-LH position input (velocity / CC)
+slider240:p_slide_noise_controller=14<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-LH slide noise input (momentary Note / CC)
+slider241:p_rh_pluck_pos_controller=139<0,246,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-RH position input (velocity / CC)
+slider242:p_vibrato_depth_controller=1<0,119,1{AfterTouch,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Vibrato depth input
+slider243:p_vibrato_rate_controller=19<0,119,1{AfterTouch,CC 1,CC 2,CC 3,CC 4,CC 5,CC 6,CC 7,CC 8,CC 9,CC 10,CC 11,CC 12,CC 13,CC 14,CC 15,CC 16,CC 17,CC 18,CC 19,CC 20,CC 21,CC 22,CC 23,CC 24,CC 25,CC 26,CC 27,CC 28,CC 29,CC 30,CC 31,CC 32,CC 33,CC 34,CC 35,CC 36,CC 37,CC 38,CC 39,CC 40,CC 41,CC 42,CC 43,CC 44,CC 45,CC 46,CC 47,CC 48,CC 49,CC 50,CC 51,CC 52,CC 53,CC 54,CC 55,CC 56,CC 57,CC 58,CC 59,CC 60,CC 61,CC 62,CC 63,CC 64,CC 65,CC 66,CC 67,CC 68,CC 69,CC 70,CC 71,CC 72,CC 73,CC 74,CC 75,CC 76,CC 77,CC 78,CC 79,CC 80,CC 81,CC 82,CC 83,CC 84,CC 85,CC 86,CC 87,CC 88,CC 89,CC 90,CC 91,CC 92,CC 93,CC 94,CC 95,CC 96,CC 97,CC 98,CC 99,CC 100,CC 101,CC 102,CC 103,CC 104,CC 105,CC 106,CC 107,CC 108,CC 109,CC 110,CC 111,CC 112,CC 113,CC 114,CC 115,CC 116,CC 117,CC 118,CC 119}>-Vibrato rate input
+slider244:p_pick_scrape_controller=20<1,119,1>-Pick scrape position MIDI CC
+
+// Mapping: Strings
+slider245:p_force_b_string=23<0,127,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127}>-Force B String
+slider246:p_force_e_string=28<0,127,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127}>-Force E String
+slider247:p_force_a_string=21<0,127,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127}>-Force A String
+slider248:p_force_d_string=26<0,127,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127}>-Force D String
+slider249:p_force_g_string=31<0,127,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127}>-Force G String
+slider250:p_force_c_string=12<0,127,1{Note 0,Note 1,Note 2,Note 3,Note 4,Note 5,Note 6,Note 7,Note 8,Note 9,Note 10,Note 11,Note 12,Note 13,Note 14,Note 15,Note 16,Note 17,Note 18,Note 19,Note 20,Note 21,Note 22,Note 23,Note 24,Note 25,Note 26,Note 27,Note 28,Note 29,Note 30,Note 31,Note 32,Note 33,Note 34,Note 35,Note 36,Note 37,Note 38,Note 39,Note 40,Note 41,Note 42,Note 43,Note 44,Note 45,Note 46,Note 47,Note 48,Note 49,Note 50,Note 51,Note 52,Note 53,Note 54,Note 55,Note 56,Note 57,Note 58,Note 59,Note 60,Note 61,Note 62,Note 63,Note 64,Note 65,Note 66,Note 67,Note 68,Note 69,Note 70,Note 71,Note 72,Note 73,Note 74,Note 75,Note 76,Note 77,Note 78,Note 79,Note 80,Note 81,Note 82,Note 83,Note 84,Note 85,Note 86,Note 87,Note 88,Note 89,Note 90,Note 91,Note 92,Note 93,Note 94,Note 95,Note 96,Note 97,Note 98,Note 99,Note 100,Note 101,Note 102,Note 103,Note 104,Note 105,Note 106,Note 107,Note 108,Note 109,Note 110,Note 111,Note 112,Note 113,Note 114,Note 115,Note 116,Note 117,Note 118,Note 119,Note 120,Note 121,Note 122,Note 123,Note 124,Note 125,Note 126,Note 127}>-Force C String
+
+// Mapping: Instrument
+slider251:p_instrument_volume_controller=7<1,119,1>-Instrument volume MIDI CC
+slider252:p_passive_tone_controller=74<1,119,1>-Passive tone MIDI CC
+slider253:p_pickup_mix_controller=8<1,119,1>-Pickup blend MIDI CC
+
+// Diagnostics
+slider254:p_max_modes=128<16,256,1>-Maximum modes
+slider255:p_midi_reset=0<0,1,1{A,B}>-MIDI panic (toggle; silence and clear note pairing)
+slider256:0<0,1,1>-Reserved (debug)
+
+import modules/layout.jsfx-inc
+import modules/parameter_ids.jsfx-inc
+import modules/performance_state.jsfx-inc
+import modules/configuration.jsfx-inc
+import modules/string_setup.jsfx-inc
+import modules/fingers.jsfx-inc
+import modules/variation.jsfx-inc
+import modules/damping.jsfx-inc
+import modules/fret_response.jsfx-inc
+import modules/output.jsfx-inc
+import modules/modal.jsfx-inc
+import modules/pickup_coils.jsfx-inc
+import modules/pickup_nonlinear.jsfx-inc
+import modules/pickup_profiles.jsfx-inc
+import modules/active.jsfx-inc
+import modules/circuit.jsfx-inc
+import modules/pickup.jsfx-inc
+import modules/finger_friction.jsfx-inc
+import modules/pick_friction.jsfx-inc
+import modules/contact_idle.jsfx-inc
+import modules/pop_contact.jsfx-inc
+import modules/fret_contact.jsfx-inc
+import modules/magnet.jsfx-inc
+import modules/spatial_damping.jsfx-inc
+import modules/vibrato_state.jsfx-inc
+import modules/pick_state.jsfx-inc
+import modules/live.jsfx-inc
+import modules/vibrato.jsfx-inc
+import modules/render.jsfx-inc
+import modules/tension.jsfx-inc
+import modules/repluck.jsfx-inc
+import modules/slap_pop.jsfx-inc
+import modules/pick.jsfx-inc
+import modules/excitation.jsfx-inc
+import modules/engine.jsfx-inc
+import modules/note_registry.jsfx-inc
+import modules/rack.jsfx-inc
+import modules/release.jsfx-inc
+import modules/force_string.jsfx-inc
+import modules/articulation.jsfx-inc
+import modules/hand.jsfx-inc
+import modules/fingering.jsfx-inc
+import modules/motion.jsfx-inc
+import modules/midi_control.jsfx-inc
+import modules/legato.jsfx-inc
+import modules/fretting.jsfx-inc
+import modules/hopo.jsfx-inc
+import modules/routing.jsfx-inc
+import modules/performance.jsfx-inc
+import modules/pick_scrape.jsfx-inc
+import modules/passthrough.jsfx-inc
+import modules/parameters.jsfx-inc
+import modules/events.jsfx-inc
+import modules/instrument.jsfx-inc
+import modules/native_controls.jsfx-inc
+import modules/gui_primitives.jsfx-inc
+import modules/gui_fretboard.jsfx-inc
+import modules/gui.jsfx-inc
+
+@init
+mb_instrument_init();
+mb_gui_init();
+
+@slider
+mb_parameters_request();
+mb_native_sliders_update();
+
+@block
+mb_block_begin();
+while(midirecv(m_off,m_status,m_note,m_vel)) (
+  mb_midi_receive(m_off,m_status,m_note,m_vel);
+);
+mb_block_end();
+mb_instrument_publish_strings();
+
+@sample
+spl0=spl1=mb_instrument_sample();
+
+@gfx 960 240
+mb_gui_draw();
