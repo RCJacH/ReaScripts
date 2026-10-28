@@ -2,6 +2,30 @@
 @init
 
 // ---- release ----
+// Performance stop: retain the vibrating banks/fades and use the normal mute
+// loss. Retire only string ownership; held switches and their FIFO stay valid.
+function mb_release_stop(index)
+local(st, owner, l, hp, f, mute)
+(
+  st=mb_rack_string(index); owner=mb_owner_ptr(index); l=st+MB_LIVE;
+  hp=MB_HOPO+index*MB_HOPO_WORDS; f=st+MB_FRICTION;
+  owner[MB_O_STATE]>0 || st[MB_S_COUNT]>0 || st[MB_S_PREVIOUS_LEFT]>0 ||
+    hp[MB_HP_STATE] || (st+MB_PICK)[MB_PK_LEFT]>0 || (st+MB_SLAP)[MB_SL_LEFT]>0 ||
+    f[MB_FR_SLIDE_TOKEN]>0 ? (
+    // Leave independently controlled idle-hand friction/scraping available.
+    f[MB_FR_SLIDE_TOKEN]>0 || (owner[MB_O_BEND_CHANNEL]>=0 &&
+      !mb_performance_string(st)[MB_PS_LH]) ? mb_friction_stop(st);
+    mb_pick_cancel(st); mb_slap_cancel(st);
+    (st+MB_PICK_FRICTION)[MB_PF_LEAD]=0;
+    hp[MB_HP_STATE]=hp[MB_HP_LEFT]=hp[MB_HP_HELD_COUNT]=hp[MB_HP_DISPLAY_UNTIL]=0;
+    l[MB_L_JOB]=l[MB_L_GESTURE_REQUEST]=l[MB_L_BEND_LEFT]=l[MB_L_DAMP_LEFT]=0;
+    l[MB_L_FRET_TARGET]=l[MB_L_FRET]; l[MB_L_BEND_TARGET]=l[MB_L_BEND];
+    mb_notes_retire_string(index, 1);
+    mute=st[MB_S_MUTE]; mb_engine_damp(st, p_mute_t60);
+    st[MB_S_MUTE]=min(mute, st[MB_S_MUTE]);
+  );
+);
+
 // Event-only hand release policy. Deferred gestures belong to the current owner;
 // retire/bind clears this record before a newer note can occupy the string.
 function mb_release_capture(index)

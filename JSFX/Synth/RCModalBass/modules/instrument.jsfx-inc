@@ -58,6 +58,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
       slide_clipped_current=max(slide_clipped_current, owner[MB_O_SLIDE_CLIPPED]);
       // Rack busy also includes friction-only movement. Note markers need modes.
       note_active=st[MB_S_COUNT]>0 || (st[MB_S_PREVIOUS_LEFT]>0 && st[MB_S_PREVIOUS_COUNT]>0);
+      mb_landing_string(st)[MB_LD_ONLY] && owner[MB_O_SERIAL]<=0 ? note_active=0;
       frequency=mb_harmonic_frequency(st);
       frequency=mb_magnet_frequency(st, frequency);
       number=mb_string_number(i);
@@ -300,6 +301,7 @@ local(signal)
     mb_motion_tick();
     signal=mb_rack_render();
     mb_hopo_tick();
+    landing_pulses ? mb_landing_tick();
   );
   gain_current+=(gain_target-gain_current)*gain_smooth;
   output_sample=signal*gain_current;

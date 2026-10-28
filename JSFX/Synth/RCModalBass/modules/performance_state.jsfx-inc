@@ -4,6 +4,65 @@ function mb_performance_string(st)
 global(MB_PERF_STRINGS, MB_PS_WORDS, MB_STRING_WORDS)
 ( MB_PERF_STRINGS+floor(st/MB_STRING_WORDS)*MB_PS_WORDS; );
 
+function mb_landing_ptr(stroke)
+global(MB_LANDING, MB_LAND_WORDS)
+( MB_LANDING+stroke*MB_LAND_WORDS; );
+
+function mb_landing_string(st)
+global(MB_LANDING_STRINGS, MB_LD_WORDS, MB_STRING_WORDS)
+( MB_LANDING_STRINGS+floor(st/MB_STRING_WORDS)*MB_LD_WORDS; );
+
+function mb_landing_bank(st, base)
+global(MB_LD_HEADER, MB_LB_WORDS, MB_BANK_A)
+( mb_landing_string(st)+MB_LD_HEADER+(base!=st+MB_BANK_A)*MB_LB_WORDS; );
+
+function mb_landing_dirty(index)
+global(MB_STRING_WORDS, MB_LD_REVISION, landing_mask)
+(
+  mb_landing_string(index*MB_STRING_WORDS)[MB_LD_REVISION]+=1;
+  landing_mask=landing_mask|(2^index);
+);
+
+function mb_landing_reset()
+global(MB_LANDING, MB_LANDING_END, landing_mask, landing_pulses)
+(
+  memset(MB_LANDING,0,MB_LANDING_END-MB_LANDING);
+  landing_mask=landing_pulses=0;
+);
+
+// Lift changes only passive loss. An early release cancels the remaining force;
+// no release excitation, oscillator reset or string-owner change is implied.
+function mb_landing_release(channel, token)
+local(i, p)
+global(MB_LAND_COUNT, MB_LN_HELD, MB_LN_CHANNEL, MB_LN_TOKEN, MB_LN_INDEX,
+       MB_HP_STATE, MB_HP_LEFT)
+(
+  i=0; loop(MB_LAND_COUNT,
+    p=mb_landing_ptr(i);
+    p[MB_LN_HELD] && (channel<0 || p[MB_LN_CHANNEL]==channel) &&
+      (token<0 || p[MB_LN_TOKEN]==token) ? (
+      p[MB_LN_HELD]=p[MB_HP_STATE]=p[MB_HP_LEFT]=0;
+      mb_landing_dirty(p[MB_LN_INDEX]);
+    );
+    i+=1;
+  );
+);
+
+// Hard silence already discards the banks; no loss-removal pass is needed.
+function mb_landing_forget(st)
+local(i, p, index)
+global(MB_STRING_WORDS, MB_LAND_COUNT, MB_LN_INDEX, MB_LAND_WORDS, MB_LD_WORDS, landing_mask)
+(
+  index=floor(st/MB_STRING_WORDS); i=0;
+  loop(MB_LAND_COUNT,
+    p=mb_landing_ptr(i);
+    p[MB_LN_INDEX]==index ? memset(p,0,MB_LAND_WORDS);
+    i+=1;
+  );
+  memset(mb_landing_string(st),0,MB_LD_WORDS);
+  landing_mask=landing_mask-(landing_mask&(2^index));
+);
+
 function mb_performance_friction_normal(st)
 global(MB_PS_LH)
 ( mb_performance_string(st)[MB_PS_LH]=0; );

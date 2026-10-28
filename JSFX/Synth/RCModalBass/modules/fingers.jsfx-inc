@@ -111,6 +111,41 @@ global(MB_C_PLUCK_POSITION, MB_STYLE_SLAP, MB_STYLE_POP, slap_pop_spacing_curren
     cfg[MB_C_PLUCK_POSITION]+=(style==MB_STYLE_SLAP ? 0.5 : -0.5)*slap_pop_spacing_current;
 );
 
+// Capture RH contact shape at the stroke onset. These are gentle touches of
+// the selected tool, sharing the bounded pulse/damping solver, not new plucks.
+// Width/spacing match the existing family; softness/time shape the force itself.
+function mb_landing_profile(p, stroke, velocity, length)
+local(style, position, width, softness, milliseconds, marker, firmness)
+(
+  style=finger_style_current;
+  position=mb_picking_distance(p_picking_position,p_max_excitation_distance_from_bridge);
+  width=mb_clamp(p_finger_contact_width,1,30);
+  softness=0.0006+mb_clamp(p_finger_softness,0,3)*0.001;
+  milliseconds=8-4*velocity/127; marker=stroke+1;
+  style>=MB_STYLE_PICK_AUTO && style<=MB_STYLE_PICK_DOWN ? (
+    position+=(stroke==0 ? 0.5 : -0.5)*pick_spacing_current;
+    width=mb_clamp(pick_width_current,0.1,10);
+    firmness=sqrt(pick_k_current/1000);
+    milliseconds=mb_clamp((1.6-0.6*velocity/127)/firmness,0.25,2.5);
+    softness=mb_clamp((0.00008+0.00012*pick_c_current/(0.1+pick_c_current))/sqrt(firmness),0.00003,0.00035);
+    marker=stroke==0 ? MB_RH_PICK_UP : MB_RH_PICK_DOWN;
+  ) : style>=MB_STYLE_SLAP_POP_AUTO && style<=MB_STYLE_POP ? (
+    position+=(stroke==0 ? 0.5 : -0.5)*slap_pop_spacing_current;
+    stroke==0 ? (
+      width=max(MB_SLAP_WIDTH_MM,2*width);
+      firmness=1.8-0.6*mb_clamp(p_slap_attack_character*0.01,0,1);
+      milliseconds*=firmness; softness*=firmness;
+    );
+    marker=stroke==0 ? MB_RH_SLAP : MB_RH_POP;
+  ) : position+=(stroke==MB_FINGER_MIDDLE ? -0.5 : 0.5)*finger_spacing_current;
+  position=mb_clamp(position*0.001,0.002*length,0.998*length);
+  p[MB_LN_POSITION]=position;
+  p[MB_LN_WIDTH]=min(width*0.001,2*min(position,length-position));
+  p[MB_HP_TOTAL]=max(2,ceil(milliseconds*0.001*srate));
+  p[MB_HP_KIND]=marker;
+  softness;
+);
+
 function mb_fingers_view(index)
 global(MB_FINGER_VIEWS, MB_FINGER_VIEW_WORDS)
 ( MB_FINGER_VIEWS+index*MB_FINGER_VIEW_WORDS; );

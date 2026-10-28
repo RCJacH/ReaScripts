@@ -108,11 +108,13 @@ local(selection, last)
 (
   selection=kind==0 ? p_finger_style_controller : kind==1 ? p_stroke_1_ks : kind==2 ? p_stroke_2_ks :
     kind==3 ? p_muting_controller : kind==4 ? p_lh_pos_ks : kind==5 ? p_lh_pos_controller :
-    kind==6 ? p_slide_noise_controller : kind==7 ? p_rh_pluck_pos_controller :
+    kind==6 ? p_noise_controller : kind==7 ? p_rh_pluck_pos_controller :
     kind==8 ? p_slap_pop_style_controller : kind==9 ? p_tapping_style_controller :
     kind==10 ? p_pick_style_controller : p_chord_mode_controller;
   last=kind==3 ? MB_MUTE_SELECTOR_MAX : kind==1 || kind==2 || kind==4 ? 127 : MB_NOTE_CC_MAX;
-  mb_midi_mapping_index(selection, last);
+  selection=mb_midi_mapping_index(selection, last);
+  // LH base 0 is no longer valid: reserve a real MIDI note immediately below.
+  kind==MB_PF_LH_KEYS && selection<1 ? -1 : selection;
 );
 
 // Style selection and momentary stroke overrides have independent precedence.
@@ -129,12 +131,20 @@ function mb_performance_scope(channel)
 global(art_channel_current)
 ( art_channel_current==0 || art_channel_current==channel+1; );
 
+function mb_performance_stop_all_matches(channel, note)
+local(base)
+global(MB_PERF, MB_PF_LH_KEYS)
+(
+  base=MB_PERF[MB_PF_LH_KEYS];
+  mb_performance_scope(channel) && base>=1 && note==base-1;
+);
+
 function mb_performance_matches(channel, note)
 local(k, map, found)
-global(MB_PERF, MB_PERF_MAPS, MB_ROLE_PERF_FIRST, MB_PF_PICK, MB_PF_CHORD,
+global(MB_PERF, MB_PERF_MAPS, MB_ROLE_PERF_FIRST, MB_PF_PICK, MB_PF_CHORD, MB_ROLE_STOP_ALL,
        performance_chord_mapping, fret_count_current)
 (
-  found=0;
+  found=mb_performance_stop_all_matches(channel,note) ? MB_ROLE_STOP_ALL : 0;
   mb_performance_scope(channel) ? (
     k=0;
     loop(MB_PERF_MAPS,
@@ -195,6 +205,108 @@ local(i, h, input, stamp, level, ch, newest)
   level/127;
 );
 
+// A landing is a force/contact on an existing physical string, never a playing
+// note. Auto requires a previously accepted route; explicit selection can start
+// from rest. Quiet strings get zero modal state at their current stopped span.
+function mb_landing_begin(channel, stroke, token, velocity, gain)
+local(index, selection, st, slot, cfg, l, p, old, mute, bend, length, position,
+      width, softness, count, i, ptr, weight, norm, reference, amplitude, view, sign)
+(
+  selection=mb_string_selection();
+  index=selection>0 ? mb_routing_selection_index(selection) :
+    MB_NOTES[MB_NH_ACCEPTED]>0 ? MB_RACK[MB_R_LAST_ROUTE] : -1;
+  index>=0 && index<MB_MAX_STRINGS && gain>0 &&
+    mb_rack_slot(index)[MB_RS_ENABLED] && !mb_rack_slot(index)[MB_RS_RETIRING] ? (
+    st=mb_rack_string(index); slot=mb_rack_slot(index); cfg=st+MB_CONFIG; l=st+MB_LIVE;
+    st[MB_S_COUNT]<=0 && st[MB_S_PREVIOUS_LEFT]<=0 ? (
+      bend=l[MB_L_HAS_CONFIG] ? l[MB_L_BEND] : 0;
+      !l[MB_L_HAS_CONFIG] ? (
+        mb_tuned_configuration(cfg,slot[MB_RS_REFERENCE],slot[MB_RS_OPEN],slot[MB_RS_FINE],live_fret_request,bend);
+        mb_string_setup_configuration(cfg,index); mb_sustain_configuration(cfg,index);
+        mb_engine_configure(st,cfg);
+      );
+      mute=st[MB_S_MUTE];
+      mb_engine_seed_tap(st,velocity,st[MB_S_NOTE],st[MB_S_CHANNEL]);
+      mb_live_pluck_bend(st,bend); st[MB_S_MUTE]=mute;
+      mb_landing_string(st)[MB_LD_ONLY]=mb_owner_ptr(index)[MB_O_SERIAL]<=0;
+    );
+    p=mb_landing_ptr(stroke);
+    p[MB_LN_HELD] ? (
+      old=p[MB_LN_INDEX]; p[MB_LN_HELD]=0; mb_landing_dirty(old);
+    );
+    memset(p,0,MB_LAND_WORDS);
+    p[MB_LN_INDEX]=index; p[MB_LN_CHANNEL]=channel; p[MB_LN_TOKEN]=token;
+    p[MB_LN_HELD]=1;
+    length=st[st[MB_S_ACTIVE]==st+MB_BANK_A ? MB_S_LENGTH_A : MB_S_LENGTH_B];
+    softness=mb_landing_profile(p,stroke,velocity,length);
+    position=p[MB_LN_POSITION]; width=p[MB_LN_WIDTH];
+    sign=p[MB_HP_KIND]==MB_RH_PICK_DOWN ? 1 : -1;
+    p[MB_LN_AMOUNT]=gain*(0.35+0.65*velocity/127);
+    mb_pick_cancel(st); mb_slap_cancel(st);
+    (st+MB_PICK_FRICTION)[MB_PF_LEAD]=0;
+    mb_landing_dirty(index); mb_landing_apply(st);
+    p[MB_LN_BASE]=st[MB_S_ACTIVE]; p[MB_HP_SOURCE_LENGTH]=length;
+    p[MB_HP_COUNT]=count=min(MB_LAND_MODES,st[MB_S_COUNT]);
+    norm=i=0;
+    loop(count,
+      ptr=st[MB_S_ACTIVE]+i*MB_MODE_STRIDE;
+      weight=sign*sin((i+1)*$pi*position/length)*mb_sinc((i+1)*$pi*width/(2*length))*
+        exp(-0.5*(ptr[MB_M_OMEGA]*softness)^2)*mb_band_taper(ptr[MB_M_FREQ]);
+      p[MB_HP_WEIGHTS+i]=weight; norm+=weight*weight; i+=1;
+    );
+    norm>0 ? (
+      i=0; loop(count,p[MB_HP_WEIGHTS+i]/=sqrt(norm);i+=1;);
+      ptr=st[MB_S_ACTIVE];
+      reference=length*(ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2)*MB_LAND_DISPLACEMENT^2;
+      amplitude=gain*(velocity/127)^velocity_curve_current;
+      p[MB_HP_BUDGET]=reference*amplitude*amplitude;
+      p[MB_HP_CEILING]=mb_bank_energy(st[MB_S_ACTIVE],count,length)+p[MB_HP_BUDGET];
+      p[MB_HP_LEFT]=p[MB_HP_TOTAL];
+      p[MB_HP_IMPULSE]=sqrt(p[MB_HP_BUDGET]/length);
+      p[MB_HP_STATE]=2; landing_pulses=1;
+    );
+    slot[MB_RS_BUSY]=1;
+    view=mb_fingers_view(index); view[MB_FV_FINGER]=p[MB_HP_KIND];
+    view[MB_FV_POSITION]=position/(cfg[MB_C_SCALE]*0.001);
+    1;
+  ) : 0;
+);
+
+// Same finite, energy-bounded pulse as HO/PO; separate state prevents note/fret
+// ownership from being fabricated. At most two <=32-mode pulses run briefly.
+function mb_landing_tick()
+local(i, p, st, length, running)
+(
+  landing_pulses ? (
+    i=running=0; loop(MB_LAND_COUNT,
+      p=mb_landing_ptr(i);
+      p[MB_HP_STATE] ? (
+        st=mb_rack_string(p[MB_LN_INDEX]);
+        length=st[st[MB_S_ACTIVE]==st+MB_BANK_A ? MB_S_LENGTH_A : MB_S_LENGTH_B];
+        st[MB_S_COUNT]<=0 || st[MB_S_ACTIVE]!=p[MB_LN_BASE] ||
+          abs(length-p[MB_HP_SOURCE_LENGTH])>0.000000001 ? p[MB_HP_STATE]=p[MB_HP_LEFT]=0 :
+          mb_finger_force(st,p);
+        running=max(running,p[MB_HP_STATE]);
+      );
+      i+=1;
+    );
+    landing_pulses=running>0;
+  );
+);
+
+function mb_landing_silence(channel)
+local(i, p, st)
+(
+  i=0; loop(MB_LAND_COUNT,
+    p=mb_landing_ptr(i);
+    p[MB_LN_HELD] && p[MB_LN_CHANNEL]==channel ? (
+      st=mb_rack_string(p[MB_LN_INDEX]);
+      mb_landing_string(st)[MB_LD_ONLY] ? mb_rack_kill_string(p[MB_LN_INDEX]);
+    );
+    i+=1;
+  );
+);
+
 function mb_performance_refresh()
 local(i, p, ch, amount, h, newest, style, held_style, stroke_stamp, chord)
 (
@@ -234,12 +346,27 @@ local(i, p, ch, amount, h, newest, style, held_style, stroke_stamp, chord)
     p[MB_PS_LH] ? p[MB_PS_GAIN_TARGET]=mb_performance_level(p[MB_PS_CHANNEL],MB_PF_NOISE);
     i+=1;
   );
+  landing_mask ? (
+    i=0; loop(MB_LAND_COUNT,
+      p=mb_landing_ptr(i);
+      p[MB_LN_HELD] && mb_performance_level(p[MB_LN_CHANNEL],MB_PF_NOISE)<=0 ?
+        mb_landing_release(p[MB_LN_CHANNEL],p[MB_LN_TOKEN]);
+      i+=1;
+    );
+    // A deeply damped non-reference string may already be asleep when lifted.
+    // Remove its dormant cache/mask now instead of waking an empty renderer.
+    i=0; loop(MB_MAX_STRINGS,
+      (landing_mask&(2^i)) && !mb_rack_slot(i)[MB_RS_BUSY] ? mb_landing_apply(mb_rack_string(i));
+      i+=1;
+    );
+  );
 );
 
 function mb_performance_clear(channel)
 local(i, h, p)
 (
   mb_style_clear(channel);
+  mb_landing_release(channel,-1);
   i=0;
   loop(MB_PF_HOLD_LIMIT,
     h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
@@ -263,6 +390,7 @@ function mb_performance_init()
 local(i, p)
 (
   memset(MB_PERF,0,MB_PERF_END-MB_PERF);
+  mb_landing_reset();
   mb_style_init();
   performance_gain_smooth=1-exp(-1/(0.002*srate));
   performance_damp_smooth=1-exp(-1/(0.005*srate));
@@ -349,10 +477,13 @@ global(p_picking_position, performance_rh_dirty)
 );
 
 function mb_performance_note_on(channel, note, velocity, role)
-local(record, kind, i, h, free, style)
+local(record, kind, i, h, free, style, gain, landing)
 (
   kind=role-MB_ROLE_PERF_FIRST;
   style=mb_performance_style(kind);
+  landing=kind==MB_PF_STROKE_1 || kind==MB_PF_STROKE_2;
+  gain=landing ? mb_performance_level(channel,MB_PF_NOISE) : 0;
+  landing=landing && gain>0;
   record=mb_notes_begin(channel,note,velocity);
   record>=0 ? (
     mb_note_ptr(record)[MB_N_ROLE]=role; mb_note_ptr(record)[MB_N_ACTIVE]=1;
@@ -369,8 +500,10 @@ local(record, kind, i, h, free, style)
         i+=1;
       );
       free>=0 ? (
-        free[MB_PH_SERIAL]=mb_note_ptr(record)[MB_N_SERIAL]; free[MB_PH_KIND]=kind;
+        free[MB_PH_SERIAL]=mb_note_ptr(record)[MB_N_SERIAL];
+        free[MB_PH_KIND]=landing ? MB_PF_LAND_1+kind-MB_PF_STROKE_1 : kind;
         free[MB_PH_CHANNEL]=channel; free[MB_PH_VALUE]=velocity; free[MB_PH_STAMP]=mb_art_stamp();
+        landing ? mb_landing_begin(channel,kind-MB_PF_STROKE_1,free[MB_PH_SERIAL],velocity,gain);
       ) : mb_notes_fault(MB_FAULT_POOL);
     );
     mb_performance_refresh();
@@ -381,6 +514,7 @@ function mb_performance_note_off(channel, serial)
 local(i, h)
 global(MB_PERF_HOLDS, MB_PF_HOLD_LIMIT, MB_PF_HOLD_WORDS, MB_PH_SERIAL, MB_PH_CHANNEL)
 (
+  mb_landing_release(channel,serial);
   i=0;
   loop(MB_PF_HOLD_LIMIT,
     h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;

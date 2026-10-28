@@ -1,4 +1,18 @@
 @init
+// Shared Palm/RH-contact edit: keep physical displacement, velocity and natural
+// stiffness when replacing one additive modal loss layer.
+function mb_modal_loss_update(ptr, alpha, natural2, loss)
+local(q, v, omega, radius)
+global(MB_M_R, MB_M_I, MB_M_ALPHA, MB_M_OMEGA, MB_M_ROT_R, MB_M_ROT_I, srate)
+(
+  q=ptr[MB_M_R]; v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*ptr[MB_M_I];
+  alpha+=loss; omega=sqrt(max(0.000000000001,natural2-alpha*alpha));
+  ptr[MB_M_I]=-(v+alpha*q)/omega;
+  ptr[MB_M_ALPHA]=alpha; ptr[MB_M_OMEGA]=omega;
+  radius=exp(-alpha/srate);
+  ptr[MB_M_ROT_R]=radius*cos(omega/srate); ptr[MB_M_ROT_I]=radius*sin(omega/srate);
+);
+
 function mb_modal_alpha(freq, cfg, g)
 global(MB_C_HF_LOSS, MB_C_LOSS_EXPONENT, MB_C_T60, MB_G_AGE, MB_G_END_LOSS)
 (

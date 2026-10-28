@@ -108,7 +108,7 @@ global()
 // Existing q/v and natural stiffness are invariant at the edit boundary.
 // The independent modes omit the off-diagonal coupling of a real local damper.
 function mb_palm_coefficients(st, base, count, length, fresh)
-local(p, b, i, ptr, old, loss, alpha, omega, natural2, q, v, radius, changed)
+local(p, b, i, ptr, old, loss, alpha, natural2, changed)
 (
   p=st+MB_PALM; b=mb_palm_bank(st, base);
   changed=p[MB_PM_AMOUNT]>0 || (!fresh && b[MB_PB_AMOUNT]>0);
@@ -123,14 +123,7 @@ local(p, b, i, ptr, old, loss, alpha, omega, natural2, q, v, radius, changed)
       loss=p[MB_PM_AMOUNT]*MB_PALM_LOSS*
         mb_palm_overlap(i+1, length, p[MB_PM_POSITION], p[MB_PM_WIDTH]);
       loss=min(loss, max(0, 0.95*sqrt(natural2)-alpha));
-      loss!=old ? (
-        q=ptr[MB_M_R]; v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*ptr[MB_M_I];
-        alpha+=loss; omega=sqrt(max(0.000000000001, natural2-alpha*alpha));
-        ptr[MB_M_I]=-(v+alpha*q)/omega;
-        ptr[MB_M_ALPHA]=alpha; ptr[MB_M_OMEGA]=omega;
-        radius=exp(-alpha/srate);
-        ptr[MB_M_ROT_R]=radius*cos(omega/srate); ptr[MB_M_ROT_I]=radius*sin(omega/srate);
-      );
+      loss!=old ? mb_modal_loss_update(ptr,alpha,natural2,loss);
       (b+MB_PB_LOSS)[i]=loss; i+=1;
     );
     mb_contact_rebase(st, base);
@@ -138,6 +131,63 @@ local(p, b, i, ptr, old, loss, alpha, omega, natural2, q, v, radius, changed)
   );
   b[MB_PB_AMOUNT]=p[MB_PM_AMOUNT]; b[MB_PB_REVISION]=p[MB_PM_REVISION];
   b[MB_PB_COUNT]=count; b[MB_PB_LENGTH]=length;
+);
+
+// The same finite-patch diagonal approximation as Palm. Rebuild only at a
+// landing/lift or fresh span/coefficients; held fingers add no per-mode work.
+function mb_landing_coefficients(st, base, count, length, fresh)
+local(d, b, index, i, j, p, loss, old, ptr, alpha, natural2, active)
+(
+  d=mb_landing_string(st); b=mb_landing_bank(st,base); index=floor(st/MB_STRING_WORDS);
+  fresh ? (memset(b+MB_LB_LOSS,0,MB_MAX_MODES); b[MB_LB_APPLIED]=0;);
+  fresh || b[MB_LB_REVISION]!=d[MB_LD_REVISION] || b[MB_LB_COUNT]!=count ||
+    b[MB_LB_LENGTH]!=length ? (
+    active=i=0;
+    (landing_mask&(2^index) || b[MB_LB_APPLIED]) && count>0 && length>0 ? (
+      mb_contact_lazy_flush(st,base);
+      loop(count,
+        ptr=base+i*MB_MODE_STRIDE; loss=0; j=0;
+        loop(MB_LAND_COUNT,
+          p=mb_landing_ptr(j);
+          p[MB_LN_HELD] && p[MB_LN_INDEX]==index ?
+            loss+=p[MB_LN_AMOUNT]*MB_LAND_LOSS*
+              mb_palm_overlap(i+1,length,p[MB_LN_POSITION]*1000,p[MB_LN_WIDTH]*1000);
+          j+=1;
+        );
+        old=(b+MB_LB_LOSS)[i]; natural2=ptr[MB_M_OMEGA]^2+ptr[MB_M_ALPHA]^2;
+        alpha=max(0,ptr[MB_M_ALPHA]-old);
+        loss=min(loss,max(0,0.95*sqrt(natural2)-alpha));
+        loss!=old ? mb_modal_loss_update(ptr,alpha,natural2,loss);
+        (b+MB_LB_LOSS)[i]=loss; active=max(active,loss); i+=1;
+      );
+      mb_contact_rebase(st,base); !fresh ? mb_magnet_loss_rebase(st,base);
+    );
+    b[MB_LB_APPLIED]=active>0;
+    b[MB_LB_REVISION]=d[MB_LD_REVISION]; b[MB_LB_COUNT]=count; b[MB_LB_LENGTH]=length;
+  );
+);
+
+function mb_landing_apply(st)
+local(base, count, length, bank, i, p, active, index, b)
+(
+  index=floor(st/MB_STRING_WORDS);
+  landing_mask&(2^index) ? (
+    bank=0; loop(2,
+      base=st+(bank==0 ? MB_BANK_A : MB_BANK_B);
+      count=base==st[MB_S_ACTIVE] ? st[MB_S_COUNT] :
+        st[MB_S_PREVIOUS_LEFT]>0 ? st[MB_S_PREVIOUS_COUNT] : 0;
+      length=st[bank==0 ? MB_S_LENGTH_A : MB_S_LENGTH_B];
+      count>0 ? mb_landing_coefficients(st,base,count,length,0) : (
+        b=mb_landing_bank(st,base);
+        b[MB_LB_COUNT]>0 || b[MB_LB_APPLIED] ? memset(b,0,MB_LB_WORDS);
+      );
+      bank+=1;
+    );
+    i=active=0; loop(MB_LAND_COUNT,
+      p=mb_landing_ptr(i); p[MB_LN_HELD] && p[MB_LN_INDEX]==index ? active=1; i+=1;
+    );
+    !active ? landing_mask=landing_mask-(landing_mask&(2^index));
+  );
 );
 
 // A finite pick already owns cached force responses. Defer a live palm edit

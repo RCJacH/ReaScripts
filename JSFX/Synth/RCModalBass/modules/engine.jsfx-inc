@@ -6,6 +6,7 @@ local(l, e)
 (
   st[MB_S_COUNT]=st[MB_S_PREVIOUS_COUNT]=st[MB_S_PREVIOUS_LEFT]=0;
   st[MB_S_HARMONIC]=0;
+  mb_landing_forget(st);
   st[MB_S_NOTE]=st[MB_S_CHANNEL]=-1; st[MB_S_MUTE]=1;
   memset(st+MB_REPLUCK, 0, MB_RP_HEADER_WORDS);
   memset(st+MB_TENSION, 0, 2*MB_AT_WORDS);
@@ -34,6 +35,7 @@ local(signal, previous_signal, weights, previous_weights, l, fade, previous_weig
 (
   mb_ghost_enforce(st);
   mb_live_tick(st);
+  landing_mask ? mb_landing_apply(st);
   (st+MB_SLAP)[MB_SL_LEFT]>0 ? mb_slap_tick(st);
   mb_tension_tick(st);
   mb_magnet_tick(st);

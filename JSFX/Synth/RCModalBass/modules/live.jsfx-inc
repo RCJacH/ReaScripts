@@ -109,6 +109,7 @@ local(i, n, ptr, freq, omega, alpha, radius, angle, q, v, tapers, targets, dampi
   );
   mb_ghost_coefficients(st, base, count, g[MB_G_LENGTH]);
   mb_palm_coefficients(st, base, count, g[MB_G_LENGTH], 1);
+  landing_mask ? mb_landing_coefficients(st,base,count,g[MB_G_LENGTH],1);
   mb_magnet_rebase(st, base, count, cfg, g, 0);
   mb_vibrato_capture(st, base, cfg);
   mb_contact_rebase(st, base);

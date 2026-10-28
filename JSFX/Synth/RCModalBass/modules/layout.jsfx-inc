@@ -1,4 +1,4 @@
-// Memory ABI v28: fret-response cache uses string reserve; addresses retained.
+// Memory ABI v29: RH contacts append shared RAM; existing addresses retained.
 @init
 // Imported @init contributes functions, not executable initialization.
 // Call explicitly from the instrument's @init adapter.
@@ -506,6 +506,7 @@ function mb_layout_init()
   MB_PF_PICK=10; // Style-only mapping; no extra map/hold allocation.
   MB_PF_CHORD=11; // Independent routing hold; shares the existing hold pool.
   MB_ROLE_PERF_FIRST=13;
+  MB_ROLE_STOP_ALL=25; // One-shot note below LH range; no hold or extra map slot.
   MB_PERF_HOLDS=MB_PERF+MB_PERF_MAPS; MB_PF_HOLD_LIMIT=64; MB_PF_HOLD_WORDS=5;
   MB_PH_SERIAL=0; MB_PH_KIND=1; MB_PH_CHANNEL=2; MB_PH_VALUE=3; MB_PH_STAMP=4;
   MB_PERF_INPUTS=MB_PERF_HOLDS+MB_PF_HOLD_LIMIT*MB_PF_HOLD_WORDS;
@@ -536,6 +537,23 @@ function mb_layout_init()
   MB_SC_CHANNELS=MB_STYLE_CC_BASE+MB_STYLE_COUNT;
   MB_SC_WORDS=MB_STYLE_COUNT*(MB_CHANNELS+1);
   MB_MEMORY_WORDS=MB_STYLE_CC_BASE+MB_SC_WORDS;
+
+  // One right hand, two fixed stroke contacts. Pulse words share the finite
+  // HO/PO force layout; no extra string/modal bank and no note ownership.
+  MB_LANDING=MB_MEMORY_WORDS; MB_LAND_COUNT=2;
+  MB_LAND_MODES=32; MB_LAND_LOSS=360; MB_LAND_DISPLACEMENT=0.00022;
+  MB_LN_INDEX=MB_HOPO_WORDS; MB_LN_TOKEN=MB_LN_INDEX+1; MB_LN_CHANNEL=MB_LN_INDEX+2;
+  MB_LN_HELD=MB_LN_INDEX+3; MB_LN_POSITION=MB_LN_INDEX+4; MB_LN_WIDTH=MB_LN_INDEX+5;
+  MB_LN_AMOUNT=MB_LN_INDEX+6; MB_LN_BASE=MB_LN_INDEX+7;
+  MB_LAND_WORDS=MB_LN_INDEX+8;
+  MB_LANDING_STRINGS=MB_LANDING+MB_LAND_COUNT*MB_LAND_WORDS;
+  MB_LD_ONLY=0; MB_LD_REVISION=1; MB_LD_HEADER=2;
+  MB_LB_REVISION=0; MB_LB_COUNT=1; MB_LB_LENGTH=2; MB_LB_APPLIED=3;
+  MB_LB_LOSS=4; MB_LB_WORDS=MB_LB_LOSS+MB_MAX_MODES;
+  MB_LD_WORDS=MB_LD_HEADER+2*MB_LB_WORDS;
+  MB_LANDING_END=MB_LANDING_STRINGS+MB_MAX_STRINGS*MB_LD_WORDS;
+  MB_MEMORY_WORDS=MB_LANDING_END;
+  MB_PF_LAND_1=12; MB_PF_LAND_2=13; // Hold kinds, not extra mapping slots.
 
   MB_FINGER_INDEX=0; MB_FINGER_MIDDLE=1; MB_FINGER_RESET_MS=2000;
   MB_STYLE_FINGER_AUTO=0; MB_STYLE_FINGER_INDEX=1; MB_STYLE_FINGER_MIDDLE=2;

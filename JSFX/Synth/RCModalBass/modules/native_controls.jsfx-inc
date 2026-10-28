@@ -256,7 +256,7 @@ local(page, subpage_mapping, subpage_pickups, subpage_instrument, subpage_noise,
     slider_show(p_slide_controller,page==9 && subpage_mapping==2);
     slider_show(p_lh_pos_ks,page==9 && subpage_mapping==2);
     slider_show(p_lh_pos_controller,page==9 && subpage_mapping==2);
-    slider_show(p_slide_noise_controller,page==9 && subpage_mapping==2);
+    slider_show(p_noise_controller,page==9 && subpage_mapping==2);
     slider_show(p_rh_pluck_pos_controller,page==9 && subpage_mapping==2);
     slider_show(p_vibrato_depth_controller,page==9 && subpage_mapping==2);
     slider_show(p_vibrato_rate_controller,page==9 && subpage_mapping==2);

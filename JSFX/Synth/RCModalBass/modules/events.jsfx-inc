@@ -57,6 +57,20 @@ global(memory_fault)
   );
 );
 
+// Stop current notes with normal damping. Controls/holds and their epochs stay
+// intact; retiring each string protects new notes from delayed old note-offs.
+function mb_events_stop_all(channel, note, velocity)
+local(i, record)
+global(MB_MAX_STRINGS, MB_N_ROLE, MB_N_ACTIVE, MB_ROLE_STOP_ALL)
+(
+  i=0; loop(MB_MAX_STRINGS, mb_release_stop(i); i+=1;);
+  record=mb_notes_begin(channel, note, velocity);
+  record>=0 ? (
+    mb_note_ptr(record)[MB_N_ROLE]=MB_ROLE_STOP_ALL;
+    mb_note_ptr(record)[MB_N_ACTIVE]=1;
+  );
+);
+
 // Reset/fault safety, then MIDI events in sample/host order; render follows.
 function mb_events_sample()
 local(ep, status, channel, note, velocity, released, role)
@@ -71,7 +85,8 @@ local(ep, status, channel, note, velocity, released, role)
     channel=ep[MB_EV_STATUS]&15;
     note=ep[MB_EV_DATA1]&127;
     velocity=ep[MB_EV_DATA2]&127;
-    !MB_NOTES[MB_NH_FAULT] ? (
+    status==$x90 && velocity>0 && mb_performance_stop_all_matches(channel,note) ?
+      mb_events_stop_all(channel,note,velocity) : !MB_NOTES[MB_NH_FAULT] ? (
       status==$x90 && velocity>0 ? (
         role=mb_art_matches(channel, note);
         role==MB_ROLE_TAP ? role=MB_ROLE_PERF_FIRST+MB_PF_TAP;
@@ -101,6 +116,7 @@ local(ep, status, channel, note, velocity, released, role)
         );
         status==$xB0 ? (
           mb_midi_channel_controller(channel, note);
+          note==120 ? mb_landing_silence(channel);
           note==120 || note==121 || note==123 ? mb_pick_scrape_reset(channel,note==120);
           mb_pick_scrape_cc(channel,note,velocity);
           mb_palm_cc(channel,note,velocity);

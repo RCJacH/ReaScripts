@@ -65,6 +65,8 @@ local(cfg, g, weights, repluck, i, ptr, duration)
   );
   mb_pop_begin(st, pluck==MB_EXCITATION_POP ? MB_IMPACT_POP : pluck==MB_EXCITATION_SLAP ? MB_IMPACT_SLAP : 0);
   mb_palm_coefficients(st, st[MB_S_ACTIVE], st[MB_S_COUNT], g[MB_G_LENGTH], 1);
+  landing_mask ? mb_landing_coefficients(st,st[MB_S_ACTIVE],st[MB_S_COUNT],g[MB_G_LENGTH],1);
+  mb_landing_string(st)[MB_LD_ONLY]=0;
   mb_gesture_voice_begin(st, pluck==MB_EXCITATION_PICK);
   mb_magnet_rebase(st, st[MB_S_ACTIVE], st[MB_S_COUNT], cfg, g, 1);
   repluck ? mb_repluck_apply(st, pluck==MB_EXCITATION_FINGER ? repluck_grip_current : 0);

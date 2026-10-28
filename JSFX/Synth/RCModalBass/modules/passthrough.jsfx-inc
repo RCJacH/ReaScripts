@@ -26,7 +26,7 @@ local(found, k, mapping)
       mapping=mb_performance_mapping(k);
       mapping>=0 && (k==0 ? mapping<128 && mapping==note :
         k==3 ? mapping>=1 && mapping<=128 && note==mapping-1 :
-        k==4 ? note>=mapping && note<=min(127,mapping+mb_clamp(floor(p_fret_count),12,24)) :
+        k==4 ? note>=mapping-1 && note<=min(127,mapping+mb_clamp(floor(p_fret_count),12,24)) :
         mapping<128 && note==mapping) ? found=1;
       k+=1;
     );

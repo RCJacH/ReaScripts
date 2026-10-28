@@ -291,7 +291,7 @@ local(length, point, softness, i, ptr, weight, norm, tap, width, ft, sharpness, 
 
 // Apply after this sample's observation; q is unchanged and velocity is driven
 // by a smooth finite pulse. At most 32 modes, two linear passes, no transform.
-function mb_hopo_force(st, hp)
+function mb_finger_force(st, hp)
 local(length, pulse, i, ptr, q, v, dv, energy, linear, quadratic, allowed, scale, work)
 (
   mb_contact_lazy_flush(st,st[MB_S_ACTIVE]);
@@ -354,7 +354,7 @@ local(index, hp, st, owner, l, running)
         ) : (
           hp[MB_HP_STATE] == 1 && abs(l[MB_L_FRET] - hp[MB_HP_TARGET]) < 0.000000001 ?
             mb_hopo_prepare(st, hp);
-          hp[MB_HP_STATE] == 2 ? mb_hopo_force(st, hp);
+          hp[MB_HP_STATE] == 2 ? mb_finger_force(st, hp);
         );
         running = max(running, hp[MB_HP_STATE] > 0);
       );
