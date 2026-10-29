@@ -1,22 +1,26 @@
 // One compliant, dissipative fret contact; forces change actual modal velocity.
 @init
 function mb_contact_invalidate(st)
-global(MB_FRET_POINT, MB_FP_WORDS, MB_FP_READY, MB_FP_SLEEP, MB_FP_SLEEP_CLOCK, MB_CONTACT_SLEEP_INTERVAL)
+global(MB_FRET_POINT, MB_FP_WORDS, MB_FP_READY, MB_FP_SLEEP, MB_FP_SLEEP_CLOCK, MB_CONTACT_SLEEP_INTERVAL,
+       MB_BOARD_COUPLED, MB_BC_WORDS, MB_BC_STATE, MB_BC_SLEEP)
 (
   (st+MB_FRET_POINT)[MB_FP_READY]=0;
   (st+MB_FRET_POINT+MB_FP_WORDS)[MB_FP_READY]=0;
   (st+MB_FRET_POINT)[MB_FP_SLEEP]=(st+MB_FRET_POINT+MB_FP_WORDS)[MB_FP_SLEEP]=0;
   (st+MB_FRET_POINT)[MB_FP_SLEEP_CLOCK]=(st+MB_FRET_POINT+MB_FP_WORDS)[MB_FP_SLEEP_CLOCK]=MB_CONTACT_SLEEP_INTERVAL;
+  (st+MB_BOARD_COUPLED)[MB_BC_STATE]=(st+MB_BOARD_COUPLED+MB_BC_WORDS)[MB_BC_STATE]=0;
+  (st+MB_BOARD_COUPLED)[MB_BC_SLEEP]=(st+MB_BOARD_COUPLED+MB_BC_WORDS)[MB_BC_SLEEP]=0;
 );
 
 // Coefficient writers invalidate weights too, including interior-mode edits.
 // State-only gestures use invalidate() and reuse the cached shape coefficients.
 function mb_contact_rebase(st, base)
-local(b, i, ptr, q, v, alpha, omega, old_alpha, old_omega)
+local(b, i, ptr, q, v, alpha, omega, old_alpha, old_omega, bc)
 (
   mb_contact_lazy_flush(st,base);
   b=mb_contact_ptr(st, base); b[MB_FP_COUNT]=-1; b[MB_FP_READY]=0;
   b[MB_FP_SLEEP]=0; b[MB_FP_SLEEP_CLOCK]=MB_CONTACT_SLEEP_INTERVAL;
+  bc=mb_board_bank(st,base);bc[MB_BC_STATE]=bc[MB_BC_SLEEP]=0;bc[MB_BC_DIRTY]=1;
   b[MB_FP_RESPONSE_ACTIVE] ? (
     i=0; loop(b[MB_FP_RESPONSE_COUNT],
       ptr=base+i*MB_MODE_STRIDE; alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
@@ -33,19 +37,24 @@ local(b, i, ptr, q, v, alpha, omega, old_alpha, old_omega)
 );
 
 function mb_contact_clear(st)
-global(MB_FRET_POINT, MB_FP_WORDS, MB_CONTACT_LAZY, MB_CL_WORDS)
+global(MB_FRET_POINT, MB_FP_WORDS, MB_CONTACT_LAZY, MB_CL_WORDS, MB_FRETLESS, MB_FB_WORDS,
+       MB_BOARD_COUPLED, MB_BC_WORDS)
 (
   memset(st+MB_FRET_POINT, 0, 2*MB_FP_WORDS);
   memset(st+MB_CONTACT_LAZY,0,2*MB_CL_WORDS);
+  memset(st+MB_FRETLESS,0,2*MB_FB_WORDS);
+  memset(st+MB_BOARD_COUPLED,0,2*MB_BC_WORDS);
 );
 
 // Physical contact remains unchanged. This gain observes only the response to
 // its forces, before pickup electronics. Neutral is stored as zero (gain-1).
 function mb_contact_level_configure(st, db)
 local(k)
-global(MB_CONTACT, MB_K_LEVEL, MB_K_LEVEL_TARGET, MB_K_LEVEL_INITIALIZED, MB_S_COUNT, MB_S_PREVIOUS_LEFT)
+global(MB_CONTACT, MB_K_LEVEL, MB_K_LEVEL_TARGET, MB_K_LEVEL_INITIALIZED, MB_K_SURFACE, MB_S_COUNT, MB_S_PREVIOUS_LEFT)
 (
   k=st+MB_CONTACT;
+  // Fretless board contact is part of the tone, not the metal-buzz level stem.
+  k[MB_K_SURFACE] ? db=0;
   k[MB_K_LEVEL_TARGET]=db<=-60 ? -1 : 10^(mb_clamp(db, -60, 24)/20)-1;
   !k[MB_K_LEVEL_INITIALIZED] || (st[MB_S_COUNT]<=0 && st[MB_S_PREVIOUS_LEFT]<=0) ? (
     k[MB_K_LEVEL]=k[MB_K_LEVEL_TARGET]; k[MB_K_LEVEL_INITIALIZED]=1;
@@ -173,10 +182,18 @@ local(c, d, l, masks, previous_masks, flag, previous_flag, i, q, v, mask, ptr, s
 
 function mb_engine_contact_configure(st, amount, stiffness, damping, surface)
 local(k)
-global(MB_CONTACT, MB_K_AMOUNT, MB_K_STIFFNESS, MB_K_DAMPING, MB_K_SURFACE)
+global(MB_CONTACT, MB_K_AMOUNT, MB_K_STIFFNESS, MB_K_DAMPING, MB_K_SURFACE, MB_BANK_A, MB_BANK_B)
 (
   k=st+MB_CONTACT;
-  k[MB_K_AMOUNT]!=mb_clamp(amount*0.01, 0, 1) || k[MB_K_SURFACE]!=(surface>=0.5) ?
+  // The metal-contact difference observer has no role in the fretless tone.
+  // Discard it on entry; retain the actual string q/v in both banks.
+  surface>=0.5 && !k[MB_K_SURFACE] ? (
+    mb_contact_response_clear(st,st+MB_BANK_A);
+    mb_contact_response_clear(st,st+MB_BANK_B);
+  );
+  k[MB_K_AMOUNT]!=mb_clamp(amount*0.01, 0, 1) || k[MB_K_SURFACE]!=(surface>=0.5) ||
+    (surface>=0.5 && (k[MB_K_STIFFNESS]!=mb_clamp(stiffness,100,100000) ||
+      k[MB_K_DAMPING]!=mb_clamp(damping,0,2))) ?
     mb_contact_invalidate(st);
   k[MB_K_AMOUNT]=mb_clamp(amount*0.01, 0, 1);
   k[MB_K_STIFFNESS]=mb_clamp(stiffness, 100, 100000);
@@ -195,8 +212,9 @@ local(b, g, cfg, length, fret, i, ptr, phi, norm, q, im, x, v, band, last, rebui
   last=base+max(0, count-1)*MB_MODE_STRIDE;
   rebuild=b[MB_FP_COUNT]!=count || b[MB_FP_LENGTH]!=length ||
   abs(b[MB_FP_OMEGA]-base[MB_M_OMEGA])>0.000000000001 || abs(b[MB_FP_ALPHA]-base[MB_M_ALPHA])>0.000000000001 ||
-  abs(b[MB_FP_LAST_OMEGA]-last[MB_M_OMEGA])>0.000000000001 || abs(b[MB_FP_LAST_ALPHA]-last[MB_M_ALPHA])>0.000000000001;
+  abs(b[MB_FP_LAST_OMEGA]-last[MB_M_OMEGA])>0.000000000001 || abs(b[MB_FP_LAST_ALPHA]-last[MB_M_ALPHA])>0.000000000001 || b[MB_FP_BOARD];
   !b[MB_FP_READY] || rebuild ? (
+    b[MB_FP_BOARD]=0;
     b[MB_FP_COUNT]=count; b[MB_FP_LENGTH]=length;
     b[MB_FP_OMEGA]=base[MB_M_OMEGA]; b[MB_FP_ALPHA]=base[MB_M_ALPHA];
     b[MB_FP_LAST_OMEGA]=last[MB_M_OMEGA]; b[MB_FP_LAST_ALPHA]=last[MB_M_ALPHA];
@@ -264,9 +282,10 @@ global(MB_CONTACT, MB_K_AMOUNT, MB_K_SURFACE, MB_S_ACTIVE, MB_LIVE, MB_L_FRET, M
        MB_IMPACT_SLAP, MB_SLAP, MB_SL_CLANK, fret_count_current)
 (
   count>0 && base==st[MB_S_ACTIVE] && (st+MB_CONTACT)[MB_K_AMOUNT]>0 &&
-  !(st+MB_CONTACT)[MB_K_SURFACE] && (st+MB_LIVE)[MB_L_FRET]<fret_count_current &&
-  !((st+MB_POP)[MB_POP_STYLE] && floor((st+MB_LIVE)[MB_L_FRET]+0.5)>=fret_count_current) &&
-  !((st+MB_POP)[MB_POP_STYLE]==MB_IMPACT_SLAP && (st+MB_SLAP)[MB_SL_CLANK]<=-1);
+  ((st+MB_CONTACT)[MB_K_SURFACE] ? (st+MB_LIVE)[MB_L_FRET]>0 :
+    (st+MB_LIVE)[MB_L_FRET]<fret_count_current &&
+    !((st+MB_POP)[MB_POP_STYLE] && floor((st+MB_LIVE)[MB_L_FRET]+0.5)>=fret_count_current) &&
+    !((st+MB_POP)[MB_POP_STYLE]==MB_IMPACT_SLAP && (st+MB_SLAP)[MB_SL_CLANK]<=-1));
 );
 
 function mb_contact_idle(st, base)
@@ -292,7 +311,8 @@ local(b, kick, phi, velocity_weights, i, ptr, r, im, nr, ni, rr, ri, sum, x, v, 
   response=(bank[MB_FP_RESPONSE_ACTIVE] || kick>0) &&
     !mb_contact_lazy_ptr(st,base)[MB_CL_ACTIVE];
   response ? (
-    bank[MB_FP_RESPONSE_ACTIVE]=1; mb_contact_response_prepare(st, base, count);
+    bank[MB_FP_RESPONSE_ACTIVE]=1;
+    mb_contact_response_prepare(st, base, count);
     rq=bank+MB_FP_RESPONSE_Q; rv=bank+MB_FP_RESPONSE_I;
   );
   level=(st+MB_CONTACT)[MB_K_LEVEL];

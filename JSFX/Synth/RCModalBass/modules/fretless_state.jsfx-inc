@@ -1,0 +1,262 @@
+// Fretless geometry, constant-force responses and persistent contact caches.
+// Finger, near-board and end-board regions share the existing modal string.
+@init
+function mb_board_ptr(st, base)
+global(MB_FRETLESS, MB_FB_WORDS, MB_BANK_A)
+( st+MB_FRETLESS+(base!=st+MB_BANK_A)*MB_FB_WORDS; );
+
+function mb_board_finger_pressure(st, base)
+global(MB_VIBRATO, MB_VB_HEADER_WORDS, MB_VB_BANK_WORDS, MB_BANK_A, MB_VBB_PRESSURE)
+( (st+MB_VIBRATO+MB_VB_HEADER_WORDS+(base!=st+MB_BANK_A)*MB_VB_BANK_WORDS)[MB_VBB_PRESSURE]; );
+
+function mb_board_potential(x, gap, skin, board)
+local(a, b)
+global()
+(
+  a=max(0,x); b=max(0,-x-gap);
+  (skin*a*a*a+board*b*b*b)/3;
+);
+
+// Secant gradient of k*max(eta,0)^3/3, including its derivative in eta1.
+// The caller reverses the sign for the opposing finger/board surfaces.
+function mb_board_gradient(cache, old, next, stiffness, damping)
+local(a, b, distance, penetration, activation, speed, loss_force)
+global(MB_FB_GRADIENT, MB_FB_DERIVATIVE, MB_FB_GRAD_LOSS, MB_BOARD_DAMP_SOFT, srate)
+(
+  a=max(0,old); b=max(0,next);
+  old>0 && next>0 ? (
+    cache[MB_FB_GRADIENT]=stiffness*(a*a+a*b+b*b)/3;
+    cache[MB_FB_DERIVATIVE]=stiffness*(a+2*b)/3;
+  ) : next>0 ? (
+    distance=next-old;
+    cache[MB_FB_GRADIENT]=stiffness*b*b*b/(3*distance);
+    cache[MB_FB_DERIVATIVE]=stiffness*b*b*(2*b-3*old)/(3*distance*distance);
+  ) : old>0 ? (
+    distance=old-next;
+    cache[MB_FB_GRADIENT]=stiffness*a*a*a/(3*distance);
+    cache[MB_FB_DERIVATIVE]=cache[MB_FB_GRADIENT]/distance;
+  ) : cache[MB_FB_GRADIENT]=cache[MB_FB_DERIVATIVE]=0;
+  // The surface only pushes away; its dashpot acts during approach.
+  penetration=0.5*(a+b); speed=(next-old)*srate; loss_force=0;
+  speed>0 && penetration>0 ? (
+    activation=penetration/(penetration+MB_BOARD_DAMP_SOFT);
+    loss_force=damping*speed*activation;
+    cache[MB_FB_GRADIENT]+=loss_force;
+    cache[MB_FB_DERIVATIVE]+=damping*srate*(activation+
+      (next-old)*(next>0 ? 0.5 : 0)*MB_BOARD_DAMP_SOFT/(penetration+MB_BOARD_DAMP_SOFT)^2);
+  );
+  cache[MB_FB_GRAD_LOSS]=loss_force*(next-old);
+);
+
+function mb_board_bank(st, base)
+global(MB_BOARD_COUPLED, MB_BC_WORDS, MB_BANK_A)
+( st+MB_BOARD_COUPLED+(base!=st+MB_BANK_A)*MB_BC_WORDS; );
+
+function mb_board_site(bc, index)
+global(MB_BC_HEADER, MB_BP_WORDS)
+( bc+MB_BC_HEADER+index*MB_BP_WORDS; );
+
+function mb_board_reset(st, base)
+global(MB_BC_WORDS, MB_FB_WORDS)
+(
+  memset(mb_board_bank(st,base),0,MB_BC_WORDS);
+  memset(mb_board_ptr(st,base),0,MB_FB_WORDS);
+);
+
+function mb_board_stored(bc, x0, x1, x2)
+local(p0, p1, p2, u)
+(
+  p0=mb_board_site(bc,0); p1=mb_board_site(bc,1); p2=mb_board_site(bc,2);
+  u=p0[MB_BP_K]*max(0,x0)^3/3;
+  u+=p1[MB_BP_K]*max(0,-(bc[MB_BC_MODE]==2 ? x0 : x1)-p1[MB_BP_GAP])^3/3;
+  !bc[MB_BC_SLEEP] ? u+=p2[MB_BP_K]*max(0,-x2-p2[MB_BP_GAP])^3/3;
+  u;
+);
+
+function mb_board_contact_prepare(st, base, count)
+local(b, f, bc, cfg, g, l, length, end, mass, shape, coefficients, fresh, damp_mode,
+      p, p0, p1, p2, site, position, width, left, right, prefix, i, ptr, band, fade,
+      phi, alpha, omega, aq, av, di, damping, q, im, pressure, inverse_k, energy,
+      row, col, other, sum, old_u, pick, hp, need_state, velocity, used)
+(
+  b=mb_contact_ptr(st,base); f=mb_board_ptr(st,base); bc=mb_board_bank(st,base);
+  cfg=st+MB_CONFIG; g=st+MB_GEOMETRY; l=st+MB_LIVE;
+  length=g[MB_G_LENGTH]; end=mb_fingerboard_end(cfg[MB_C_SCALE],fret_count_current);
+  mass=cfg[MB_C_TENSION]/(2*length*g[MB_G_F1])^2*length/2;
+  fresh=!bc[MB_BC_READY];
+  damp_mode=l[MB_L_DAMP_LEFT]>0 && l[MB_L_DAMP_DB]>0;
+  shape=fresh || bc[MB_BC_LENGTH]!==length || bc[MB_BC_END]!==end || bc[MB_BC_COUNT]!=count;
+  coefficients=shape || bc[MB_BC_DIRTY] || b[MB_FP_COUNT]<0 || bc[MB_BC_DAMP_MODE]!=damp_mode;
+  need_state=coefficients || !bc[MB_BC_STATE] || !b[MB_FP_READY];
+  old_u=bc[MB_BC_U];
+  pressure=mb_board_finger_pressure(st,base);
+  p0=mb_board_site(bc,0); p1=mb_board_site(bc,1); p2=mb_board_site(bc,2);
+  // Patch support is physical wood. Width changes force capacity, never output gain.
+  site=0; loop(3,
+    p=mb_board_site(bc,site);
+    site==0 ? (
+      position=length-min(MB_BOARD_CONTACT_DISTANCE,length*0.06);
+      width=min(MB_BOARD_CONTACT_WIDTH,2*(length-position));
+      p[MB_BP_COVERAGE]=1; p[MB_BP_GAP]=0;
+      p[MB_BP_K]=(st+MB_CONTACT)[MB_K_AMOUNT]*(st+MB_CONTACT)[MB_K_STIFFNESS]*MB_BOARD_SKIN_K*
+        (1+MB_PRESSURE_SKIN_FIRMNESS*pressure);
+      p[MB_BP_C]=(st+MB_CONTACT)[MB_K_DAMPING]*MB_BOARD_CONTACT_C_SCALE*(1+MB_PRESSURE_SKIN_LOSS*pressure);
+      prefix=min(count,MB_BOARD_CONTACT_MODES);
+    ) : (
+      site==1 ? (position=p0[MB_BP_POSITION];width=p0[MB_BP_WIDTH];) :
+        (position=end+0.5*MB_BOARD_IMPACT_WIDTH;width=MB_BOARD_IMPACT_WIDTH;);
+      left=max(end,position-0.5*width); right=min(length,position+0.5*width);
+      p[MB_BP_COVERAGE]=min(1,max(0,right-left)/width);
+      width=max(0,right-left); position=width>0 ? 0.5*(left+right) : end;
+      p[MB_BP_GAP]=mb_action_clearance(2+(st+MB_ACTION)[MB_ACT_HEIGHT],length,position);
+      p[MB_BP_K]=(st+MB_CONTACT)[MB_K_AMOUNT]*(st+MB_CONTACT)[MB_K_STIFFNESS]*MB_BOARD_K*
+        p[MB_BP_COVERAGE]*(site==1 ? 1 : MB_BOARD_IMPACT_K);
+      p[MB_BP_C]=(st+MB_CONTACT)[MB_K_DAMPING]*p[MB_BP_COVERAGE]*
+        (site==1 ? MB_BOARD_CONTACT_C_SCALE : MB_BOARD_IMPACT_C);
+      prefix=width>0 ? min(count,site==1 ? MB_BOARD_CONTACT_MODES : MB_BOARD_IMPACT_MODES) : 0;
+    );
+    p[MB_BP_POSITION]=position; p[MB_BP_WIDTH]=width; p[MB_BP_COUNT]=prefix;
+    site+=1;
+  );
+  bc[MB_BC_MODE]=p1[MB_BP_COVERAGE]>=0.999999999999 ? 2 : p1[MB_BP_COUNT]>0 ? 3 : 1;
+  damping=base==st+MB_BANK_A ? st+MB_BEND_DAMP_A : st+MB_BEND_DAMP_B;
+  pick=st+MB_PICK; hp=bc[MB_BC_FINGER_SOURCE];
+  shape ? (memset(b+MB_FP_PHI,0,2*MB_MAX_MODES);bc[MB_BC_SHAPES]+=1;);
+  coefficients ? bc[MB_BC_COEFFICIENTS]+=1;
+  inverse_k=site=velocity=0;
+  loop(3,
+    p=mb_board_site(bc,site); prefix=p[MB_BP_COUNT];
+    need_state ? p[MB_BP_Q]=p[MB_BP_DQ]=p[MB_BP_FREE]=0;
+    coefficients || need_state ? p[MB_BP_SLAP_FREE]=p[MB_BP_FINGER_FREE]=
+      p[MB_BP_PICK_Q]=p[MB_BP_PICK_DQ]=p[MB_BP_PICK_FREE]=p[MB_BP_SLAP_V]=p[MB_BP_FINGER_V]=0;
+    i=used=0;loop(prefix,
+      ptr=base+i*MB_MODE_STRIDE; alpha=ptr[MB_M_ALPHA]; omega=ptr[MB_M_OMEGA];
+      shape ? p[MB_BP_RAW+i]=sin((i+1)*$pi*p[MB_BP_POSITION]/length)*
+        mb_sinc((i+1)*$pi*p[MB_BP_WIDTH]/(2*length));
+      coefficients ? (
+        band=mb_clamp((min(6000,0.42*srate)-ptr[MB_M_FREQ])/min(3000,0.18*srate),0,1);
+        band=band*band*(3-2*band);
+        fade=mb_clamp(((site<2 ? MB_BOARD_CONTACT_MODES : MB_BOARD_IMPACT_MODES)-i-1)/
+          (site<2 ? MB_BOARD_CONTACT_FADE_MODES : 8),0,1);
+        phi=p[MB_BP_RAW+i]*band*fade*fade*(3-2*fade);
+        aq=phi*(1-ptr[MB_M_ROT_R]-alpha/omega*ptr[MB_M_ROT_I])/(mass*(omega*omega+alpha*alpha));
+        av=phi*ptr[MB_M_ROT_I]/(mass*omega);
+        p[MB_BP_PHI+i]=phi; p[MB_BP_Q_RESPONSE+i]=aq; p[MB_BP_I_RESPONSE+i]=-(av+alpha*aq)/omega;
+        di=damp_mode ? damping[i] : 1;
+        p[MB_BP_DPHI+i]=phi*di; p[MB_BP_AR+i]=phi*di*ptr[MB_M_ROT_R]; p[MB_BP_AI+i]=-phi*di*ptr[MB_M_ROT_I];
+      ) : phi=p[MB_BP_PHI+i];
+      // EEL's != uses a tolerance: exact zero is required for passive feedback.
+      phi!==0 ? used=i+1;
+      site==0 ? (
+        (b+MB_FP_PHI)[i]=phi;(b+MB_FP_VELOCITY_WEIGHT)[i]=phi/omega;
+        f[MB_FB_Q+i]=p[MB_BP_Q_RESPONSE+i]; f[MB_FB_I+i]=p[MB_BP_I_RESPONSE+i];
+        f[MB_FB_AR+i]=p[MB_BP_AR+i]; f[MB_FB_AI+i]=p[MB_BP_AI+i];
+      );
+      need_state ? (
+        q=ptr[MB_M_R];im=ptr[MB_M_I];p[MB_BP_Q]+=phi*q;p[MB_BP_DQ]+=p[MB_BP_DPHI+i]*q;
+        p[MB_BP_FREE]+=p[MB_BP_AR+i]*q+p[MB_BP_AI+i]*im;
+        site==0 ? velocity+=phi*(-alpha*q-omega*im);
+      );
+      coefficients || need_state ? (
+        ptr[MB_M_FREQ]<0.48*srate ? (
+          i<(st+MB_SLAP)[MB_SL_COUNT] ? (
+            p[MB_BP_SLAP_FREE]+=p[MB_BP_DPHI+i]*ptr[MB_M_ROT_I]/omega*(st+MB_SLAP)[MB_SL_WEIGHTS+i];
+            p[MB_BP_SLAP_V]+=phi*(st+MB_SLAP)[MB_SL_WEIGHTS+i];
+          );
+          hp && i<hp[MB_HP_COUNT] ? (
+            p[MB_BP_FINGER_FREE]+=p[MB_BP_DPHI+i]*ptr[MB_M_ROT_I]/omega*hp[MB_HP_WEIGHTS+i];
+            p[MB_BP_FINGER_V]+=phi*hp[MB_HP_WEIGHTS+i];
+          );
+        );
+        pick[MB_PK_LEFT]>0 && base==pick[MB_PK_BANK] && i<pick[MB_PK_COUNT] ? (
+          p[MB_BP_PICK_Q]+=phi*pick[MB_PK_Q+i];p[MB_BP_PICK_DQ]+=p[MB_BP_DPHI+i]*pick[MB_PK_Q+i];
+          p[MB_BP_PICK_FREE]+=p[MB_BP_AR+i]*pick[MB_PK_Q+i]+p[MB_BP_AI+i]*pick[MB_PK_I+i];
+        );
+      );
+      site==2 ? inverse_k+=phi*phi/(mass*(omega*omega+alpha*alpha));
+      i+=1;
+    );
+    // Exact zeros from the contact band/mode taper belong to the unrolled free
+    // renderer. They cannot affect detection, force, or a cached projection.
+    p[MB_BP_COUNT]=used;
+    site+=1;
+  );
+  coefficients ? (
+    row=0;loop(3,
+      p=mb_board_site(bc,row);col=row;
+      loop(3-row,
+        other=mb_board_site(bc,col);sum=i=0;
+        loop(min(p[MB_BP_COUNT],other[MB_BP_COUNT]),sum+=p[MB_BP_PHI+i]*other[MB_BP_Q_RESPONSE+i];i+=1;);
+        row==0 ? bc[col==0 ? MB_BC_C00 : col==1 ? MB_BC_C01 : MB_BC_C02]=sum :
+          row==1 ? bc[col==1 ? MB_BC_C11 : MB_BC_C12]=sum : bc[MB_BC_C22]=sum;
+        col+=1;
+      );row+=1;
+    );
+    bc[MB_BC_TOUCH_ENERGY]=inverse_k>0 ? p2[MB_BP_GAP]^2/(2*inverse_k) : 0;
+  );
+  bc[MB_BC_U]=mb_board_stored(bc,p0[MB_BP_Q],p1[MB_BP_Q],p2[MB_BP_Q]);
+  bc[MB_BC_EDIT]+=bc[MB_BC_U]-old_u;
+  bc[MB_BC_READY]=bc[MB_BC_STATE]=1;bc[MB_BC_DIRTY]=0;
+  bc[MB_BC_LENGTH]=length;bc[MB_BC_END]=end;bc[MB_BC_AVAILABLE]=max(0,length-end);
+  bc[MB_BC_COUNT]=count;bc[MB_BC_DAMP_MODE]=damp_mode;
+  b[MB_FP_READY]=b[MB_FP_BOARD]=1;b[MB_FP_COUNT]=count;b[MB_FP_LENGTH]=length;
+  b[MB_FP_POSITION]=p0[MB_BP_POSITION];b[MB_FP_MASS]=mass;b[MB_FP_RENDER_COUNT]=p0[MB_BP_COUNT];
+  b[MB_FP_Q]=p0[MB_BP_Q];b[MB_FP_V]=velocity;b[MB_FP_GAP]=p1[MB_BP_GAP];
+  f[MB_FB_FREE]=p0[MB_BP_FREE];f[MB_FB_SKIN_K]=p0[MB_BP_K];f[MB_FB_BOARD_K]=p1[MB_BP_K];
+  f[MB_FB_COMPLIANCE]=bc[MB_BC_C00];f[MB_FB_STORED]=bc[MB_BC_U];
+  shape || coefficients ? b[MB_FP_UPDATES]+=1;
+  // A passive energy bound avoids high-mode observation even on the first
+  // sample of a weak pluck. Later playing work always wakes the hard region.
+  fresh && p2[MB_BP_COUNT]>0 ? (
+    energy=mass*mb_bank_energy(base,count,length)/(2*length)+bc[MB_BC_U];
+    energy<bc[MB_BC_TOUCH_ENERGY]*0.999 && max(0,-p2[MB_BP_Q]-p2[MB_BP_GAP])<=0 ? bc[MB_BC_SLEEP]=1;
+  );
+  b;
+);
+
+// One readiness check for every fretless render path; preparation owns geometry,
+// coefficient and state refreshes. Call before using the cached primary header.
+function mb_board_contact_cache(st, base, count)
+local(b, bc, l, mode)
+global(MB_LIVE, MB_L_DAMP_LEFT, MB_L_DAMP_DB, MB_FP_READY,
+       MB_BC_READY, MB_BC_STATE, MB_BC_DIRTY, MB_BC_DAMP_MODE)
+(
+  b=mb_contact_ptr(st,base);bc=mb_board_bank(st,base);l=st+MB_LIVE;
+  mode=l[MB_L_DAMP_LEFT]>0 && l[MB_L_DAMP_DB]>0;
+  !b[MB_FP_READY] || !bc[MB_BC_READY] || !bc[MB_BC_STATE] || bc[MB_BC_DIRTY] || mode!=bc[MB_BC_DAMP_MODE] ?
+    mb_board_contact_prepare(st,base,count);
+  bc;
+);
+
+// Known force vectors are projected when prepared, not once per audio sample.
+// If a dormant region must wake, one state refresh observes its actual q/v.
+function mb_board_impulse(st, base, amount, source)
+local(bc, p, i)
+(
+  bc=mb_board_bank(st,base);
+  source>0 && bc[MB_BC_FINGER_SOURCE]!=source ? bc[MB_BC_STATE]=0;
+  source>0 ? bc[MB_BC_FINGER_SOURCE]=source;
+  bc[MB_BC_SLEEP] ? bc[MB_BC_STATE]=0;
+  bc[MB_BC_SLEEP]=0;
+  bc[MB_BC_STATE] ? (
+    i=0;loop(3,
+      p=mb_board_site(bc,i);p[MB_BP_FREE]+=amount*p[source>0 ? MB_BP_FINGER_FREE : MB_BP_SLAP_FREE];i+=1;
+    );
+    mb_board_ptr(st,base)[MB_FB_FREE]=mb_board_site(bc,0)[MB_BP_FREE];
+    mb_contact_ptr(st,base)[MB_FP_V]+=amount*mb_board_site(bc,0)[source>0 ? MB_BP_FINGER_V : MB_BP_SLAP_V];
+  ) : mb_contact_ptr(st,base)[MB_FP_READY]=0;
+);
+
+function mb_board_pick_force(st, base, force)
+local(bc, p, i)
+(
+  bc=mb_board_bank(st,base);bc[MB_BC_SLEEP] ? bc[MB_BC_STATE]=0;bc[MB_BC_SLEEP]=0;
+  bc[MB_BC_STATE] ? (
+    i=0;loop(3,
+      p=mb_board_site(bc,i);p[MB_BP_Q]+=force*p[MB_BP_PICK_Q];
+      p[MB_BP_DQ]+=force*p[MB_BP_PICK_DQ];p[MB_BP_FREE]+=force*p[MB_BP_PICK_FREE];i+=1;
+    );
+    mb_contact_ptr(st,base)[MB_FP_Q]=mb_board_site(bc,0)[MB_BP_Q];
+    mb_board_ptr(st,base)[MB_FB_FREE]=mb_board_site(bc,0)[MB_BP_FREE];
+  ) : mb_contact_ptr(st,base)[MB_FP_READY]=0;
+);

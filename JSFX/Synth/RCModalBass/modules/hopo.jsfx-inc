@@ -287,6 +287,7 @@ local(length, point, softness, i, ptr, weight, norm, tap, width, ft, sharpness, 
     loop(hp[MB_HP_COUNT], hp[MB_HP_WEIGHTS + i] /= sqrt(norm); i += 1;);
     hp[MB_HP_STATE] = 2;
   ) : hp[MB_HP_STATE] = 0;
+  (st+MB_CONTACT)[MB_K_SURFACE] ? mb_contact_invalidate(st);
 );
 
 // Apply after this sample's observation; q is unchanged and velocity is driven
@@ -331,7 +332,7 @@ local(length, pulse, i, ptr, q, v, dv, energy, linear, quadratic, allowed, scale
   hp[MB_HP_WORK] += max(0, work);
   hp[MB_HP_AFTER] = energy + work;
   work > 0 ? mb_tension_work(st);
-  mb_contact_invalidate(st);
+  (st+MB_CONTACT)[MB_K_SURFACE] ? mb_board_impulse(st,st[MB_S_ACTIVE],scale*pulse,hp) : mb_contact_invalidate(st);
   hp[MB_HP_LEFT] -= 1;
   hp[MB_HP_LEFT] <= 0 ? hp[MB_HP_STATE] = 0;
 );

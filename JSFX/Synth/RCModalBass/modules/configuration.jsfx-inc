@@ -28,7 +28,7 @@ function mb_configuration_ids_init()
   MB_C_LOSS_EXPONENT=19;
   MB_C_AGE=20;
   MB_C_PALM=21;
-  MB_C_ENDPOINT=22; // Captured fretted-endpoint or fretless-finger loss (%).
+  MB_C_ENDPOINT=22; // Captured fretted-endpoint loss; fretless contact owns its loss.
   MB_C_MODES=23;
   MB_C_A4_OFFSET=24; // Captured Hz relative to 440; zero retains legacy RAM.
   MB_C_STIFFNESS_TRIM=25; // Captured multiplier minus 1; zero preserves legacy RAM.
@@ -133,7 +133,7 @@ function mb_capture_configuration(cfg, reference)
   cfg[MB_C_T60]=p_t60; cfg[MB_C_HF_LOSS]=p_hf_loss;
   cfg[MB_C_LOSS_EXPONENT]=p_loss_exponent; cfg[MB_C_AGE]=0; // Rack applies per-string age.
   cfg[MB_C_PALM]=0; // Retired uniform palm loss; live spatial state owns damping.
-  cfg[MB_C_ENDPOINT]=p_contact_surface>=0.5 ? mb_clamp(p_fretless_finger_damping, 0, 100) : p_endpoint;
+  cfg[MB_C_ENDPOINT]=p_contact_surface>=0.5 ? 0 : p_endpoint;
   cfg[MB_C_MODES]=p_max_modes; cfg[MB_C_ELECTRICAL]=p_electronics_model==1;
   cfg[MB_C_RESONANCE]=p_resonance; cfg[MB_C_Q]=p_q;
 );
@@ -204,3 +204,9 @@ global()
 (
   0.002*max(0, height_mm)*mb_clamp(1-x/span, 0, 1);
 );
+
+// Physical wood continues one fret interval beyond the last playable position.
+// Bridge-relative metres; the playable/routing limit remains fret_count.
+function mb_fingerboard_end(scale_mm, fret_count)
+global()
+( 0.001*scale_mm*2^(-(fret_count+1)/12); );

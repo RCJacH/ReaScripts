@@ -79,14 +79,23 @@ global(MB_PS_LH, MB_PS_GAIN, MB_PS_GAIN_TARGET, performance_gain_smooth)
   ) : 1;
 );
 
-function mb_performance_damping(st)
-local(p)
-global(MB_PS_DAMP, MB_PS_DAMP_TARGET, performance_damp_smooth, performance_damping_used)
+// Relative pressure starts at a normal grip. A released key/open string has no
+// extra fretting force. No excitation, velocity loss or note ownership writes.
+function mb_pressure_tick(st)
+local(p, owner, target, eligible)
+global(MB_PS_PRESSURE, MB_PS_PRESSURE_TARGET, MB_O_KEY_DOWN, MB_LIVE, MB_L_FRET,
+       MB_STRING_WORDS, MB_OWNERS, MB_OWNER_WORDS, pressure_smooth)
 (
-  performance_damping_used ? (
-    p=mb_performance_string(st);
-    p[MB_PS_DAMP]+=(p[MB_PS_DAMP_TARGET]-p[MB_PS_DAMP])*performance_damp_smooth;
-    abs(p[MB_PS_DAMP]-1)<0.000000000001 && p[MB_PS_DAMP_TARGET]==1 ? p[MB_PS_DAMP]=1;
-    p[MB_PS_DAMP];
-  ) : 1;
+  p=mb_performance_string(st); owner=MB_OWNERS+floor(st/MB_STRING_WORDS)*MB_OWNER_WORDS;
+  eligible=owner[MB_O_KEY_DOWN] && (st+MB_LIVE)[MB_L_FRET]>0.000000001;
+  target=eligible ? p[MB_PS_PRESSURE_TARGET] : 0;
+  p[MB_PS_PRESSURE]+=(target-p[MB_PS_PRESSURE])*pressure_smooth;
+  abs(p[MB_PS_PRESSURE]-target)<0.000001 ? p[MB_PS_PRESSURE]=target;
+  // Crossing to an open span removes the extra force at the geometry boundary.
+  (st+MB_LIVE)[MB_L_FRET]<=0.000000001 ? p[MB_PS_PRESSURE]=0;
+  p[MB_PS_PRESSURE];
 );
+
+function mb_pressure_offset(amount)
+global(pressure_tension_current)
+( 6*log(1+pressure_tension_current*amount*amount)/log(2); );

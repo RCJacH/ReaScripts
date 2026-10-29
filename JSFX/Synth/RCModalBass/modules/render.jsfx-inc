@@ -1,36 +1,53 @@
-// Nonlinear fast path: observe the string and both circuit sources while
-// advancing each mode once. Physical arithmetic matches modal/live rendering;
+// General render path for live masks, Pick contact and nonlinear observation.
+// Observe pickups/circuit sources while advancing each mode once;
 // pickup state and synthesis state remain in separate memory regions.
 @init
-function mb_render_nonlinear(st, base, weights, count)
+function mb_render_general(st, base, weights, count)
 local(b, l, flag, masks, targets, damping, damper, mode_damper, coil, simple,
       a, c, d, e, i, ptr, q, im, v, mask, frequency, band, nq, nv, nr, ni,
       rot_r, rot_i, sum, sum1, sum2, circuit1, circuit2, h,
       q1, q2, q3, q4, v1, v2, v3, v4, cp, kick, cx, cv, phi, nonlinear,
       response_bank, response, level, cq, ci, oq, ov, rq, rv, impulse, next, pop,
-      contact_count, coupled, contact_mode, response_mode, pick, pick_y0, pick_y1, pick_phi)
+      contact_count, coupled, contact_mode, response_mode, pick, pick_y0, pick_y1, pick_phi, board,
+      board_contact, board_cache, board_p0, board_p1, board_p2,
+      board_f0, board_f1, board_f2, board_free0, board_free1, board_free2,
+      board_dq0, board_dq1, board_dq2, board_velocity, board_split, board_hard, board_dmode)
 (
   pick=base==st[MB_S_ACTIVE] && (st+MB_PICK)[MB_PK_LEFT]>0;
   pick_y0=pick_y1=0;
-  cp=0; kick=cx=cv=0; pop=(st+MB_POP)[MB_POP_STYLE];
+  cp=0; kick=cx=cv=0;
+  board=(st+MB_CONTACT)[MB_K_SURFACE]; pop=!board && (st+MB_POP)[MB_POP_STYLE];
   response_bank=mb_contact_ptr(st,base);
   mb_contact_enabled(st, base, count) &&
     !(response_bank[MB_FP_READY] && response_bank[MB_FP_SLEEP]) ? (
-    cp=pop ? mb_pop_contact_prepare(st,base,count) : mb_contact_prepare(st,base,count);
-    kick=pop ? mb_pop_contact_kick(st,cp) : mb_contact_kick(st,cp);
+    cp=board ? (board_cache=mb_board_contact_cache(st,base,count);response_bank;) :
+      pop ? mb_pop_contact_prepare(st,base,count) : mb_contact_prepare(st,base,count);
+    kick=board ? 0 : pop ? mb_pop_contact_kick(st,cp) : mb_contact_kick(st,cp);
   );
   next=cp && pop ? (st+MB_POP_CONTACT)[MB_PCC_NEXT] : cp;
   response_bank=mb_contact_ptr(st, base);
-  response=(response_bank[MB_FP_RESPONSE_ACTIVE] || kick>0) &&
+  response=(response_bank[MB_FP_RESPONSE_ACTIVE] || (!board && kick>0)) &&
     !mb_contact_lazy_ptr(st,base)[MB_CL_ACTIVE];
   response ? (
-    response_bank[MB_FP_RESPONSE_ACTIVE]=1; mb_contact_response_prepare(st, base, count);
+    response_bank[MB_FP_RESPONSE_ACTIVE]=1;
+    mb_contact_response_prepare(st, base, board && cp ? min(count,response_bank[MB_FP_RENDER_COUNT]) : count);
     rq=response_bank+MB_FP_RESPONSE_Q; rv=response_bank+MB_FP_RESPONSE_I;
   );
   level=(st+MB_CONTACT)[MB_K_LEVEL];
-  contact_count=cp && pop ? response_bank[MB_FP_RENDER_COUNT] : count;
+  contact_count=cp && (pop || board) ? response_bank[MB_FP_RENDER_COUNT] : count;
   nonlinear=(st+MB_PICKUP_NL)[MB_NL_ON];
   b=mb_nonlinear_ptr(st, weights); l=st+MB_LIVE;
+  board_contact=cp && board;
+  board_free0=board_free1=board_free2=0;
+  board_dq0=board_dq1=board_dq2=board_velocity=0;
+  board_contact ? (
+    mb_board_solve(board_cache,st[MB_S_MUTE]);
+    board_p0=mb_board_site(board_cache,0);board_p1=mb_board_site(board_cache,1);board_p2=mb_board_site(board_cache,2);
+    board_f0=board_p0[MB_BP_FORCE];board_f1=board_p1[MB_BP_FORCE];board_f2=board_p2[MB_BP_FORCE];
+    board_split=board_cache[MB_BC_MODE]==3;board_dmode=board_cache[MB_BC_DAMP_MODE];
+    board_hard=!board_cache[MB_BC_SLEEP] && board_p2[MB_BP_COUNT]>0;
+    contact_count=board_cache[MB_BC_PREFIX];
+  );
   base==st+MB_BANK_A ? (
     flag=l[MB_L_FLAG_A]; masks=st+MB_MASK_A; targets=st+MB_MASK_TARGET_A; damping=st+MB_BEND_DAMP_A;
   ) : (
@@ -54,7 +71,7 @@ local(b, l, flag, masks, targets, damping, damper, mode_damper, coil, simple,
     v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;
     oq=q; ov=v;
     response_mode ? (
-      cq=rq[i]; ci=rv[i]-impulse;
+      cq=rq[i]; ci=rv[i]-(board ? 0 : impulse);
       abs(level)>0 ? (oq+=level*cq; ov+=level*(-ptr[MB_M_ALPHA]*cq-ptr[MB_M_OMEGA]*ci););
     );
     flag ? (
@@ -76,6 +93,13 @@ local(b, l, flag, masks, targets, damping, damper, mode_damper, coil, simple,
     rot_r=ptr[MB_M_ROT_R]; rot_i=ptr[MB_M_ROT_I];
     nr=(q*rot_r-im*rot_i)*mode_damper;
     ni=(q*rot_i+im*rot_r)*mode_damper;
+    contact_mode && board_contact ? (
+      i<board_p0[MB_BP_COUNT] ? (
+        nr+=board_f0*board_p0[MB_BP_Q_RESPONSE+i];ni+=board_f0*board_p0[MB_BP_I_RESPONSE+i];
+        board_split ? (nr+=board_f1*board_p1[MB_BP_Q_RESPONSE+i];ni+=board_f1*board_p1[MB_BP_I_RESPONSE+i];);
+      );
+      board_f2!==0 ? (nr+=board_f2*board_p2[MB_BP_Q_RESPONSE+i];ni+=board_f2*board_p2[MB_BP_I_RESPONSE+i];);
+    );
     ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
     pick ? (
       pick_phi=(st+MB_PICK+MB_PK_PHI)[i];
@@ -88,9 +112,21 @@ local(b, l, flag, masks, targets, damping, damper, mode_damper, coil, simple,
     flag && frequency>=0.48*srate && mask<0.000000001 ? (ptr[MB_M_R]=ptr[MB_M_I]=0;);
     response_mode && flag && frequency>=0.48*srate && mask<0.000000001 ? (rq[i]=rv[i]=0;);
     contact_mode ? (
-      phi=(next+MB_FP_PHI)[i];
-      cx+=phi*ptr[MB_M_R];
-      cv+=phi*(-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I]);
+      board ? (
+        i<board_p0[MB_BP_COUNT] ? (
+          board_free0+=board_p0[MB_BP_AR+i]*nr+board_p0[MB_BP_AI+i]*ni;
+          board_velocity+=board_p0[MB_BP_PHI+i]*(-ptr[MB_M_ALPHA]*nr-ptr[MB_M_OMEGA]*ni);
+          board_split ? board_free1+=board_p1[MB_BP_AR+i]*nr+board_p1[MB_BP_AI+i]*ni;
+          board_dmode ? (board_dq0+=board_p0[MB_BP_DPHI+i]*nr;board_split ? board_dq1+=board_p1[MB_BP_DPHI+i]*nr;);
+        );
+        board_hard ? (
+          board_free2+=board_p2[MB_BP_AR+i]*nr+board_p2[MB_BP_AI+i]*ni;
+          board_dmode ? board_dq2+=board_p2[MB_BP_DPHI+i]*nr;
+        );
+      ) : (
+        phi=(next+MB_FP_PHI)[i];cx+=phi*ptr[MB_M_R];
+        cv+=phi*(-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I]);
+      );
     );
     ptr+=MB_MODE_STRIDE; i+=1;
   );
@@ -100,7 +136,12 @@ local(b, l, flag, masks, targets, damping, damper, mode_damper, coil, simple,
     h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT2 : MB_CP_B_OUTPUT2]=sum2;
   );
   nonlinear ? mb_nonlinear_finish(st, weights, q1, v1, q2, v2, q3, v3, q4, v4);
-  cp ? (next[MB_FP_Q]=cx; next[MB_FP_V]=cv;);
+  cp && !board ? (
+    next[MB_FP_V]=cv;
+    next[MB_FP_Q]=cx;
+  );
+  cp && board ? mb_board_finish(st,base,count,board_cache,board_free0,board_free1,board_free2,
+    board_dq0,board_dq1,board_dq2,board_velocity);
   pick ? mb_pick_step(st, pick_y0, pick_y1, next);
   sum;
 );
@@ -121,10 +162,12 @@ local(contact, flag, response, asleep, b, pick)
   // finger forces and level edits use the regular, materialized response.
   response && !pick && !flag && abs((st+MB_CONTACT)[MB_K_LEVEL])<=0 && !MB_ARTICULATION[MB_A_HO_RUNNING] &&
     (!contact || (b[MB_FP_READY] && (st+MB_SLAP)[MB_SL_LEFT]<=0)) ? (
-    mb_contact_lazy_tick(st,base,count,contact); response=0;
+    mb_contact_lazy_tick(st,base,count,contact && !(st+MB_CONTACT)[MB_K_SURFACE]); response=0;
   ) : mb_contact_lazy_flush(st,base);
-  contact && !pick && !flag && !circuit_observe_current && !(st+MB_PICKUP_NL)[MB_NL_ON] ?
-    mb_contact_render_fast(st, base, weights, count) :
-  pick || (st+MB_PICKUP_NL)[MB_NL_ON] || contact || response ? mb_render_nonlinear(st, base, weights, count) :
+  contact && !pick && !flag && (!(circuit_observe_current) || (st+MB_CONTACT)[MB_K_SURFACE]) &&
+    !(st+MB_PICKUP_NL)[MB_NL_ON] ?
+    ((st+MB_CONTACT)[MB_K_SURFACE] ? mb_board_render_fast(st,base,weights,count) :
+      mb_contact_render_fast(st, base, weights, count)) :
+  pick || (st+MB_PICKUP_NL)[MB_NL_ON] || contact || response ? mb_render_general(st, base, weights, count) :
     mb_string_render_bank(st, base, weights, count);
 );

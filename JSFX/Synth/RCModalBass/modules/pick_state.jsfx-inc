@@ -75,7 +75,7 @@ local(b, last, owner)
 // stored spring energy; it does not inject a separate release impulse.
 function mb_pick_step(st, y0, free_y1, contact)
 local(b, age, t, anchor, travel, gain, k, c, a, force, y1, relative,
-      old_energy, new_energy, work, i, ptr, dq, di, phi, cx, cv)
+      old_energy, new_energy, work, i, ptr, dq, di, phi, cx, cv, board)
 (
   (st+MB_PICK_FRICTION)[MB_PF_LEAD]>0 ? mb_pick_friction_touch(st) : (
   b=st+MB_PICK; age=b[MB_PK_TOTAL]-b[MB_PK_LEFT];
@@ -98,6 +98,7 @@ local(b, age, t, anchor, travel, gain, k, c, a, force, y1, relative,
   b[MB_PK_ANCHOR]=anchor; b[MB_PK_FORCE]=force;
   b[MB_PK_MAX_FORCE]=max(b[MB_PK_MAX_FORCE],abs(force));
   cx=cv=i=0;
+  board=contact && contact[MB_FP_BOARD] ? mb_board_ptr(st,b[MB_PK_BANK]) : 0;
   loop(b[MB_PK_COUNT],
     ptr=b[MB_PK_BANK]+i*MB_MODE_STRIDE;
     dq=force*b[MB_PK_Q+i]; di=force*b[MB_PK_I+i];
@@ -110,6 +111,7 @@ local(b, age, t, anchor, travel, gain, k, c, a, force, y1, relative,
   );
   contact ? (contact[MB_FP_Q]+=cx; contact[MB_FP_V]+=cv;) :
     mb_contact_ptr(st,b[MB_PK_BANK])[MB_FP_READY]=0;
+  board ? mb_board_pick_force(st,b[MB_PK_BANK],force);
   // A physical input can reopen contact and the stretch/vibrato envelope.
   mb_contact_ptr(st,b[MB_PK_BANK])[MB_FP_SLEEP]=0;
   work>0 ? (

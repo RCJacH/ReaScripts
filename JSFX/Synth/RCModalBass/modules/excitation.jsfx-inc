@@ -49,6 +49,7 @@ local(cfg, g, weights, repluck, i, ptr, duration)
   st[MB_S_PREVIOUS_COUNT]=st[MB_S_COUNT];
   st[MB_S_PREVIOUS_LEFT]=st[MB_S_PREVIOUS_COUNT]>0 ? st[MB_S_TAIL_SAMPLES] : 0;
   st[MB_S_ACTIVE]=st[MB_S_ACTIVE]==st+MB_BANK_A ? st+MB_BANK_B : st+MB_BANK_A;
+  mb_board_reset(st,st[MB_S_ACTIVE]);
   mb_contact_response_clear(st, st[MB_S_ACTIVE]);
   mb_modal_coefficients(st);
   mb_slap_cancel(st);
@@ -135,7 +136,7 @@ global()
 function mb_harmonic_excite(st, partial)
 local(i, ptr)
 global(MB_S_ACTIVE, MB_S_COUNT, MB_MODE_STRIDE, MB_M_R, MB_M_I, MB_M_INITIAL,
-       MB_S_HARMONIC, MB_PICK, MB_PK_LEFT)
+       MB_S_HARMONIC, MB_PICK, MB_PK_LEFT, MB_CONTACT, MB_K_SURFACE)
 (
   partial=mb_clamp(floor(partial), 2, 5);
   // A touch at 1/partial of the span retains modes partial,2*partial,... .
@@ -151,6 +152,7 @@ global(MB_S_ACTIVE, MB_S_COUNT, MB_MODE_STRIDE, MB_M_R, MB_M_I, MB_M_INITIAL,
   st[MB_S_HARMONIC]=partial;
   (st+MB_PICK)[MB_PK_LEFT]>0 ? mb_pick_project(st, partial);
   mb_contact_response_project(st, st[MB_S_ACTIVE], st[MB_S_COUNT], partial);
+  (st+MB_CONTACT)[MB_K_SURFACE] ? mb_contact_invalidate(st);
 );
 
 // GUI telemetry only: the first surviving physical mode includes stiffness,

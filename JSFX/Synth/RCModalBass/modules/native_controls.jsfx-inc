@@ -213,12 +213,12 @@ local(page, subpage_mapping, subpage_pickups, subpage_instrument, subpage_noise,
     slider_show(p_lh_attack_sharpness,page==6);
     slider_show(p_pull_off_strength,page==6);
     slider_show(p_endpoint,page==6 && choice_contact_surface==0);
-    slider_show(p_fretless_finger_damping,page==6 && choice_contact_surface==1);
+    slider_show(p_fretting_pressure_tension,page==6);
     slider_show(p_ghost_decay_ms,page==6);
     slider_show(p_ghost_damping,page==6);
-    slider_show(p_fret_contact,page==6 && choice_contact_surface==0);
-    slider_show(p_contact_stiffness,page==6 && choice_contact_surface==0);
-    slider_show(p_contact_damping,page==6 && choice_contact_surface==0);
+    slider_show(p_fret_contact,page==6);
+    slider_show(p_contact_stiffness,page==6);
+    slider_show(p_contact_damping,page==6);
     slider_show(p_noise_subpage,page==7);
     slider_show(p_fret_noise_level,page==7 && subpage_noise==0 && choice_contact_surface==0);
     slider_show(p_slide_noise_amount,page==7 && subpage_noise==0);
@@ -249,7 +249,7 @@ local(page, subpage_mapping, subpage_pickups, subpage_instrument, subpage_noise,
     slider_show(p_ghost_controller,page==9 && subpage_mapping==1);
     slider_show(p_harmonics_controller,page==9 && subpage_mapping==1);
     slider_show(p_let_ring_controller,page==9 && subpage_mapping==1);
-    slider_show(p_muting_controller,page==9 && subpage_mapping==1);
+    slider_show(p_fretting_pressure_controller,page==9 && subpage_mapping==1);
     slider_show(p_palm_controller,page==9 && subpage_mapping==1);
     slider_show(p_chord_mode_controller,page==9 && subpage_mapping==1);
     slider_show(p_bend_controller,page==9 && subpage_mapping==2);

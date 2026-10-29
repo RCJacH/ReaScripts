@@ -61,7 +61,7 @@ local(lazy, ptr, i, b)
   reference && lazy[MB_CL_ACTIVE]==1 ? mb_contact_lazy_flush(st,base);
   !lazy[MB_CL_ACTIVE] ? (
     b=mb_contact_ptr(st,base);
-    reference && (st+MB_POP)[MB_POP_STYLE] ? count=min(count,b[MB_FP_RENDER_COUNT]);
+    reference && ((st+MB_POP)[MB_POP_STYLE] || b[MB_FP_BOARD]) ? count=min(count,b[MB_FP_RENDER_COUNT]);
     lazy[MB_CL_ACTIVE]=reference ? 2 : 1; lazy[MB_CL_STEPS]=0;
     lazy[MB_CL_DAMP]=1; lazy[MB_CL_COUNT]=count; i=0;
     loop(count,
@@ -114,28 +114,42 @@ local(b, pc, site, point, ptr, i, amplitude, safe, n, p1, p2, p3, x1, x2, x3)
   b[MB_FP_READY] && b[MB_FP_SLEEP];
 );
 
-// The same passive-motion bound for the ordinary single fret. This only
-// skips contact after proving every future free displacement fits the gap.
+// The same passive-motion bound for the ordinary single fret. Fretless has a
+// zero-clearance finger surface: it only sleeps below a 1-pm numerical floor.
 // State/geometry/coefficient writers already invalidate READY and SLEEP.
 function mb_contact_sleep(st, base, count)
-local(b, i, ptr, bound)
-global(MB_POP, MB_POP_STYLE, MB_FP_READY, MB_FP_SLEEP, MB_FP_SLEEP_CLOCK,
+local(b, i, ptr, bound, bc, p0, p1, p2, n, phi)
+global(MB_POP, MB_POP_STYLE, MB_CONTACT, MB_K_SURFACE, MB_FP_BOARD, MB_BOARD_CONTACT_MODES,
+       MB_SLAP, MB_SL_LEFT,
+       MB_FP_READY, MB_FP_SLEEP, MB_FP_SLEEP_CLOCK,
        MB_CONTACT_SLEEP_INTERVAL, MB_FP_PHI, MB_M_R, MB_M_I, MB_MODE_STRIDE,
-       MB_FP_GAP, MB_FP_FORCE, MB_FP_WORK, MB_FP_TOUCHING)
+       MB_FP_GAP, MB_FP_FORCE, MB_FP_WORK, MB_FP_TOUCHING,
+       MB_BOARD_COUPLED, MB_BC_WORDS, MB_BC_HEADER, MB_BP_WORDS, MB_BC_SLEEP,
+       MB_BP_PHI, MB_BP_COUNT, MB_BANK_A)
 (
-  (st+MB_POP)[MB_POP_STYLE] ? mb_pop_contact_sleep(st, base, count) : (
+  (st+MB_POP)[MB_POP_STYLE] && !(st+MB_CONTACT)[MB_K_SURFACE] ? mb_pop_contact_sleep(st, base, count) : (
     b=mb_contact_ptr(st,base);
-    b[MB_FP_READY] && !b[MB_FP_SLEEP] ? (
+    b[MB_FP_READY] && !b[MB_FP_SLEEP] && (!b[MB_FP_BOARD] || (st+MB_SLAP)[MB_SL_LEFT]<=0) ? (
       b[MB_FP_SLEEP_CLOCK]-=1;
       b[MB_FP_SLEEP_CLOCK]<=0 ? (
         b[MB_FP_SLEEP_CLOCK]=MB_CONTACT_SLEEP_INTERVAL;
         bound=i=0;
-        loop(count,
+        n=count;
+        b[MB_FP_BOARD] ? (
+          bc=st+MB_BOARD_COUPLED+(base!=st+MB_BANK_A)*MB_BC_WORDS;
+          p0=bc+MB_BC_HEADER;p1=p0+MB_BP_WORDS;p2=p1+MB_BP_WORDS;
+          n=max(p0[MB_BP_COUNT],p1[MB_BP_COUNT]);!bc[MB_BC_SLEEP] ? n=max(n,p2[MB_BP_COUNT]);
+        );
+        loop(n,
           ptr=base+i*MB_MODE_STRIDE;
-          bound+=abs((b+MB_FP_PHI)[i])*sqrt(ptr[MB_M_R]^2+ptr[MB_M_I]^2);
+          phi=b[MB_FP_BOARD] ? max(abs(p0[MB_BP_PHI+i]),max(abs(p1[MB_BP_PHI+i]),
+            bc[MB_BC_SLEEP] ? 0 : abs(p2[MB_BP_PHI+i]))) : abs((b+MB_FP_PHI)[i]);
+          bound+=phi*sqrt(ptr[MB_M_R]^2+ptr[MB_M_I]^2);
           i+=1;
         );
-        bound<b[MB_FP_GAP]*0.999999 ? (
+        // A finger patch touches at zero clearance; do not put its nonlinear
+        // coupling to sleep merely because the board surface is out of reach.
+        bound<(b[MB_FP_BOARD] ? 0.000000000001 : b[MB_FP_GAP]*0.999999) ? (
           b[MB_FP_SLEEP]=1; b[MB_FP_FORCE]=b[MB_FP_WORK]=b[MB_FP_TOUCHING]=0;
         );
       );

@@ -1,4 +1,4 @@
-// Vibrato requests, controller scopes and unmodulated bank configurations.
+// Tension-modulation requests, scopes and nominal bank configurations.
 // All RAM writes run on the audio thread. Depth zero leaves string RAM alone.
 @init
 function mb_vibrato_input(scope)
@@ -33,6 +33,7 @@ function mb_vibrato_request()
   vibrato_build_up_request=mb_clamp(p_vibrato_build_up_cycles, 0, 4);
   vibrato_depth_source_request=mb_vibrato_source(p_vibrato_depth_controller);
   vibrato_rate_source_request=mb_vibrato_source(p_vibrato_rate_controller);
+  pressure_tension_request=mb_clamp(p_fretting_pressure_tension,0,10)*0.01;
 );
 
 function mb_vibrato_controller(channel, source, value)
@@ -67,6 +68,7 @@ function mb_vibrato_init()
   vibrato_rate_source_current=vibrato_rate_source_request;
   vibrato_channel_mode=channel_mode_current;
   vibrato_running=vibrato_depth_current>0;
+  pressure_tension_current=pressure_tension_request;
   vibrato_retuning=mb_vibrato_budgeted=0; mb_vibrato_allowance=MB_MAX_MODES;
   vibrato_smooth=1-exp(-1/(MB_VIBRATO_SMOOTH_MS*0.001*srate));
   mb_vibrato_reset();
@@ -88,6 +90,7 @@ local(i, st, v, input)
     vibrato_rate_source_current=vibrato_rate_source_request;
   );
   vibrato_rate_current=vibrato_rate_request; vibrato_depth_current=vibrato_depth_request;
+  pressure_tension_current=pressure_tension_request;
   vibrato_delay_current=vibrato_delay_request;
   vibrato_build_up_current=vibrato_build_up_request;
   vibrato_build_up_step=vibrato_build_up_current>0 ? 1/(srate*vibrato_build_up_current) : 0;
@@ -97,19 +100,24 @@ local(i, st, v, input)
     v[MB_VB_ACTIVE] || v[MB_VB_AMOUNT]>0 ? vibrato_running=1;
     i+=1;
   );
+  pressure_running=0; i=0; loop(MB_MAX_STRINGS,
+    st=mb_performance_string(i*MB_STRING_WORDS);
+    st[MB_PS_PRESSURE]>0 || st[MB_PS_PRESSURE_TARGET]>0 ? pressure_running=1;
+    i+=1;
+  );
 );
 
 // Called after a non-vibrato coefficient job. Its cfg is the nominal tension,
 // including manual bend/stretch, never the previous vibrato multiplier.
 function mb_vibrato_capture(st, base, cfg)
 local(b)
-global(vibrato_running, vibrato_retuning, MB_VBB_CFG, MB_CONFIG_WORDS, MB_VBB_VALID,
-       MB_VBB_APPLIED, MB_VBB_DIRTY)
+global(vibrato_running, pressure_running, vibrato_retuning, MB_VBB_CFG, MB_CONFIG_WORDS, MB_VBB_VALID,
+       MB_VBB_APPLIED, MB_VBB_PRESSURE_OFFSET, MB_VBB_DIRTY)
 (
-  vibrato_running && !vibrato_retuning ? (
+  (vibrato_running || pressure_running) && !vibrato_retuning ? (
     b=mb_vibrato_bank(st, base);
     memcpy(b+MB_VBB_CFG, cfg, MB_CONFIG_WORDS);
-    b[MB_VBB_VALID]=b[MB_VBB_DIRTY]=1; b[MB_VBB_APPLIED]=0;
+    b[MB_VBB_VALID]=b[MB_VBB_DIRTY]=1; b[MB_VBB_APPLIED]=b[MB_VBB_PRESSURE_OFFSET]=0;
   );
 );
 
@@ -117,28 +125,44 @@ global(vibrato_running, vibrato_retuning, MB_VBB_CFG, MB_CONFIG_WORDS, MB_VBB_VA
 function mb_vibrato_seed(st)
 local(v, b)
 (
-  vibrato_running ? (
+  // A real new excitation resets the dormant pressure work allowance too.
+  !vibrato_running && !pressure_running && (st+MB_VIBRATO)[MB_VB_PRESSURE_BUDGET] ?
+    memset(st+MB_VIBRATO,0,MB_VIBRATO_WORDS);
+  vibrato_running || pressure_running ? (
     v=st+MB_VIBRATO;
     v[MB_VB_AGE]=v[MB_VB_PHASE]=v[MB_VB_AMOUNT]=v[MB_VB_CLOCK]=0;
     v[MB_VB_BUILD]=0;
-    v[MB_VB_CEILING]=0; v[MB_VB_WORK]=1;
+    v[MB_VB_CEILING]=v[MB_VB_PRESSURE_BUDGET]=0; v[MB_VB_WORK]=1;
     v[MB_VB_ACTIVE]=1;
     b=mb_vibrato_bank(st, st[MB_S_PREVIOUS]);
     b[MB_VBB_GHOST]=(st+MB_LIVE)[MB_L_GHOST_AMOUNT];
     mb_vibrato_capture(st, st[MB_S_ACTIVE], st+MB_CONFIG);
+    mb_vibrato_bank(st,st[MB_S_ACTIVE])[MB_VBB_PRESSURE]=0;
   );
 );
 
 function mb_vibrato_work(st)
-global(vibrato_running, MB_VIBRATO, MB_VB_WORK)
-( vibrato_running ? (st+MB_VIBRATO)[MB_VB_WORK]=1; );
+global(vibrato_running, pressure_running, MB_VIBRATO, MB_VB_WORK, MB_VB_PRESSURE_BUDGET)
+( vibrato_running || pressure_running || (st+MB_VIBRATO)[MB_VB_PRESSURE_BUDGET] ?
+    (st+MB_VIBRATO)[MB_VB_WORK]=1; );
 
 function mb_vibrato_clear(st)
-global(MB_VIBRATO, MB_VIBRATO_WORDS, MB_VB_ACTIVE, MB_S_F1, MB_GEOMETRY, MB_G_F1)
+local(v, keep, ceiling, clock, work, budget)
+global(MB_VIBRATO, MB_VIBRATO_WORDS, MB_VB_ACTIVE, MB_S_F1, MB_GEOMETRY, MB_G_F1,
+       MB_VB_PRESSURE_BUDGET, MB_VB_CEILING, MB_VB_CAP_AGE, MB_VB_WORK,
+       MB_S_COUNT, MB_S_PREVIOUS_LEFT)
 (
   // Keep idle note/frequency telemetry nominal once the sounding state is gone.
   (st+MB_VIBRATO)[MB_VB_ACTIVE] ? st[MB_S_F1]=(st+MB_GEOMETRY)[MB_G_F1];
-  memset(st+MB_VIBRATO, 0, MB_VIBRATO_WORDS);
+  v=st+MB_VIBRATO;
+  keep=v[MB_VB_PRESSURE_BUDGET] && (st[MB_S_COUNT]>0 || st[MB_S_PREVIOUS_LEFT]>0);
+  budget=v[MB_VB_PRESSURE_BUDGET];
+  ceiling=v[MB_VB_CEILING]; clock=v[MB_VB_CAP_AGE]; work=v[MB_VB_WORK];
+  memset(v, 0, MB_VIBRATO_WORDS);
+  keep ? (
+    v[MB_VB_PRESSURE_BUDGET]=budget; v[MB_VB_CEILING]=ceiling;
+    v[MB_VB_CAP_AGE]=clock; v[MB_VB_WORK]=work;
+  );
 );
 
 function mb_vibrato_display_bend(st)

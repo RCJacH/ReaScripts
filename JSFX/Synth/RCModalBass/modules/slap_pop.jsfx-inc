@@ -312,9 +312,13 @@ local(b, count, length, pulse, i, ptr, q, v, dv, energy, linear, quadratic,
       // shape arrays. Projections were cached at geometry preparation time.
       primary=mb_contact_ptr(st,st[MB_S_ACTIVE]); pc=st+MB_POP_CONTACT;
       primary[MB_FP_READY] ? (
-        site=0; loop(pc[MB_PCC_COUNT],
-          point=pc+MB_PCC_HEADER+site*MB_PCC_POINT_WORDS;
-          point[MB_FP_V]+=scale*pulse*pc[MB_PCC_DRIVE_DOT+site]; site+=1;
+        primary[MB_FP_BOARD] ? (
+          mb_board_impulse(st,st[MB_S_ACTIVE],scale*pulse,0);
+        ) : (
+          site=0; loop(pc[MB_PCC_COUNT],
+            point=pc+MB_PCC_HEADER+site*MB_PCC_POINT_WORDS;
+            point[MB_FP_V]+=scale*pulse*pc[MB_PCC_DRIVE_DOT+site]; site+=1;
+          );
         );
       );
       b[MB_SL_LEFT]-=1;

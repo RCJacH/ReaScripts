@@ -13,6 +13,7 @@ local(l, e)
   mb_pickup_clear(st);
   mb_nonlinear_clear(st);
   mb_vibrato_clear(st);
+  mb_performance_string(st)[MB_PS_PRESSURE]=0;
   mb_magnet_clear(st);
   mb_contact_clear(st);
   mb_pop_clear(st);
@@ -31,7 +32,7 @@ local(l, e)
 );
 
 function mb_engine_render(st)
-local(signal, previous_signal, weights, previous_weights, l, fade, previous_weight, circuit_main, saved_mute, performance_damp, bank_mute)
+local(signal, previous_signal, weights, previous_weights, l, fade, previous_weight, circuit_main, saved_mute, bank_mute)
 (
   mb_ghost_enforce(st);
   mb_live_tick(st);
@@ -39,7 +40,7 @@ local(signal, previous_signal, weights, previous_weights, l, fade, previous_weig
   (st+MB_SLAP)[MB_SL_LEFT]>0 ? mb_slap_tick(st);
   mb_tension_tick(st);
   mb_magnet_tick(st);
-  vibrato_running ? mb_vibrato_tick(st);
+  vibrato_running || pressure_running ? mb_vibrato_tick(st);
   mb_pickup_tick(st);
   mb_nonlinear_tick(st);
   mb_contact_level_tick(st);
@@ -50,8 +51,6 @@ local(signal, previous_signal, weights, previous_weights, l, fade, previous_weig
     weights=st+MB_PICKUP_B; previous_weights=st+MB_PICKUP_A;
   );
   saved_mute=st[MB_S_MUTE];
-  performance_damp=performance_damping_used ? mb_performance_damping(st) : 1;
-  performance_damp!=1 ? st[MB_S_MUTE]*=performance_damp;
   bank_mute=st[MB_S_MUTE];
   fret_sustain_current<1 ? st[MB_S_MUTE]=mb_fret_response_damper(st, st[MB_S_ACTIVE], bank_mute);
   signal=mb_render_bank(st, st[MB_S_ACTIVE], weights, st[MB_S_COUNT]);

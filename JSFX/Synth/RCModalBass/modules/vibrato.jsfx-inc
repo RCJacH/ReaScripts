@@ -1,8 +1,8 @@
-// Quasistatic tension vibrato. Cached nominal configs prevent compounded tuning.
+// Shared quasistatic vibrato/pressure tension. Nominal configs prevent compounding.
 // Reuse the physical q/v coefficient path; never shift an already rendered bus.
 @init
-function mb_vibrato_retune(st, base, count, offset)
-local(v, b, cfg, g, ghost, before, after, loss, i, ptr)
+function mb_vibrato_retune(st, base, count, offset, pressure_offset)
+local(v, b, cfg, g, ghost, before, after, loss, i, ptr, live, flag, fast, interval)
 (
   v=st+MB_VIBRATO; b=mb_vibrato_bank(st, base);
   cfg=st+MB_VIBRATO+MB_VB_SCRATCH_CFG; g=st+MB_VIBRATO+MB_VB_SCRATCH_G;
@@ -11,11 +11,17 @@ local(v, b, cfg, g, ghost, before, after, loss, i, ptr)
   mb_geometry_calculate(cfg, g);
   before=mb_bank_energy(base, count, g[MB_G_LENGTH]);
   ghost=(st+MB_LIVE)[MB_L_GHOST_AMOUNT];
+  live=st+MB_LIVE; flag=base==st+MB_BANK_A ? MB_L_FLAG_A : MB_L_FLAG_B;
+  fast=pressure_running && vibrato_depth_current<=0 && !live[flag] && live[MB_L_DAMP_LEFT]<=0;
   base==st[MB_S_ACTIVE] ? b[MB_VBB_GHOST]=ghost;
   (st+MB_LIVE)[MB_L_GHOST_AMOUNT]=b[MB_VBB_GHOST];
   vibrato_retuning=1;
   mb_live_coefficients(st, base, count, count, cfg, g);
   vibrato_retuning=0;
+  // This path entered with unity masks and no motion loss. Below the taper
+  // band they remain unity: pressure must not disable the fast contact renderer.
+  // Keep the general path once a band fade or other live gesture requires it.
+  fast && (base+(count-1)*MB_MODE_STRIDE)[MB_M_FREQ]<=0.42*srate ? live[flag]=0;
   (st+MB_LIVE)[MB_L_GHOST_AMOUNT]=ghost;
   mb_contact_invalidate(st);
   after=mb_bank_energy(base, count, g[MB_G_LENGTH]);
@@ -24,8 +30,9 @@ local(v, b, cfg, g, ghost, before, after, loss, i, ptr)
   // Changing tension can supply work. Bound cumulative pumping against a
   // decaying gesture ceiling; dissipate excess during subsequent advances,
   // preserving q/v at the coefficient boundary (same policy as texture loss).
+  interval=vibrato_depth_current>0 || v[MB_VB_AMOUNT]>0 ? MB_VIBRATO_INTERVAL : MB_PRESSURE_INTERVAL;
   loss=after>v[MB_VB_CEILING] && after>0 ?
-    (max(0, v[MB_VB_CEILING])/after)^(0.5/MB_VIBRATO_INTERVAL) : 1;
+    (max(0, v[MB_VB_CEILING])/after)^(0.5/interval) : 1;
   loss<1 ? (
     i=0; loop(count,
       ptr=base+i*MB_MODE_STRIDE;
@@ -34,19 +41,28 @@ local(v, b, cfg, g, ghost, before, after, loss, i, ptr)
     v[MB_VB_LIMITED]+=1;
   );
   base==st[MB_S_ACTIVE] ? st[MB_S_F1]=g[MB_G_F1];
-  b[MB_VBB_APPLIED]=offset; b[MB_VBB_DIRTY]=0;
+  b[MB_VBB_APPLIED]=offset; b[MB_VBB_PRESSURE_OFFSET]=pressure_offset; b[MB_VBB_DIRTY]=0;
   v[MB_VB_UPDATES]+=1;
 );
 
 function mb_vibrato_tick(st)
 local(v, b, owner, scope, input, factor, target, rate, offset, bank, base, count,
-      due, previous, elapsed, nominal, energy, eligible, build)
+      due, previous, elapsed, nominal, energy, eligible, build,
+      pressure, bank_pressure, pressure_offset, combined, changed, tone_changed)
 (
   v=st+MB_VIBRATO;
-  st[MB_S_COUNT]>0 || st[MB_S_PREVIOUS_LEFT]>0 ? (
+  pressure=pressure_running ? mb_pressure_tick(st) : 0;
+  (st[MB_S_COUNT]>0 || st[MB_S_PREVIOUS_LEFT]>0) &&
+    (vibrato_depth_current>0 || v[MB_VB_ACTIVE] || pressure>0) ? (
     !v[MB_VB_ACTIVE] ? (
-      v[MB_VB_ACTIVE]=1; v[MB_VB_WORK]=1;
+      v[MB_VB_ACTIVE]=1; v[MB_VB_WORK]=max(v[MB_VB_WORK],!v[MB_VB_PRESSURE_BUDGET]);
       mb_vibrato_capture(st, st[MB_S_ACTIVE], st+MB_CONFIG);
+    );
+    // One finite work allowance per playing gesture, not per controller packet.
+    // Repeated pressure changes cannot replenish a decaying energy ceiling.
+    pressure>0 && v[MB_VB_PRESSURE_BUDGET]<1+pressure_tension_current ? (
+      v[MB_VB_CEILING]*=(1+pressure_tension_current)/max(1,v[MB_VB_PRESSURE_BUDGET]);
+      v[MB_VB_PRESSURE_BUDGET]=1+pressure_tension_current;
     );
     owner=MB_OWNERS+floor(st/MB_STRING_WORDS)*MB_OWNER_WORDS;
     scope=owner[MB_O_BEND_CHANNEL];
@@ -81,8 +97,8 @@ local(v, b, owner, scope, input, factor, target, rate, offset, bank, base, count
     // The audio-rate path advances only phase/envelopes. Coefficients and
     // work scans run on the control clock or after a structural rebase.
     due || b[MB_VBB_DIRTY] || (st[MB_S_PREVIOUS_LEFT]>0 && previous[MB_VBB_DIRTY]) ||
-    (v[MB_VB_AMOUNT]<=0 && (b[MB_VBB_APPLIED]>0 ||
-      (st[MB_S_PREVIOUS_LEFT]>0 && previous[MB_VBB_APPLIED]>0))) ? (
+    (v[MB_VB_AMOUNT]<=0 && (b[MB_VBB_APPLIED]-b[MB_VBB_PRESSURE_OFFSET]>0 ||
+      (st[MB_S_PREVIOUS_LEFT]>0 && previous[MB_VBB_APPLIED]-previous[MB_VBB_PRESSURE_OFFSET]>0))) ? (
       offset=v[MB_VB_AMOUNT]*(0.5-0.5*cos(v[MB_VB_PHASE]));
       // Only deliberate new playing work reopens this ceiling. Span/ordinary
       // coefficient updates leave it intact, so cyclic retuning cannot recharge it.
@@ -91,11 +107,13 @@ local(v, b, owner, scope, input, factor, target, rate, offset, bank, base, count
           st[st[MB_S_ACTIVE]==st+MB_BANK_A ? MB_S_LENGTH_A : MB_S_LENGTH_B]);
         st[MB_S_PREVIOUS_LEFT]>0 ? energy+=mb_bank_energy(st[MB_S_PREVIOUS], st[MB_S_PREVIOUS_COUNT],
           st[st[MB_S_PREVIOUS]==st+MB_BANK_A ? MB_S_LENGTH_A : MB_S_LENGTH_B]);
-        v[MB_VB_CEILING]=max(v[MB_VB_CEILING], 1.01*energy*2^(vibrato_depth_current/6));
-        v[MB_VB_WORK]=0; v[MB_VB_CAP_AGE]=v[MB_VB_AGE];
+        energy=1.01*energy*2^(vibrato_depth_current/6);
+        v[MB_VB_PRESSURE_BUDGET]>0 ? energy*=v[MB_VB_PRESSURE_BUDGET];
+        v[MB_VB_CEILING]=max(v[MB_VB_CEILING], energy);
+        v[MB_VB_WORK]=0; v[MB_VB_CAP_AGE]=instrument_sample_clock;
       );
       due && b[MB_VBB_VALID] ? (
-        elapsed=v[MB_VB_AGE]-v[MB_VB_CAP_AGE]; v[MB_VB_CAP_AGE]=v[MB_VB_AGE];
+        elapsed=instrument_sample_clock-v[MB_VB_CAP_AGE]; v[MB_VB_CAP_AGE]=instrument_sample_clock;
         nominal=(b+MB_VBB_CFG)[MB_C_T60];
         v[MB_VB_CEILING]*=exp(-2*log(1000)*elapsed/(srate*max(0.001, nominal)));
       );
@@ -105,18 +123,37 @@ local(v, b, owner, scope, input, factor, target, rate, offset, bank, base, count
         count=bank==0 ? st[MB_S_COUNT] : st[MB_S_PREVIOUS_LEFT]>0 ? st[MB_S_PREVIOUS_COUNT] : 0;
         b=mb_vibrato_bank(st, base);
         b[MB_VBB_VALID] && count>0 && (due || b[MB_VBB_DIRTY] || v[MB_VB_AMOUNT]<=0) ? (
-          abs(offset-b[MB_VBB_APPLIED])>0.0000000001 || (offset<=0 && b[MB_VBB_APPLIED]>0) ? (
+          bank_pressure=(b+MB_VBB_CFG)[MB_C_FRET]>0.000000001 ? pressure : 0;
+          pressure_offset=bank_pressure>0 ? mb_pressure_offset(bank_pressure) : 0;
+          combined=offset+pressure_offset;
+          // Preserve the approved vibrato resolution; pressure alone need not
+          // rebuild every mode for changes below 0.01 cent.
+          changed=abs(offset-(b[MB_VBB_APPLIED]-b[MB_VBB_PRESSURE_OFFSET]))>0.0000000001 ||
+            abs(pressure_offset-b[MB_VBB_PRESSURE_OFFSET])>=MB_PRESSURE_OFFSET_STEP ||
+            (pressure_offset<=0 && b[MB_VBB_PRESSURE_OFFSET]>0);
+          tone_changed=abs(bank_pressure-b[MB_VBB_PRESSURE])>=MB_PRESSURE_CONTACT_STEP ||
+            (bank_pressure<=0 && b[MB_VBB_PRESSURE]>0) ||
+            (bank_pressure>=1 && b[MB_VBB_PRESSURE]<1);
+          changed ? (
             !mb_vibrato_budgeted || count<=mb_vibrato_allowance ? (
               mb_vibrato_budgeted ? mb_vibrato_allowance-=count;
-              mb_vibrato_retune(st, base, count, offset);
+              b[MB_VBB_PRESSURE]=bank_pressure;
+              mb_vibrato_retune(st, base, count, combined, pressure_offset);
             ) : b[MB_VBB_DIRTY]=1;
-          ) : b[MB_VBB_DIRTY]=0;
+          ) : (
+            b[MB_VBB_DIRTY]=0;
+            tone_changed ? (
+              b[MB_VBB_PRESSURE]=bank_pressure;
+              (st+MB_CONTACT)[MB_K_SURFACE] ? mb_contact_invalidate(st);
+            );
+          );
         );
         bank+=1;
       );
-      due ? v[MB_VB_CLOCK]=MB_VIBRATO_INTERVAL;
+      due ? v[MB_VB_CLOCK]=vibrato_depth_current>0 || v[MB_VB_AMOUNT]>0 ?
+        MB_VIBRATO_INTERVAL : MB_PRESSURE_INTERVAL;
     );
-    v[MB_VB_AMOUNT]<=0 && vibrato_depth_current<=0 &&
+    v[MB_VB_AMOUNT]<=0 && vibrato_depth_current<=0 && pressure<=0 &&
       mb_vibrato_bank(st, st[MB_S_ACTIVE])[MB_VBB_APPLIED]<=0 &&
       (st[MB_S_PREVIOUS_LEFT]<=0 || mb_vibrato_bank(st, st[MB_S_PREVIOUS])[MB_VBB_APPLIED]<=0) ? (
       mb_vibrato_clear(st);

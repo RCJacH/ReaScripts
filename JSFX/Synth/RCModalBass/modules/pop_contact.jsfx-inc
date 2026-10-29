@@ -38,7 +38,7 @@ local(pc, primary, g, cfg, length, fret, last, rebuild, sites, site, b, target,
   height=2+(st+MB_ACTION)[MB_ACT_HEIGHT];
   seating=fret>0 ? (st+MB_VARIATION)[MB_VA_SEATING] : 0;
   last=base+max(0,count-1)*MB_MODE_STRIDE;
-  rebuild=!primary[MB_FP_READY] || primary[MB_FP_COUNT]!=count ||
+  rebuild=!primary[MB_FP_READY] || primary[MB_FP_COUNT]!=count || primary[MB_FP_BOARD] ||
     pc[MB_PCC_HEIGHT]!=height || pc[MB_PCC_SEATING]!=seating ||
     primary[MB_FP_LENGTH]!=length || primary[MB_FP_FRET]!=fret+1 ||
     abs(primary[MB_FP_OMEGA]-base[MB_M_OMEGA])>0.000000000001 ||
@@ -46,6 +46,7 @@ local(pc, primary, g, cfg, length, fret, last, rebuild, sites, site, b, target,
     abs(primary[MB_FP_LAST_OMEGA]-last[MB_M_OMEGA])>0.000000000001 ||
     abs(primary[MB_FP_LAST_ALPHA]-last[MB_M_ALPHA])>0.000000000001;
   rebuild ? (
+    primary[MB_FP_BOARD]=0;
     primary[MB_FP_READY]=1; primary[MB_FP_COUNT]=count;
     primary[MB_FP_LENGTH]=length; primary[MB_FP_FRET]=fret+1;
     primary[MB_FP_OMEGA]=base[MB_M_OMEGA]; primary[MB_FP_ALPHA]=base[MB_M_ALPHA];
@@ -125,11 +126,12 @@ local(pc, primary, g, cfg, length, fret, last, rebuild, sites, site, b, target,
 // the steady path just chooses the next representative physical fret.
 function mb_pop_contact_prepare(st, base, count)
 local(primary)
-global(MB_FP_READY, MB_FP_COUNT, MB_FRET_POINT, MB_BANK_A, MB_FP_WORDS, MB_FP_SLEEP)
+global(MB_FP_READY, MB_FP_COUNT, MB_FP_BOARD, MB_FRET_POINT, MB_BANK_A, MB_FP_WORDS, MB_FP_SLEEP)
 (
   primary=st+MB_FRET_POINT+(base!=st+MB_BANK_A)*MB_FP_WORDS;
   primary[MB_FP_SLEEP] ? (primary[MB_FP_READY]=0; primary[MB_FP_SLEEP]=0;);
-  primary[MB_FP_READY] && primary[MB_FP_COUNT]==count ? mb_pop_contact_next(st) : mb_pop_contact_rebuild(st,base,count);
+  primary[MB_FP_READY] && primary[MB_FP_COUNT]==count && !primary[MB_FP_BOARD] ?
+    mb_pop_contact_next(st) : mb_pop_contact_rebuild(st,base,count);
 );
 
 // Same unilateral force/work limit as ordinary contact, integrated over the

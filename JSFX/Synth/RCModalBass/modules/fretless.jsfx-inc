@@ -1,0 +1,338 @@
+@init
+// Close exact constant-force modal responses with a scalar discrete gradient.
+// With no linear loss: delta E_string = F*(x1-x0) = -delta U - C*dx^2/dt.
+// Damped rotations dissipate additionally. Twelve safeguarded Newton steps bound
+// the work; ordinary steps converge in 1-3 evaluations. No hard displacement
+// clamp, impulse ceiling, or partial envelope.
+function mb_board_contact_solve(st, base, b, x0, free_x1)
+local(f, gap, skin, board, compliance, x1, lo, hi, gradient, derivative, residual,
+      candidate, damping, skin_damping, force, dx, old_energy, new_energy, iteration, converged, loss)
+(
+  f=mb_board_ptr(st,base); gap=b[MB_FP_GAP]; skin=f[MB_FB_SKIN_K]; board=f[MB_FB_BOARD_K];
+  compliance=f[MB_FB_COMPLIANCE];
+  x1=free_x1; force=iteration=converged=loss=0;
+  damping=(st+MB_CONTACT)[MB_K_DAMPING]*MB_BOARD_CONTACT_C_SCALE;
+  skin_damping=damping*(1+MB_PRESSURE_SKIN_LOSS*mb_board_finger_pressure(st,base));
+  old_energy=mb_board_potential(x0,gap,skin,board);
+  max(x0,free_x1)>0 || min(x0,free_x1)<-gap ? (
+    // U is convex, with its minimum throughout [-gap,0]. The implicit root is
+    // bracketed by the free endpoint and the opposite old endpoint reflected
+    // in that interval. This also covers entering/leaving either surface.
+    lo=min(free_x1,-gap-max(0,x0)); hi=max(free_x1,max(0,-x0-gap));
+    while(iteration<MB_BOARD_SOLVE_STEPS && !converged) (
+      mb_board_gradient(f,x0,x1,skin,skin_damping);
+      gradient=f[MB_FB_GRADIENT]; derivative=f[MB_FB_DERIVATIVE]; loss=f[MB_FB_GRAD_LOSS];
+      mb_board_gradient(f,-x0-gap,-x1-gap,board,damping);
+      gradient-=f[MB_FB_GRADIENT]; derivative+=f[MB_FB_DERIVATIVE];
+      loss+=f[MB_FB_GRAD_LOSS];
+      residual=x1-free_x1+compliance*gradient;
+      abs(residual)<=0.000000000000001 ? converged=1 : (
+        residual>0 ? hi=x1 : lo=x1;
+        candidate=x1-residual/(1+compliance*derivative);
+        candidate<lo || candidate>hi ? candidate=0.5*(lo+hi);
+        x1=candidate;
+      );
+      iteration+=1;
+    );
+    // Record exhaustion explicitly; normal physical ranges are regression
+    // tested without it. Keep the work residual as separate diagnostics.
+    !converged ? f[MB_FB_SOLVE_FAULTS]+=1;
+    force=-gradient; x1=free_x1+compliance*force;
+  );
+  dx=x1-x0;
+  new_energy=mb_board_potential(x1,gap,skin,board);
+  f[MB_FB_STORED]=new_energy; f[MB_FB_WORK]=force*dx;
+  f[MB_FB_LOSS]+=max(0,-force*dx-new_energy+old_energy);
+  f[MB_FB_ITERATIONS]=iteration; f[MB_FB_STEPS]+=1;
+  f[MB_FB_RESIDUAL]=force*dx+new_energy-old_energy+loss;
+  b[MB_FP_FORCE]=force; b[MB_FP_WORK]=force*dx;
+  b[MB_FP_LOSS]=f[MB_FB_LOSS];
+  b[MB_FP_PENETRATION]=max(0,-x1-gap);
+  abs(force)>0 ? (
+    !b[MB_FP_TOUCHING] ? (
+      b[MB_FP_HITS]+=1; b[MB_FP_HITS]==1 ? b[MB_FP_FIRST_SAMPLE]=instrument_sample_clock;
+    );
+    b[MB_FP_TOUCHING]=1;
+  ) : b[MB_FP_TOUCHING]=0;
+  b[MB_FP_Q]=x1;
+  force;
+);
+
+// Same q/v observation and free-mode arithmetic as the approved renderer.
+// Only the contact prefix adds a force response and next-step projection.
+function mb_board_render_single(st, base, weights, count)
+local(b, f, force, i, ptr, q, im, rr, ri, nr, ni, sum, velocity, predicted, damper, prefix)
+(
+  b=mb_contact_ptr(st,base); // Prepared by mb_board_contact_cache().
+  f=mb_board_ptr(st,base); damper=st[MB_S_MUTE];
+  force=mb_board_contact_solve(st,base,b,b[MB_FP_Q]*damper,f[MB_FB_FREE]*damper);
+  sum=velocity=predicted=i=0; ptr=base; prefix=b[MB_FP_RENDER_COUNT];
+  loop(prefix,
+    q=ptr[MB_M_R]; im=ptr[MB_M_I];
+    sum+=(-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im)*weights[i];
+    rr=ptr[MB_M_ROT_R]; ri=ptr[MB_M_ROT_I];
+    nr=(q*rr-im*ri)*damper+force*f[MB_FB_Q+i];
+    ni=(q*ri+im*rr)*damper+force*f[MB_FB_I+i];
+    ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
+    velocity+=(b+MB_FP_PHI)[i]*(-ptr[MB_M_ALPHA]*nr-ptr[MB_M_OMEGA]*ni);
+    predicted+=f[MB_FB_AR+i]*nr+f[MB_FB_AI+i]*ni;
+    ptr+=MB_MODE_STRIDE; i+=1;
+  );
+  b[MB_FP_V]=velocity; f[MB_FB_FREE]=predicted;
+  mb_modal_render_continue(base+prefix*MB_MODE_STRIDE,weights+prefix,count-prefix,damper,sum);
+);
+
+// Warm-started discrete-gradient Newton solve. The Jacobian is I+C*H,
+// C positive semidefinite and H diagonal/nonnegative. Its fixed 1/2/3-contact
+// elimination needs no matrix allocation, index loops or pivot search.
+function mb_board_gradients(bc, x0, x1, x2)
+local(p0, p1, p2, scratch, g0, h0, loss)
+(
+  p0=mb_board_site(bc,0);p1=mb_board_site(bc,1);p2=mb_board_site(bc,2);scratch=bc+MB_BC_GRAD_SCRATCH;
+  mb_board_gradient(scratch,p0[MB_BP_OLD],x0,p0[MB_BP_K],p0[MB_BP_C]);
+  g0=scratch[MB_FB_GRADIENT];h0=scratch[MB_FB_DERIVATIVE];loss=scratch[MB_FB_GRAD_LOSS];
+  bc[MB_BC_G1]=bc[MB_BC_H1]=0;
+  bc[MB_BC_MODE]==2 ? (
+    mb_board_gradient(scratch,-p0[MB_BP_OLD]-p1[MB_BP_GAP],-x0-p1[MB_BP_GAP],p1[MB_BP_K],p1[MB_BP_C]);
+    g0-=scratch[MB_FB_GRADIENT];h0+=scratch[MB_FB_DERIVATIVE];loss+=scratch[MB_FB_GRAD_LOSS];
+  ) : bc[MB_BC_MODE]==3 ? (
+    mb_board_gradient(scratch,-p1[MB_BP_OLD]-p1[MB_BP_GAP],-x1-p1[MB_BP_GAP],p1[MB_BP_K],p1[MB_BP_C]);
+    bc[MB_BC_G1]=-scratch[MB_FB_GRADIENT];bc[MB_BC_H1]=scratch[MB_FB_DERIVATIVE];loss+=scratch[MB_FB_GRAD_LOSS];
+  );
+  bc[MB_BC_G0]=g0;bc[MB_BC_H0]=h0;bc[MB_BC_G2]=bc[MB_BC_H2]=0;
+  !bc[MB_BC_SLEEP] && p2[MB_BP_COUNT]>0 ? (
+    mb_board_gradient(scratch,-p2[MB_BP_OLD]-p2[MB_BP_GAP],-x2-p2[MB_BP_GAP],p2[MB_BP_K],p2[MB_BP_C]);
+    bc[MB_BC_G2]=-scratch[MB_FB_GRADIENT];bc[MB_BC_H2]=scratch[MB_FB_DERIVATIVE];loss+=scratch[MB_FB_GRAD_LOSS];
+  );
+  bc[MB_BC_DLOSS]=loss;
+);
+
+function mb_board_solve(bc, damper)
+local(p0, p1, p2, f0, f1, f2, q0, q1, q2, x0, x1, x2, old_u, new_u,
+      c00, c01, c02, c11, c12, c22, a0, a1, a2, h0, h1, h2,
+      r0, r1, r2, error, candidate, d0, d1, d2, y1, y2,
+      u0, u1, u2, u01, u02, u12, l10, l20, l21,
+      n0, n1, n2, scale, accepted, step, done, loss, hard, split, prefix, site, p)
+(
+  p0=mb_board_site(bc,0);p1=mb_board_site(bc,1);p2=mb_board_site(bc,2);
+  split=bc[MB_BC_MODE]==3;hard=!bc[MB_BC_SLEEP] && p2[MB_BP_COUNT]>0;
+  p0[MB_BP_OLD]=p0[MB_BP_DQ]*damper;p1[MB_BP_OLD]=p1[MB_BP_DQ]*damper;p2[MB_BP_OLD]=p2[MB_BP_DQ]*damper;
+  q0=p0[MB_BP_FREE]*damper;q1=p1[MB_BP_FREE]*damper;q2=p2[MB_BP_FREE]*damper;
+  c00=bc[MB_BC_C00];c01=split ? bc[MB_BC_C01] : 0;c02=hard ? bc[MB_BC_C02] : 0;
+  c11=split ? bc[MB_BC_C11] : 0;c12=split && hard ? bc[MB_BC_C12] : 0;c22=hard ? bc[MB_BC_C22] : 0;
+  f0=p0[MB_BP_FORCE];f1=split ? p1[MB_BP_FORCE] : 0;f2=hard ? p2[MB_BP_FORCE] : 0;
+  x0=q0+c00*f0+c01*f1+c02*f2;x1=q1+c01*f0+c11*f1+c12*f2;x2=q2+c02*f0+c12*f1+c22*f2;
+  old_u=mb_board_stored(bc,p0[MB_BP_OLD],p1[MB_BP_OLD],p2[MB_BP_OLD]);
+  mb_board_gradients(bc,x0,x1,x2);step=done=0;
+  while(step<16 && !done) (
+    a0=bc[MB_BC_G0];a1=bc[MB_BC_G1];a2=bc[MB_BC_G2];
+    r0=x0-q0+c00*a0+c01*a1+c02*a2;
+    r1=split ? x1-q1+c01*a0+c11*a1+c12*a2 : 0;
+    r2=hard ? x2-q2+c02*a0+c12*a1+c22*a2 : 0;
+    error=max(abs(r0),max(abs(r1),abs(r2)));
+    error<=0.000000000000001 ? done=1 : (
+      h0=bc[MB_BC_H0];h1=bc[MB_BC_H1];h2=bc[MB_BC_H2];
+      u0=1+c00*h0;
+      h1===0 && h2===0 ? (
+        d0=r0/u0;d1=r1-c01*h0*d0;d2=r2-c02*h0*d0;
+      ) : (
+        u01=c01*h1;u02=c02*h2;l10=c01*h0/u0;l20=c02*h0/u0;
+        u1=1+c11*h1-l10*u01;u12=c12*h2-l10*u02;
+        l21=(c12*h1-l20*u01)/u1;u2=1+c22*h2-l20*u02-l21*u12;
+        y1=r1-l10*r0;y2=r2-l20*r0-l21*y1;
+        d2=y2/u2;d1=(y1-u12*d2)/u1;d0=(r0-u01*d1-u02*d2)/u0;
+      );
+      scale=1;accepted=0;
+      loop(8,
+        !accepted ? (
+          n0=x0-scale*d0;n1=x1-scale*d1;n2=x2-scale*d2;
+          mb_board_gradients(bc,n0,n1,n2);
+          a0=bc[MB_BC_G0];a1=bc[MB_BC_G1];a2=bc[MB_BC_G2];
+          candidate=abs(n0-q0+c00*a0+c01*a1+c02*a2);
+          split ? candidate=max(candidate,abs(n1-q1+c01*a0+c11*a1+c12*a2));
+          hard ? candidate=max(candidate,abs(n2-q2+c02*a0+c12*a1+c22*a2));
+          candidate<error ? accepted=1 : scale*=0.5;
+        );
+      );
+      x0=n0;x1=n1;x2=n2;
+      // The accepted line-search evaluation supplies the next gradient/Hessian.
+    );step+=1;
+  );
+  !done ? bc[MB_BC_FAULTS]+=1;
+  p0[MB_BP_FORCE]=-bc[MB_BC_G0];p1[MB_BP_FORCE]=-bc[MB_BC_G1];p2[MB_BP_FORCE]=-bc[MB_BC_G2];
+  f0=p0[MB_BP_FORCE];f1=p1[MB_BP_FORCE];f2=p2[MB_BP_FORCE];
+  x0=q0+c00*f0+c01*f1+c02*f2;x1=q1+c01*f0+c11*f1+c12*f2;x2=q2+c02*f0+c12*f1+c22*f2;
+  p0[MB_BP_X]=x0;p1[MB_BP_X]=bc[MB_BC_MODE]==2 ? x0 : x1;p2[MB_BP_X]=x2;
+  new_u=mb_board_stored(bc,x0,x1,x2);loss=bc[MB_BC_DLOSS];
+  bc[MB_BC_WORK]=f0*(x0-p0[MB_BP_OLD])+f1*(x1-p1[MB_BP_OLD])+f2*(x2-p2[MB_BP_OLD]);
+  bc[MB_BC_RESIDUAL]=bc[MB_BC_WORK]+new_u-old_u+loss;bc[MB_BC_LOSS]+=loss;bc[MB_BC_U]=new_u;
+  bc[MB_BC_ITER]=step;bc[MB_BC_MAX_ITER]=max(bc[MB_BC_MAX_ITER],step);bc[MB_BC_STEPS]+=1;
+  prefix=p0[MB_BP_COUNT];split ? prefix=max(prefix,p1[MB_BP_COUNT]);hard ? prefix=max(prefix,p2[MB_BP_COUNT]);
+  bc[MB_BC_PREFIX]=prefix;
+  site=0;loop(3,
+    p=mb_board_site(bc,site);
+    abs(p[MB_BP_FORCE])>0 ? (
+      !p[MB_BP_TOUCH] ? p[MB_BP_HITS]+=1;
+      p[MB_BP_TOUCH]=1;p[MB_BP_SAMPLES]+=1;
+      p[MB_BP_PENETRATION]=max(p[MB_BP_PENETRATION],site==0 ? max(0,p[MB_BP_X]) : max(0,-p[MB_BP_X]-p[MB_BP_GAP]));
+    ) : p[MB_BP_TOUCH]=0;
+    site+=1;
+  );
+);
+
+// When the passive bound rules out end contact, fully supported near wood and
+// finger reduce exactly to the original scalar termination. Keep both cache
+// interfaces coherent so a later force/geometry edit can wake the coupled solve.
+function mb_board_single_finish(st, base, bc)
+local(b, f, p0, p1)
+(
+  b=mb_contact_ptr(st,base);f=mb_board_ptr(st,base);
+  p0=mb_board_site(bc,0);p1=mb_board_site(bc,1);
+  p0[MB_BP_Q]=p0[MB_BP_DQ]=p1[MB_BP_Q]=p1[MB_BP_DQ]=b[MB_FP_Q];
+  p0[MB_BP_FREE]=p1[MB_BP_FREE]=f[MB_FB_FREE];p0[MB_BP_FORCE]=b[MB_FP_FORCE];
+  p0[MB_BP_HITS]=b[MB_FP_HITS]-p1[MB_BP_HITS]-mb_board_site(bc,2)[MB_BP_HITS];
+  p0[MB_BP_TOUCH]=b[MB_FP_TOUCHING];
+  bc[MB_BC_U]=f[MB_FB_STORED];bc[MB_BC_LOSS]=f[MB_FB_LOSS];
+  bc[MB_BC_WORK]=f[MB_FB_WORK];bc[MB_BC_RESIDUAL]=f[MB_FB_RESIDUAL];
+  bc[MB_BC_ITER]=f[MB_FB_ITERATIONS];bc[MB_BC_STEPS]=f[MB_FB_STEPS];
+  bc[MB_BC_MAX_ITER]=max(bc[MB_BC_MAX_ITER],f[MB_FB_ITERATIONS]);bc[MB_BC_FAULTS]=f[MB_FB_SOLVE_FAULTS];
+  bc[MB_BC_PREFIX]=p0[MB_BP_COUNT];
+);
+
+function mb_board_finish(st, base, count, bc, free0, free1, free2, dq0, dq1, dq2, velocity)
+local(p0, p1, p2, b, f, energy)
+(
+  p0=mb_board_site(bc,0);p1=mb_board_site(bc,1);p2=mb_board_site(bc,2);
+  p0[MB_BP_Q]=p0[MB_BP_X];p1[MB_BP_Q]=p1[MB_BP_X];
+  p0[MB_BP_FREE]=free0;p1[MB_BP_FREE]=bc[MB_BC_MODE]==2 ? free0 : free1;
+  p0[MB_BP_DQ]=bc[MB_BC_DAMP_MODE] ? dq0 : p0[MB_BP_Q];
+  p1[MB_BP_DQ]=bc[MB_BC_MODE]==2 ? p0[MB_BP_DQ] : bc[MB_BC_DAMP_MODE] ? dq1 : p1[MB_BP_Q];
+  !bc[MB_BC_SLEEP] ? (
+    p2[MB_BP_Q]=p2[MB_BP_X];p2[MB_BP_FREE]=free2;
+    p2[MB_BP_DQ]=bc[MB_BC_DAMP_MODE] ? dq2 : p2[MB_BP_Q];
+  );
+  b=mb_contact_ptr(st,base);f=mb_board_ptr(st,base);
+  b[MB_FP_Q]=p0[MB_BP_Q];b[MB_FP_V]=velocity;b[MB_FP_FORCE]=p0[MB_BP_FORCE];
+  b[MB_FP_HITS]==0 && p0[MB_BP_HITS]+p1[MB_BP_HITS]+p2[MB_BP_HITS]>0 ?
+    b[MB_FP_FIRST_SAMPLE]=instrument_sample_clock;
+  b[MB_FP_HITS]=p0[MB_BP_HITS]+p1[MB_BP_HITS]+p2[MB_BP_HITS];
+  b[MB_FP_WORK]=bc[MB_BC_WORK];b[MB_FP_LOSS]=bc[MB_BC_LOSS];
+  b[MB_FP_TOUCHING]=p0[MB_BP_TOUCH] || p1[MB_BP_TOUCH] || p2[MB_BP_TOUCH];
+  b[MB_FP_PENETRATION]=max(0,-p1[MB_BP_Q]-p1[MB_BP_GAP]);
+  f[MB_FB_FREE]=free0;f[MB_FB_STORED]=bc[MB_BC_U];f[MB_FB_LOSS]=bc[MB_BC_LOSS];
+  f[MB_FB_ITERATIONS]=bc[MB_BC_ITER];f[MB_FB_STEPS]=bc[MB_BC_STEPS];
+  f[MB_FB_SOLVE_FAULTS]=bc[MB_BC_FAULTS];f[MB_FB_RESIDUAL]=bc[MB_BC_RESIDUAL];
+  f[MB_FB_WORK]=bc[MB_BC_WORK];f[MB_FB_EDIT_WORK]=bc[MB_BC_EDIT];
+  bc[MB_BC_CLOCK]+=1;
+  !bc[MB_BC_SLEEP] && p2[MB_BP_COUNT]>0 && bc[MB_BC_CLOCK]>=512 &&
+    (st+MB_SLAP)[MB_SL_LEFT]<=0 && !MB_ARTICULATION[MB_A_HO_RUNNING] && !landing_pulses &&
+    (st+MB_PICK)[MB_PK_LEFT]<=0 ? (
+    bc[MB_BC_CLOCK]=0;energy=b[MB_FP_MASS]*mb_bank_energy(base,count,bc[MB_BC_LENGTH])/(2*bc[MB_BC_LENGTH])+bc[MB_BC_U];
+    energy<bc[MB_BC_TOUCH_ENERGY]*0.999 && p2[MB_BP_FORCE]===0 ? bc[MB_BC_SLEEP]=1;
+  );
+);
+
+// Observe/advance once. Separate prefixes and four-mode unrolling avoid
+// unused projections and loop overhead; keep these repeated sample operations.
+function mb_board_render_coupled(st, base, weights, count, bc)
+local(p0, p1, p2, i, ptr, q, im, rr, ri, nr, ni, sum, velocity, damper,
+      free0, free1, free2, dq0, dq1, dq2, f0, f1, f2, low, prefix, split, hard,
+      dmode, damping, md, circuit1, circuit2, sum1, sum2, v, h, remaining)
+(
+  damper=st[MB_S_MUTE];mb_board_solve(bc,damper);
+  p0=mb_board_site(bc,0);p1=mb_board_site(bc,1);p2=mb_board_site(bc,2);
+  f0=p0[MB_BP_FORCE];f1=p1[MB_BP_FORCE];f2=p2[MB_BP_FORCE];
+  low=p0[MB_BP_COUNT];prefix=bc[MB_BC_PREFIX];split=bc[MB_BC_MODE]==3;
+  hard=!bc[MB_BC_SLEEP] && p2[MB_BP_COUNT]>0;dmode=bc[MB_BC_DAMP_MODE];
+  damping=base==st+MB_BANK_A ? st+MB_BEND_DAMP_A : st+MB_BEND_DAMP_B;
+  circuit_observe_current ? (circuit1=mb_circuit_pickup_ptr(st,weights,0);circuit2=mb_circuit_pickup_ptr(st,weights,1););
+  sum1=sum2=0;
+  sum=velocity=free0=free1=free2=dq0=dq1=dq2=i=0;ptr=base;
+  loop(low,
+    q=ptr[MB_M_R];im=ptr[MB_M_I];v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;sum+=v*weights[i];
+    circuit_observe_current ? (sum1+=v*circuit1[i];sum2+=v*circuit2[i];);
+    rr=ptr[MB_M_ROT_R];ri=ptr[MB_M_ROT_I];md=dmode ? damper*damping[i] : damper;
+    nr=(q*rr-im*ri)*md+f0*p0[MB_BP_Q_RESPONSE+i];ni=(q*ri+im*rr)*md+f0*p0[MB_BP_I_RESPONSE+i];
+    split ? (nr+=f1*p1[MB_BP_Q_RESPONSE+i];ni+=f1*p1[MB_BP_I_RESPONSE+i];);
+    f2!==0 ? (nr+=f2*p2[MB_BP_Q_RESPONSE+i];ni+=f2*p2[MB_BP_I_RESPONSE+i];);
+    ptr[MB_M_R]=nr;ptr[MB_M_I]=ni;
+    free0+=p0[MB_BP_AR+i]*nr+p0[MB_BP_AI+i]*ni;
+    split ? free1+=p1[MB_BP_AR+i]*nr+p1[MB_BP_AI+i]*ni;
+    hard ? free2+=p2[MB_BP_AR+i]*nr+p2[MB_BP_AI+i]*ni;
+    velocity+=p0[MB_BP_PHI+i]*(-ptr[MB_M_ALPHA]*nr-ptr[MB_M_OMEGA]*ni);
+    dmode ? (dq0+=p0[MB_BP_DPHI+i]*nr;split ? dq1+=p1[MB_BP_DPHI+i]*nr;hard ? dq2+=p2[MB_BP_DPHI+i]*nr;);
+    i+=1;ptr+=MB_MODE_STRIDE;
+  );
+  remaining=max(0,prefix-low);
+  // Four consecutive modes retain observation/rotation order.
+  loop(floor(remaining/4),
+    q=ptr[MB_M_R];im=ptr[MB_M_I];v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;sum+=v*weights[i];
+    circuit_observe_current ? (sum1+=v*circuit1[i];sum2+=v*circuit2[i];);
+    rr=ptr[MB_M_ROT_R];ri=ptr[MB_M_ROT_I];md=dmode ? damper*damping[i] : damper;
+    nr=(q*rr-im*ri)*md;ni=(q*ri+im*rr)*md;
+    f2!==0 ? (nr+=f2*p2[MB_BP_Q_RESPONSE+i];ni+=f2*p2[MB_BP_I_RESPONSE+i];);
+    ptr[MB_M_R]=nr;ptr[MB_M_I]=ni;free2+=p2[MB_BP_AR+i]*nr+p2[MB_BP_AI+i]*ni;
+    dmode ? dq2+=p2[MB_BP_DPHI+i]*nr;
+    i+=1;ptr+=MB_MODE_STRIDE;
+    q=ptr[MB_M_R];im=ptr[MB_M_I];v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;sum+=v*weights[i];
+    circuit_observe_current ? (sum1+=v*circuit1[i];sum2+=v*circuit2[i];);
+    rr=ptr[MB_M_ROT_R];ri=ptr[MB_M_ROT_I];md=dmode ? damper*damping[i] : damper;
+    nr=(q*rr-im*ri)*md;ni=(q*ri+im*rr)*md;
+    f2!==0 ? (nr+=f2*p2[MB_BP_Q_RESPONSE+i];ni+=f2*p2[MB_BP_I_RESPONSE+i];);
+    ptr[MB_M_R]=nr;ptr[MB_M_I]=ni;free2+=p2[MB_BP_AR+i]*nr+p2[MB_BP_AI+i]*ni;
+    dmode ? dq2+=p2[MB_BP_DPHI+i]*nr;
+    i+=1;ptr+=MB_MODE_STRIDE;
+    q=ptr[MB_M_R];im=ptr[MB_M_I];v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;sum+=v*weights[i];
+    circuit_observe_current ? (sum1+=v*circuit1[i];sum2+=v*circuit2[i];);
+    rr=ptr[MB_M_ROT_R];ri=ptr[MB_M_ROT_I];md=dmode ? damper*damping[i] : damper;
+    nr=(q*rr-im*ri)*md;ni=(q*ri+im*rr)*md;
+    f2!==0 ? (nr+=f2*p2[MB_BP_Q_RESPONSE+i];ni+=f2*p2[MB_BP_I_RESPONSE+i];);
+    ptr[MB_M_R]=nr;ptr[MB_M_I]=ni;free2+=p2[MB_BP_AR+i]*nr+p2[MB_BP_AI+i]*ni;
+    dmode ? dq2+=p2[MB_BP_DPHI+i]*nr;
+    i+=1;ptr+=MB_MODE_STRIDE;
+    q=ptr[MB_M_R];im=ptr[MB_M_I];v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;sum+=v*weights[i];
+    circuit_observe_current ? (sum1+=v*circuit1[i];sum2+=v*circuit2[i];);
+    rr=ptr[MB_M_ROT_R];ri=ptr[MB_M_ROT_I];md=dmode ? damper*damping[i] : damper;
+    nr=(q*rr-im*ri)*md;ni=(q*ri+im*rr)*md;
+    f2!==0 ? (nr+=f2*p2[MB_BP_Q_RESPONSE+i];ni+=f2*p2[MB_BP_I_RESPONSE+i];);
+    ptr[MB_M_R]=nr;ptr[MB_M_I]=ni;free2+=p2[MB_BP_AR+i]*nr+p2[MB_BP_AI+i]*ni;
+    dmode ? dq2+=p2[MB_BP_DPHI+i]*nr;
+    i+=1;ptr+=MB_MODE_STRIDE;
+  );
+  loop(remaining%4,
+    q=ptr[MB_M_R];im=ptr[MB_M_I];v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;sum+=v*weights[i];
+    circuit_observe_current ? (sum1+=v*circuit1[i];sum2+=v*circuit2[i];);
+    rr=ptr[MB_M_ROT_R];ri=ptr[MB_M_ROT_I];md=dmode ? damper*damping[i] : damper;
+    nr=(q*rr-im*ri)*md;ni=(q*ri+im*rr)*md;
+    f2!==0 ? (nr+=f2*p2[MB_BP_Q_RESPONSE+i];ni+=f2*p2[MB_BP_I_RESPONSE+i];);
+    ptr[MB_M_R]=nr;ptr[MB_M_I]=ni;free2+=p2[MB_BP_AR+i]*nr+p2[MB_BP_AI+i]*ni;
+    dmode ? dq2+=p2[MB_BP_DPHI+i]*nr;
+    i+=1;ptr+=MB_MODE_STRIDE;
+  );
+  mb_board_finish(st,base,count,bc,free0,free1,free2,dq0,dq1,dq2,velocity);
+  dmode || circuit_observe_current ? (
+    loop(max(0,count-prefix),
+      q=ptr[MB_M_R];im=ptr[MB_M_I];v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;sum+=v*weights[i];
+      circuit_observe_current ? (sum1+=v*circuit1[i];sum2+=v*circuit2[i];);
+      rr=ptr[MB_M_ROT_R];ri=ptr[MB_M_ROT_I];md=dmode ? damper*damping[i] : damper;
+      ptr[MB_M_R]=(q*rr-im*ri)*md;ptr[MB_M_I]=(q*ri+im*rr)*md;i+=1;ptr+=MB_MODE_STRIDE;
+    );
+    circuit_observe_current ? (
+      h=st+MB_CIR_PICKUP;
+      h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT1 : MB_CP_B_OUTPUT1]=sum1;
+      h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT2 : MB_CP_B_OUTPUT2]=sum2;
+    );sum;
+  ) : mb_modal_render_continue(base+prefix*MB_MODE_STRIDE,weights+prefix,count-prefix,damper,sum);
+);
+
+// Cache validation is shared by the fast and general renderers. The scalar
+// reduction is an active CPU optimization, not an obsolete prototype path.
+function mb_board_render_fast(st, base, weights, count)
+local(bc, sum)
+global(MB_BC_SLEEP, MB_BC_MODE, MB_BC_DAMP_MODE, circuit_observe_current)
+(
+  bc=mb_board_contact_cache(st,base,count);
+  bc[MB_BC_SLEEP] && bc[MB_BC_MODE]==2 && !bc[MB_BC_DAMP_MODE] && !circuit_observe_current ? (
+    sum=mb_board_render_single(st,base,weights,count);mb_board_single_finish(st,base,bc);sum;
+  ) : mb_board_render_coupled(st,base,weights,count,bc);
+);
