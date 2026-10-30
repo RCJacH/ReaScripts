@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="87fc2058537661f312319a49f51469450117bbf5" name="RCJacH Scripts">
+<index version="1" commit="4636e82f9ad7761165fbea6c26cf7f24a2aaf231" name="RCJacH Scripts">
   <category name="Item Editing">
     <reapack name="RCJacH_Delete content under mouse (contextual).lua" type="script" desc="Delete Content Under Mouse (Contextual)">
       <metadata>
@@ -1224,6 +1224,96 @@ Potential Addition:
         <source file="modules/variation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/87fc2058537661f312319a49f51469450117bbf5/JSFX/Synth/RCModalBass/modules/variation.jsfx-inc</source>
         <source file="modules/vibrato.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/87fc2058537661f312319a49f51469450117bbf5/JSFX/Synth/RCModalBass/modules/vibrato.jsfx-inc</source>
         <source file="modules/vibrato_state.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/87fc2058537661f312319a49f51469450117bbf5/JSFX/Synth/RCModalBass/modules/vibrato_state.jsfx-inc</source>
+      </version>
+      <version name="0.2.3" author="RCJacH" time="2026-10-30T11:29:19Z">
+        <changelog><![CDATA[0.2.3:
+  added channel-scoped articulations and styles with Follow channel mode
+  selected harmonic touch nodes from the current left-hand span
+  shared Tap/Harmonic output level in the existing slider slot
+  added finite harmonic touch and velocity-dependent harmonic release
+  change tapping indicator on the fretboard from "tap" to "T"
+0.2.2:
+  reduced fretless slide CPU usage without reducing the mode count
+0.2.1:
+  extended harmonics to the 8th partial, with selection centered on 16-step values
+  limited LH fret range start to Note 103 so all frets remain reachable
+  cleared fretting markers on matching note-off while meters follow string decay
+0.2.0:
+  improved fretless tone and harmonic bloom ("mwah")
+  limited fretless board contact to the remaining fingerboard length
+  replaced the Muting input with Fretting Pressure (aftertouch by default)
+  increased right-hand landing noise level
+  cleaned up contact processing
+0.1.2:
+  finetune mapping defaults
+  add stop-all-notes ks, 1 note below lh range start
+  add landing noise control
+0.1.1:
+  rename remap sliders
+  finetune slider defaults
+0.1.0:
+  initial release]]></changelog>
+        <source>https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/RCModalBass.jsfx</source>
+        <source file="modules/active.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/active.jsfx-inc</source>
+        <source file="modules/articulation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/articulation.jsfx-inc</source>
+        <source file="modules/circuit.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/circuit.jsfx-inc</source>
+        <source file="modules/configuration.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/configuration.jsfx-inc</source>
+        <source file="modules/contact_idle.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/contact_idle.jsfx-inc</source>
+        <source file="modules/damping.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/damping.jsfx-inc</source>
+        <source file="modules/engine.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/engine.jsfx-inc</source>
+        <source file="modules/events.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/events.jsfx-inc</source>
+        <source file="modules/excitation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/excitation.jsfx-inc</source>
+        <source file="modules/finger_friction.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/finger_friction.jsfx-inc</source>
+        <source file="modules/fingering.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/fingering.jsfx-inc</source>
+        <source file="modules/fingers.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/fingers.jsfx-inc</source>
+        <source file="modules/force_string.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/force_string.jsfx-inc</source>
+        <source file="modules/fret_contact.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/fret_contact.jsfx-inc</source>
+        <source file="modules/fret_response.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/fret_response.jsfx-inc</source>
+        <source file="modules/fretless.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/fretless.jsfx-inc</source>
+        <source file="modules/fretless_state.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/fretless_state.jsfx-inc</source>
+        <source file="modules/fretting.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/fretting.jsfx-inc</source>
+        <source file="modules/gui.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/gui.jsfx-inc</source>
+        <source file="modules/gui_fretboard.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/gui_fretboard.jsfx-inc</source>
+        <source file="modules/gui_primitives.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/gui_primitives.jsfx-inc</source>
+        <source file="modules/hand.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/hand.jsfx-inc</source>
+        <source file="modules/hopo.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/hopo.jsfx-inc</source>
+        <source file="modules/instrument.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/instrument.jsfx-inc</source>
+        <source file="modules/layout.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/layout.jsfx-inc</source>
+        <source file="modules/legato.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/legato.jsfx-inc</source>
+        <source file="modules/live.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/live.jsfx-inc</source>
+        <source file="modules/magnet.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/magnet.jsfx-inc</source>
+        <source file="modules/midi_control.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/midi_control.jsfx-inc</source>
+        <source file="modules/modal.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/modal.jsfx-inc</source>
+        <source file="modules/motion.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/motion.jsfx-inc</source>
+        <source file="modules/native_controls.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/native_controls.jsfx-inc</source>
+        <source file="modules/note_registry.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/note_registry.jsfx-inc</source>
+        <source file="modules/output.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/output.jsfx-inc</source>
+        <source file="modules/parameter_ids.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/parameter_ids.jsfx-inc</source>
+        <source file="modules/parameters.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/parameters.jsfx-inc</source>
+        <source file="modules/passthrough.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/passthrough.jsfx-inc</source>
+        <source file="modules/performance.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/performance.jsfx-inc</source>
+        <source file="modules/performance_state.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/performance_state.jsfx-inc</source>
+        <source file="modules/pick.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/pick.jsfx-inc</source>
+        <source file="modules/pick_friction.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/pick_friction.jsfx-inc</source>
+        <source file="modules/pick_scrape.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/pick_scrape.jsfx-inc</source>
+        <source file="modules/pick_state.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/pick_state.jsfx-inc</source>
+        <source file="modules/pickup.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/pickup.jsfx-inc</source>
+        <source file="modules/pickup_coils.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/pickup_coils.jsfx-inc</source>
+        <source file="modules/pickup_nonlinear.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/pickup_nonlinear.jsfx-inc</source>
+        <source file="modules/pickup_profiles.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/pickup_profiles.jsfx-inc</source>
+        <source file="modules/pop_contact.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/pop_contact.jsfx-inc</source>
+        <source file="modules/rack.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/rack.jsfx-inc</source>
+        <source file="modules/release.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/release.jsfx-inc</source>
+        <source file="modules/render.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/render.jsfx-inc</source>
+        <source file="modules/repluck.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/repluck.jsfx-inc</source>
+        <source file="modules/routing.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/routing.jsfx-inc</source>
+        <source file="modules/slap_pop.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/slap_pop.jsfx-inc</source>
+        <source file="modules/spatial_damping.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/spatial_damping.jsfx-inc</source>
+        <source file="modules/string_setup.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/string_setup.jsfx-inc</source>
+        <source file="modules/tension.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/tension.jsfx-inc</source>
+        <source file="modules/variation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/variation.jsfx-inc</source>
+        <source file="modules/vibrato.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/vibrato.jsfx-inc</source>
+        <source file="modules/vibrato_state.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/vibrato_state.jsfx-inc</source>
       </version>
     </reapack>
   </category>
