@@ -10,12 +10,18 @@ License:
   Commercial music and audio production are permitted. These restrictions
   do not apply to music or audio created using the software.
   This software is provided "as is", without warranty of any kind.
-Version:0.2.2
+Version:0.2.3
 Link: https://github.com/RCJacH/ReaScripts
 Provides:
   modules/*.jsfx-inc
 Release Date: Oct 2026
 Changelog:
+  0.2.3:
+    added channel-scoped articulations and styles with Follow channel mode
+    selected harmonic touch nodes from the current left-hand span
+    shared Tap/Harmonic output level in the existing slider slot
+    added finite harmonic touch and velocity-dependent harmonic release
+    change tapping indicator on the fretboard from "tap" to "T"
   0.2.2:
     reduced fretless slide CPU usage without reducing the mode count
   0.2.1:
@@ -108,7 +114,7 @@ slider17:p_note_off_gesture=0<0,2,1{Mute held,Lift,Lift and mute}>-Note-off hand
 
 // Setup: MIDI
 slider18:p_midi_channel_mode=0<0,2,1{Single channel,Ch1=6(B)-Ch6=1(C),Ch1=1(C)-Ch6=6(B)}>-MIDI channel mode
-slider19:p_keyswitch_channel=0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Keyswitch MIDI channel
+slider19:p_keyswitch_channel=17<0,17,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,Follow channel mode}>-Keyswitch MIDI channel
 slider20:p_passthrough=7<0,7,1{None,Playing notes,Keyswitches,Notes + keyswitches,Controllers,Notes + controllers,Keyswitches + controllers,All}>-MIDI passthrough
 
 // Setup: Hand range
@@ -164,7 +170,7 @@ slider51:p_slap_pop_compress=25<0,100,0.1>-Slap/Pop compression (%)
 slider52:p_pick_level=0<-24,12,0.1>-Pick Level (dB; post pickup)
 slider53:p_slap_level=-6<-24,12,0.1>-Slap Level (dB; post pickup)
 slider54:p_pop_level=-6<-24,12,0.1>-Pop Level (dB; post pickup)
-slider55:p_tap_level=0<-24,12,0.1>-Tap level (dB; post pickup)
+slider55:p_tap_harm_level=0<-24,12,0.1>-Tap / harmonic level (dB; post pickup)
 
 // Instrument
 slider56:p_instrument_subpage=0<0,5,1{Basics,Tuning,Construction,Sustain/Tone,String Sustain/Tone,Neck/Action}>-Instrument Page

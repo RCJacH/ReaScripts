@@ -25,7 +25,7 @@ local(i, j, mapping, duplicate, count, rank, low, high)
           rank=j=0;
           loop(MB_STYLE_COUNT,
             mb_style_input(j)==mapping ? (
-              strcpy(#ui_style_name,j==0 ? "Finger" : j==1 ? "Pick" : j==2 ? "Slap/Pop" : "Tap");
+              strcpy(#ui_style_name,j==0 ? "Finger" : j==1 ? "Pick" : j==2 ? "Slap/Pop" : "T");
               rank>0 ? sprintf(#ui_style_groups,"%s / ",#ui_style_groups);
               count==1 ? sprintf(#ui_style_groups,"%s%s rise64",#ui_style_groups,#ui_style_name) : (
                 low=ceil(rank*128/count); high=ceil((rank+1)*128/count)-1;

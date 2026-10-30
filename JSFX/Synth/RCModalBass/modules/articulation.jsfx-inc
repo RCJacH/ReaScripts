@@ -3,11 +3,13 @@
 @init
 // Explicit momentary articulations override the selected Tapping style.
 // Style selection supplies full gesture amount; playing velocity still applies.
-function mb_art_tap_value()
-global(MB_ARTICULATION, MB_A_KIND, MB_A_VALUE, MB_ROLE_TAP, MB_STYLE_TAP, finger_style_current)
+function mb_art_tap_value(channel)
+local(scope)
+global(MB_A_KIND, MB_A_VALUE, MB_ROLE_TAP, MB_STYLE_TAP)
 (
-  MB_ARTICULATION[MB_A_KIND]==MB_ROLE_TAP ? MB_ARTICULATION[MB_A_VALUE] :
-    MB_ARTICULATION[MB_A_KIND]==0 && finger_style_current==MB_STYLE_TAP ? 127 : 0;
+  scope=mb_art_scope(channel);
+  scope[MB_A_KIND]==MB_ROLE_TAP ? scope[MB_A_VALUE] :
+    scope[MB_A_KIND]==0 && mb_performance_style_current(channel)==MB_STYLE_TAP ? 127 : 0;
 );
 
 function mb_art_channel(channel, kind)
@@ -23,11 +25,13 @@ function mb_art_mapping(kind)
 
 // Latest still-active action/channel wins, including CC; release restores a hold.
 function mb_art_refresh()
-local(channel, kind, entry, newest)
+local(channel, kind, entry, newest, scope)
 global(MB_ARTICULATION, MB_A_VALUE, MB_A_KIND, MB_A_SOURCE_CHANNEL,
-       MB_ROLE_LEGATO, MB_CHANNELS, MB_AC_VALUE, MB_AC_STAMP, MB_ART_KINDS)
+       MB_ROLE_LEGATO, MB_CHANNELS, MB_AC_VALUE, MB_AC_STAMP, MB_ART_KINDS,
+       MB_ART_SCOPES, MB_ART_SCOPE_WORDS, MB_A_STAMP)
 (
   newest = 0;
+  memset(MB_ART_SCOPES, 0, MB_CHANNELS*MB_ART_SCOPE_WORDS);
   MB_ARTICULATION[MB_A_VALUE] = MB_ARTICULATION[MB_A_KIND] = 0;
   MB_ARTICULATION[MB_A_SOURCE_CHANNEL] = -1;
   kind = MB_ROLE_LEGATO;
@@ -35,6 +39,11 @@ global(MB_ARTICULATION, MB_A_VALUE, MB_A_KIND, MB_A_SOURCE_CHANNEL,
     channel = 0;
     loop(MB_CHANNELS,
       entry = mb_art_channel(channel, kind);
+      scope=MB_ART_SCOPES+channel*MB_ART_SCOPE_WORDS;
+      entry[MB_AC_VALUE]>0 && entry[MB_AC_STAMP]>scope[MB_A_STAMP] ? (
+        scope[MB_A_STAMP]=entry[MB_AC_STAMP];
+        scope[MB_A_KIND]=kind; scope[MB_A_VALUE]=entry[MB_AC_VALUE];
+      );
       entry[MB_AC_VALUE] > 0 && entry[MB_AC_STAMP] > newest ? (
         newest = entry[MB_AC_STAMP];
         MB_ARTICULATION[MB_A_VALUE] = entry[MB_AC_VALUE];
@@ -67,11 +76,13 @@ function mb_art_clear()
   memset(MB_ART_GHOST_CHANNELS, 0, MB_CHANNELS * MB_ART_CHANNEL_WORDS);
   memset(MB_ART_TAP_CHANNELS, 0, MB_CHANNELS * MB_ART_CHANNEL_WORDS);
   memset(MB_ART_HARMONIC_CHANNELS, 0, MB_CHANNELS * MB_ART_CHANNEL_WORDS);
+  memset(MB_ART_SCOPES, 0, MB_CHANNELS * MB_ART_SCOPE_WORDS);
 );
 
 function mb_art_init()
 (
-  art_channel_current = art_channel_request = mb_clamp(floor(p_keyswitch_channel), 0, 16);
+  art_channel_current = art_channel_request = mb_clamp(floor(p_keyswitch_channel), 0, MB_KS_FOLLOW_CHANNEL);
+  art_mode_current=channel_mode_current;
   art_mapping_current = art_mapping_request = mb_midi_mapping_index(p_legato_slide_controller, MB_NOTE_CC_MAX);
   hopo_mapping_current = hopo_mapping_request = mb_midi_mapping_index(p_ho_po_controller, MB_NOTE_CC_MAX);
   ghost_mapping_current = ghost_mapping_request = mb_midi_mapping_index(p_ghost_controller, MB_NOTE_CC_MAX);
@@ -82,10 +93,12 @@ function mb_art_init()
 
 function mb_art_apply_requests()
 (
+  art_mode_current!=channel_mode_current ||
   art_channel_current != art_channel_request || art_mapping_current != art_mapping_request ||
   hopo_mapping_current != hopo_mapping_request || ghost_mapping_current != ghost_mapping_request ||
   tap_mapping_current != tap_mapping_request || harmonic_mapping_current != harmonic_mapping_request ? (
     art_channel_current = art_channel_request;
+    art_mode_current=channel_mode_current;
     art_mapping_current = art_mapping_request;
     hopo_mapping_current = hopo_mapping_request;
     ghost_mapping_current = ghost_mapping_request;
@@ -100,7 +113,7 @@ function mb_art_apply_requests()
 function mb_art_matches(channel, note)
 local(forced)
 (
-  art_channel_current == 0 || art_channel_current == channel + 1 ? (
+  mb_control_channel_matches(channel, art_channel_current) ? (
     forced=mb_force_matches(note);
     forced ? forced :
     harmonic_mapping_current < 128 && note == harmonic_mapping_current ? MB_ROLE_HARMONIC :
@@ -166,7 +179,7 @@ global(MB_ROLE_LEGATO, MB_ART_CHANNEL_WORDS, MB_AC_TOKEN, art_channel_current,
       memset(entry, 0, MB_ART_CHANNEL_WORDS);
     mb_midi_cc_supported(controller) &&
     kind!=MB_ROLE_TAP &&
-    (art_channel_current == 0 || art_channel_current == channel + 1) &&
+    mb_control_channel_matches(channel, art_channel_current) &&
     mapping >= 128 && controller == mapping - 127 ? (
       entry[MB_AC_TOKEN] = -1;
       entry[MB_AC_STAMP] = value > 0 ? mb_art_stamp() : 0;

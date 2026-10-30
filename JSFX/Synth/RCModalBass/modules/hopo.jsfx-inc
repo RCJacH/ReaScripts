@@ -100,7 +100,7 @@ local(st, hp, owner, length, energy, kind, source_fret, accepted, tapping, held,
   hp = mb_hopo_ptr(index);
   owner = mb_owner_ptr(index);
   slot = mb_rack_slot(index);
-  tapping = mb_art_tap_value();
+  tapping = mb_art_tap_value(channel);
   held = mb_legato_held(index) || (tapping && hp[MB_HP_SERIAL] == owner[MB_O_SERIAL] &&
     hp[MB_HP_HELD_COUNT] > 0 && slot[MB_RS_LATCHED] && st[MB_S_COUNT] > 0);
   tapping && slot[MB_RS_PENDING] ? held = 0;
@@ -143,7 +143,7 @@ local(st, hp, owner, length, energy, kind, source_fret, accepted, tapping, held,
     hp[MB_HP_WIDTH] = mb_variation_width(st, mb_clamp(p_finger_contact_width, 0, 30) * 0.001);
     hp[MB_HP_DISPLAY_FROM] = source_fret;
     hp[MB_HP_DISPLAY_UNTIL] = instrument_sample_clock + ceil(MB_HOPO_DISPLAY_MS * 0.001 * srate);
-    hp[MB_HP_AMOUNT] = (velocity / 127)^1.5 * MB_ARTICULATION[MB_A_VALUE] / 127;
+    hp[MB_HP_AMOUNT] = (velocity / 127)^1.5 * mb_art_scope(channel)[MB_A_VALUE] / 127;
     hp[MB_HP_AMOUNT] = mb_variation_strength(st, hp[MB_HP_AMOUNT]);
     hp[MB_HP_BUDGET] = MB_HOPO_WORK_FRACTION * energy * hp[MB_HP_AMOUNT]^2;
     tapping ? (
@@ -182,14 +182,14 @@ local(index, target)
 global(MB_ARTICULATION, MB_A_KIND, MB_A_VALUE, MB_ROLE_HOPO, MB_A_HO_FALLBACKS)
 (
   index = -1;
-  MB_ARTICULATION[MB_A_KIND] == MB_ROLE_HOPO && MB_ARTICULATION[MB_A_VALUE] > 0 ?
+  mb_art_scope(channel)[MB_A_KIND] == MB_ROLE_HOPO && mb_art_scope(channel)[MB_A_VALUE] > 0 ?
     index = mb_hopo_select(channel, note);
   index >= 0 ? (
     target=mb_legato_candidate_fret(index, channel, note);
     target<0 ? target=mb_fretting_quiet_candidate(index, channel, note);
     mb_hopo_apply(record, index, channel, target, velocity);
   ) : (
-    MB_ARTICULATION[MB_A_KIND] == MB_ROLE_HOPO && MB_ARTICULATION[MB_A_VALUE] > 0 ?
+    mb_art_scope(channel)[MB_A_KIND] == MB_ROLE_HOPO && mb_art_scope(channel)[MB_A_VALUE] > 0 ?
       MB_ARTICULATION[MB_A_HO_FALLBACKS] += 1;
     0;
   );
@@ -205,8 +205,9 @@ local(hp, owner, slot, st, i, record, rec, channel, target, played, allowed, res
   owner = mb_owner_ptr(index);
   slot = mb_rack_slot(index);
   st = mb_rack_string(index);
-  ((MB_ARTICULATION[MB_A_KIND] == MB_ROLE_HOPO && MB_ARTICULATION[MB_A_VALUE] > 0) ||
-    mb_art_tap_value()>0) &&
+  channel=owner[MB_O_SOURCE_CHANNEL];
+  ((mb_art_scope(channel)[MB_A_KIND] == MB_ROLE_HOPO && mb_art_scope(channel)[MB_A_VALUE] > 0) ||
+    mb_art_tap_value(channel)>0) &&
   hp[MB_HP_SERIAL] == owner[MB_O_SERIAL] && slot[MB_RS_ENABLED] &&
   !slot[MB_RS_RETIRING] && slot[MB_RS_LATCHED] && st[MB_S_COUNT] > 0 ? (
     mb_hopo_held_prune(index);
@@ -223,8 +224,8 @@ local(hp, owner, slot, st, i, record, rec, channel, target, played, allowed, res
           allowed = allowed && index == mb_string_index(7 - mb_string_selection()) :
           allowed = allowed && target >= live_fret_request;
       );
-      mb_art_tap_value()>0 ? allowed = allowed && !slot[MB_RS_PENDING];
-      allowed && (mb_art_tap_value()>0 || mb_hopo_fits(index, channel, target)) ?
+      mb_art_tap_value(channel)>0 ? allowed = allowed && !slot[MB_RS_PENDING];
+      allowed && (mb_art_tap_value(channel)>0 || mb_hopo_fits(index, channel, target)) ?
         restored = mb_hopo_apply(record, index, channel, target, rec[MB_N_VELOCITY]);
       i -= 1;
     );

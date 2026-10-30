@@ -19,7 +19,8 @@ local(angle, i, b)
   pick_gain_current=pick_gain_request;
   i=0; loop(MB_MAX_STRINGS,
     b=i*MB_STRING_WORDS+MB_PICK;
-    b[MB_PK_VOICE]==MB_TRIM_PICK ? b[MB_PK_GAIN_TARGET]=pick_gain_current;
+    b[MB_PK_VOICE]&MB_TRIM_PICK ? b[MB_PK_GAIN_TARGET]=b[MB_PK_VOICE]&MB_TRIM_TAP ?
+      (1+pick_gain_current)*(1+tap_harm_gain_current)-1 : pick_gain_current;
     i+=1;
   );
   pick_normal_current=1; pick_edge_slope_current=0;

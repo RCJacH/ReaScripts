@@ -115,12 +115,12 @@ global(MB_MAX_STRINGS, MB_O_FRET_ANCHOR, MB_O_SERIAL)
   chosen;
 );
 
-function mb_legato_duration(from_fret, target, velocity)
+function mb_legato_duration(from_fret, target, velocity, channel)
 local(speed, milliseconds)
 global(MB_ARTICULATION, MB_A_VALUE, legato_slide_ms_request, MB_MOTION_INTERVAL_MS,
        MB_LEGATO_MAX_MS, srate)
 (
-  speed = max(1 / 16129, (velocity / 127) * (MB_ARTICULATION[MB_A_VALUE] / 127));
+  speed = max(1 / 16129, (velocity / 127) * (mb_art_scope(channel)[MB_A_VALUE] / 127));
   milliseconds = abs(target - from_fret) * legato_slide_ms_request / speed;
   ceil(mb_clamp(milliseconds, MB_MOTION_INTERVAL_MS, MB_LEGATO_MAX_MS) * 0.001 * srate);
 );
@@ -165,14 +165,14 @@ function mb_legato_try(record, channel, note, velocity)
 local(index, target, group, delta, duration)
 (
   index = -1;
-  MB_ARTICULATION[MB_A_KIND] == MB_ROLE_LEGATO && MB_ARTICULATION[MB_A_VALUE] > 0 && !mb_legato_preferred_open(note) ?
+  mb_art_scope(channel)[MB_A_KIND] == MB_ROLE_LEGATO && mb_art_scope(channel)[MB_A_VALUE] > 0 && !mb_legato_preferred_open(note) ?
     index = mb_legato_select(channel, note);
 
   index >= 0 ? (
     target = mb_legato_candidate_fret(index, channel, note);
     group = mb_legato_requires_group(index, channel, target);
     delta = target - mb_owner_ptr(index)[MB_O_FRET_ANCHOR];
-    duration = mb_legato_duration(mb_motion_base(index), target, velocity);
+    duration = mb_legato_duration(mb_motion_base(index), target, velocity, channel);
     group ? mb_legato_move_peers(index, delta, duration, mb_note_ptr(record)[MB_N_SERIAL]);
     mb_legato_rebind(record, index, channel, target, duration);
     MB_RACK[MB_R_LAST_ROUTE] = index;
@@ -180,7 +180,7 @@ local(index, target, group, delta, duration)
     MB_ARTICULATION[MB_A_DURATION] = duration;
     1;
   ) : (
-    MB_ARTICULATION[MB_A_KIND] == MB_ROLE_LEGATO && MB_ARTICULATION[MB_A_VALUE] > 0 ? MB_ARTICULATION[MB_A_FALLBACKS] += 1;
+    mb_art_scope(channel)[MB_A_KIND] == MB_ROLE_LEGATO && mb_art_scope(channel)[MB_A_VALUE] > 0 ? MB_ARTICULATION[MB_A_FALLBACKS] += 1;
     0;
   );
 );

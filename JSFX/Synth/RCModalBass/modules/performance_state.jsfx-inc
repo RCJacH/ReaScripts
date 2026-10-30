@@ -1,5 +1,34 @@
 // Small audio-thread overlays. No modal coordinates or pickup weights live here.
 @init
+// All/fixed input channels broadcast; Follow mirrors Single/string-channel mode.
+// These getters are used at gesture events, never in a per-mode/audio loop.
+function mb_control_channel_matches(channel, selection)
+global(MB_KS_FOLLOW_CHANNEL)
+( selection==0 || selection==MB_KS_FOLLOW_CHANNEL || selection==channel+1; );
+
+function mb_control_is_local()
+global(channel_mode_current, art_channel_current, MB_KS_FOLLOW_CHANNEL)
+( channel_mode_current>0 && art_channel_current==MB_KS_FOLLOW_CHANNEL; );
+
+function mb_art_scope(channel)
+global(MB_ARTICULATION, MB_ART_SCOPES, MB_ART_SCOPE_WORDS, MB_CHANNELS)
+( mb_control_is_local() && channel>=0 && channel<MB_CHANNELS ?
+    MB_ART_SCOPES+channel*MB_ART_SCOPE_WORDS : MB_ARTICULATION; );
+
+function mb_performance_channel(channel)
+global(MB_PERF_SCOPES, MB_PC_WORDS)
+( MB_PERF_SCOPES+channel*MB_PC_WORDS; );
+
+function mb_performance_style_current(channel)
+global(MB_PC_STYLE, finger_style_current, MB_CHANNELS)
+( mb_control_is_local() && channel>=0 && channel<MB_CHANNELS ?
+    mb_performance_channel(channel)[MB_PC_STYLE] : finger_style_current; );
+
+function mb_performance_stroke_current(channel)
+global(MB_PC_STROKE, stroke_override_current, MB_CHANNELS)
+( mb_control_is_local() && channel>=0 && channel<MB_CHANNELS ?
+    mb_performance_channel(channel)[MB_PC_STROKE] : stroke_override_current; );
+
 function mb_performance_string(st)
 global(MB_PERF_STRINGS, MB_PS_WORDS, MB_STRING_WORDS)
 ( MB_PERF_STRINGS+floor(st/MB_STRING_WORDS)*MB_PS_WORDS; );

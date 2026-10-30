@@ -172,11 +172,11 @@ global(MB_MAX_STRINGS, MB_R_PENDING, MB_RACK, MB_RS_BUSY, MB_RS_LATCHED, MB_RS_P
 // Auto starts a phrase with Slap on any string. Each accepted Slap
 // moves the boundary: that string and its immediate higher neighbor are Slap;
 // higher strings are Pop. Queries never commit history or alter ringing notes.
-function mb_rack_excitation_style(index)
+function mb_rack_excitation_style(index, channel)
 local(style)
 global(MB_STYLE_SLAP_POP_AUTO, MB_STYLE_SLAP, MB_STYLE_POP, slap_pop_anchor)
 (
-  style=mb_fingers_style();
+  style=mb_fingers_style(channel);
   style==MB_STYLE_SLAP_POP_AUTO ? (
     slap_pop_anchor>0 && !mb_fingers_phrase_start() ? (
       style=mb_string_number(index)>=slap_pop_anchor-1 ? MB_STYLE_SLAP : MB_STYLE_POP;
@@ -203,11 +203,11 @@ local(st, slot, cfg, pop, slap, pick, style)
     mb_tuned_configuration(cfg, slot[MB_RS_REFERENCE], slot[MB_RS_OPEN], slot[MB_RS_FINE], fret, bend);
     mb_string_setup_configuration(cfg, index);
     mb_sustain_configuration(cfg, index);
-    style=pluck ? mb_rack_excitation_style(index) : -1;
+    style=pluck ? mb_rack_excitation_style(index, channel) : -1;
     pop=style==MB_STYLE_POP;
     slap=style==MB_STYLE_SLAP;
     pick=style>=MB_STYLE_PICK_AUTO && style<=MB_STYLE_PICK_DOWN;
-    pluck ? mb_fingers_prepare(cfg);
+    pluck ? mb_fingers_prepare(cfg, channel);
     slap || pop ? mb_slap_pop_position(cfg, style);
     pop ? mb_pop_configuration(cfg);
     slap ? mb_slap_configuration(st, cfg);
@@ -222,7 +222,7 @@ local(st, slot, cfg, pop, slap, pick, style)
         pick ? mb_engine_pick(st, velocity, note, channel) :
         pop ? mb_engine_pop(st, velocity, note, channel) : mb_engine_excite(st, velocity, note, channel);
     ) : mb_engine_seed_tap(st, velocity, note, channel);
-    mb_fingers_remember(st, index, pluck);
+    mb_fingers_remember(st, index, pluck, channel);
     pluck ? mb_slap_pop_remember(index, style);
     pop ? mb_pop_remember(index);
     slap ? mb_slap_remember(index);
@@ -351,7 +351,7 @@ local(i, j, st, slot, l, chosen, cursor, sum, signal, pairs, active, remaining)
         slot[MB_RS_BUSY]=(st+MB_FRICTION)[MB_FR_RUN] || (st+MB_FRICTION)[MB_FR_TAIL]>0 ||
           (st+MB_PICK_FRICTION)[MB_PF_ON];
         // A momentarily held HO/PO can start a new finger note after decay.
-        !(fretting_amount_current>0 && MB_ARTICULATION[MB_A_KIND]==MB_ROLE_HOPO &&
+        !(fretting_amount_current>0 && mb_art_scope(mb_owner_ptr(i)[MB_O_SOURCE_CHANNEL])[MB_A_KIND]==MB_ROLE_HOPO &&
           mb_owner_ptr(i)[MB_O_KEY_DOWN] && slot[MB_RS_LATCHED]) ? mb_notes_quiet(i);
       );
     );

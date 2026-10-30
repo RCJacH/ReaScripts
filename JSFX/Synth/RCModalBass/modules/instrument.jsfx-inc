@@ -83,6 +83,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s1_rh_position=view[MB_FV_POSITION];
         pub_s1_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
         pub_s1_harmonic=st[MB_S_HARMONIC];
+        pub_s1_harmonic_node=(st+MB_HARMONIC)[MB_HT_NODE];
         pub_s1_pending=slot[MB_RS_PENDING];
         pub_s1_ho_from=hp[MB_HP_DISPLAY_FROM];
         pub_s1_ho_to=hp[MB_HP_TARGET];
@@ -108,6 +109,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s2_rh_position=view[MB_FV_POSITION];
         pub_s2_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
         pub_s2_harmonic=st[MB_S_HARMONIC];
+        pub_s2_harmonic_node=(st+MB_HARMONIC)[MB_HT_NODE];
         pub_s2_pending=slot[MB_RS_PENDING];
         pub_s2_ho_from=hp[MB_HP_DISPLAY_FROM];
         pub_s2_ho_to=hp[MB_HP_TARGET];
@@ -133,6 +135,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s3_rh_position=view[MB_FV_POSITION];
         pub_s3_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
         pub_s3_harmonic=st[MB_S_HARMONIC];
+        pub_s3_harmonic_node=(st+MB_HARMONIC)[MB_HT_NODE];
         pub_s3_pending=slot[MB_RS_PENDING];
         pub_s3_ho_from=hp[MB_HP_DISPLAY_FROM];
         pub_s3_ho_to=hp[MB_HP_TARGET];
@@ -158,6 +161,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s4_rh_position=view[MB_FV_POSITION];
         pub_s4_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
         pub_s4_harmonic=st[MB_S_HARMONIC];
+        pub_s4_harmonic_node=(st+MB_HARMONIC)[MB_HT_NODE];
         pub_s4_pending=slot[MB_RS_PENDING];
         pub_s4_ho_from=hp[MB_HP_DISPLAY_FROM];
         pub_s4_ho_to=hp[MB_HP_TARGET];
@@ -183,6 +187,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s5_rh_position=view[MB_FV_POSITION];
         pub_s5_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
         pub_s5_harmonic=st[MB_S_HARMONIC];
+        pub_s5_harmonic_node=(st+MB_HARMONIC)[MB_HT_NODE];
         pub_s5_pending=slot[MB_RS_PENDING];
         pub_s5_ho_from=hp[MB_HP_DISPLAY_FROM];
         pub_s5_ho_to=hp[MB_HP_TARGET];
@@ -208,6 +213,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s6_rh_position=view[MB_FV_POSITION];
         pub_s6_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
         pub_s6_harmonic=st[MB_S_HARMONIC];
+        pub_s6_harmonic_node=(st+MB_HARMONIC)[MB_HT_NODE];
         pub_s6_pending=slot[MB_RS_PENDING];
         pub_s6_ho_from=hp[MB_HP_DISPLAY_FROM];
         pub_s6_ho_to=hp[MB_HP_TARGET];
@@ -248,6 +254,7 @@ function mb_instrument_init()
   memory_fault=__memtop()<MB_MEMORY_WORDS;
   mb_tuning_request();
   !memory_fault ? (
+    mb_harmonic_init();
     mb_pop_contact_init();
     mb_circuit_init();
     mb_notes_reset(0);

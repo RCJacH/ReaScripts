@@ -65,27 +65,28 @@ global(slap_pop_anchor, MB_STYLE_SLAP, MB_STYLE_POP)
 
 // Resolve a held stroke within the selected family, without changing that
 // selection. Stroke 1/2 selects Up/Down in the Pick family.
-function mb_fingers_style()
-local(style)
-global(finger_style_current, stroke_override_current, MB_STYLE_FINGER_MIDDLE,
+function mb_fingers_style(channel)
+local(style, stroke)
+global(MB_STYLE_FINGER_MIDDLE,
        MB_STYLE_PICK_AUTO, MB_STYLE_PICK_DOWN, MB_STYLE_SLAP_POP_AUTO, MB_STYLE_POP)
 (
-  style=finger_style_current;
-  stroke_override_current>0 ? (
-    style=style<=MB_STYLE_FINGER_MIDDLE ? stroke_override_current :
-      style<=MB_STYLE_PICK_DOWN ? MB_STYLE_PICK_AUTO+stroke_override_current :
-      style<=MB_STYLE_POP ? MB_STYLE_SLAP_POP_AUTO+stroke_override_current : style;
+  style=mb_performance_style_current(channel);
+  stroke=mb_performance_stroke_current(channel);
+  stroke>0 ? (
+    style=style<=MB_STYLE_FINGER_MIDDLE ? stroke :
+      style<=MB_STYLE_PICK_DOWN ? MB_STYLE_PICK_AUTO+stroke :
+      style<=MB_STYLE_POP ? MB_STYLE_SLAP_POP_AUTO+stroke : style;
   );
   style;
 );
 
 // Called after rack acceptance, before geometry capture. No per-sample work.
 // RHPos is the midpoint. Down is bridgeward, Up nutward; history is global.
-function mb_fingers_prepare(cfg)
+function mb_fingers_prepare(cfg, channel)
 local(restart, style)
 (
   restart=mb_fingers_trigger();
-  style=mb_fingers_style();
+  style=mb_fingers_style(channel);
   style<=2 ? (
     style==0 && restart ? finger_next=MB_FINGER_MIDDLE;
     finger_last=style==0 ? finger_next : style-1;
@@ -114,10 +115,10 @@ global(MB_C_PLUCK_POSITION, MB_STYLE_SLAP, MB_STYLE_POP, slap_pop_spacing_curren
 // Capture RH contact shape at the stroke onset. These are gentle touches of
 // the selected tool, sharing the bounded pulse/damping solver, not new plucks.
 // Width/spacing match the existing family; softness/time shape the force itself.
-function mb_landing_profile(p, stroke, velocity, length)
+function mb_landing_profile(p, stroke, velocity, length, channel)
 local(style, position, width, softness, milliseconds, marker, firmness)
 (
-  style=finger_style_current;
+  style=mb_performance_style_current(channel);
   position=mb_picking_distance(p_picking_position,p_max_excitation_distance_from_bridge);
   width=mb_clamp(p_finger_contact_width,1,30);
   softness=0.0006+mb_clamp(p_finger_softness,0,3)*0.001;
@@ -152,12 +153,13 @@ global(MB_FINGER_VIEWS, MB_FINGER_VIEW_WORDS)
 
 // Remember the actual guarded center relative to the captured open scale.
 // Positive values identify the actual Finger/Slap/Pop/Pick stroke, 0=no RH gesture.
-function mb_fingers_remember(st, index, pluck)
-local(view, g, cfg)
+function mb_fingers_remember(st, index, pluck, channel)
+local(view, g, cfg, style)
 (
   view=mb_fingers_view(index); g=st+MB_GEOMETRY; cfg=st+MB_CONFIG;
-  view[MB_FV_FINGER]=pluck ? (finger_style_current<=2 ? finger_last+1 : -1) : 0;
-  pluck && finger_style_current>=MB_STYLE_PICK_AUTO && finger_style_current<=MB_STYLE_PICK_DOWN ?
+  style=mb_performance_style_current(channel);
+  view[MB_FV_FINGER]=pluck ? (style<=2 ? finger_last+1 : -1) : 0;
+  pluck && style>=MB_STYLE_PICK_AUTO && style<=MB_STYLE_PICK_DOWN ?
     view[MB_FV_FINGER]=pick_last ? MB_RH_PICK_UP : MB_RH_PICK_DOWN;
   view[MB_FV_POSITION]=pluck ? g[MB_G_P]*g[MB_G_LENGTH]/(cfg[MB_C_SCALE]*0.001) : 0;
 );

@@ -221,3 +221,88 @@ local(p, b, bank, base, count, length, fraction, busy, changed)
     bank+=1;
   );
 );
+
+// ---- finite harmonic touch ----
+// Exact passive point-damper half step. q is fixed; v <- v-phi*kick.
+// Shapes are fixed in span coordinates; update phi/omega only on coefficient edits.
+function mb_harmonic_prepare(st, base, count)
+local(b, i, ptr, phi, projection, rebuild, last, edge, table, partial)
+(
+  b=st+MB_HARMONIC; last=base+(count-1)*MB_MODE_STRIDE;
+  partial=st[MB_S_HARMONIC]; table=MB_HARMONIC_SHAPES+(partial-2)*MB_HT_SHAPE_STRIDE;
+  rebuild=b[MB_HT_COUNT]!=count || abs(b[MB_HT_OMEGA]-base[MB_M_OMEGA])>0.000000000001 ||
+    abs(b[MB_HT_LAST_OMEGA]-last[MB_M_OMEGA])>0.000000000001;
+  rebuild ? (b[MB_HT_COUNT]=count; b[MB_HT_NORM]=0;
+    b[MB_HT_RATE]=8*st[MB_S_F1];
+    b[MB_HT_OMEGA]=base[MB_M_OMEGA]; b[MB_HT_LAST_OMEGA]=last[MB_M_OMEGA];);
+  projection=i=0; ptr=base;
+  loop(count,
+    phi=rebuild ? table[((i+1)*b[MB_HT_NODE])%(2*partial)] : b[MB_HT_PHI+i];
+    projection+=phi*(-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I]);
+    rebuild ? (b[MB_HT_PHI+i]=phi; b[MB_HT_WEIGHT+i]=phi/ptr[MB_M_OMEGA]; b[MB_HT_NORM]+=phi*phi;);
+    ptr+=MB_MODE_STRIDE; i+=1;
+  );
+  edge=max(0,min(1,min((b[MB_HT_AGE]+0.5)/max(1,0.0005*srate),
+    (b[MB_HT_TOTAL]-b[MB_HT_AGE]-0.5)/max(1,0.2*b[MB_HT_TOTAL]))));
+  edge=edge*edge*(3-2*edge);
+  b[MB_HT_AMOUNT]=b[MB_HT_NORM]>0 ?
+    (1-exp(-edge*b[MB_HT_RATE]*0.5/srate*b[MB_HT_NORM]))/b[MB_HT_NORM] : 0;
+  b[MB_HT_KICK]=b[MB_HT_AMOUNT]*projection;
+);
+
+function mb_harmonic_apply(st, base, count, kick)
+local(b, i, ptr)
+global(MB_HARMONIC, MB_HT_PHI, MB_HT_WEIGHT, MB_M_I, MB_MODE_STRIDE)
+(
+  b=st+MB_HARMONIC; i=0; ptr=base;
+  loop(count,
+    b[MB_HT_PHI+i]!==0 ? ptr[MB_M_I]+=b[MB_HT_WEIGHT+i]*kick;
+    ptr+=MB_MODE_STRIDE; i+=1;
+  );
+);
+
+// Fuse pre-touch, pickup observation, free rotation and next contact projection.
+// No per-mode branch is added to the ordinary renderers; the path ends at lift.
+function mb_harmonic_render(st, base, weights, count)
+local(b, i, ptr, q, im, v, nr, ni, rr, ri, sum, projection, kick, damper,
+      a, c, sum1, sum2, h)
+(
+  b=st+MB_HARMONIC; kick=b[MB_HT_KICK]; damper=st[MB_S_MUTE];
+  circuit_observe_current ? (a=mb_circuit_pickup_ptr(st,weights,0);c=mb_circuit_pickup_ptr(st,weights,1););
+  sum=sum1=sum2=projection=i=0; ptr=base;
+  loop(count,
+    q=ptr[MB_M_R]; im=ptr[MB_M_I];
+    b[MB_HT_PHI+i]!==0 ? im+=b[MB_HT_WEIGHT+i]*kick;
+    v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im; sum+=v*weights[i];
+    circuit_observe_current ? (sum1+=v*a[i]; sum2+=v*c[i];);
+    rr=ptr[MB_M_ROT_R]; ri=ptr[MB_M_ROT_I];
+    nr=(q*rr-im*ri)*damper; ni=(q*ri+im*rr)*damper;
+    ptr[MB_M_R]=nr; ptr[MB_M_I]=ni;
+    projection+=b[MB_HT_PHI+i]*(-ptr[MB_M_ALPHA]*nr-ptr[MB_M_OMEGA]*ni);
+    ptr+=MB_MODE_STRIDE; i+=1;
+  );
+  b[MB_HT_PROJECTION]=projection;
+  circuit_observe_current ? (
+    h=st+MB_CIR_PICKUP;
+    h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT1 : MB_CP_B_OUTPUT1]=sum1;
+    h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT2 : MB_CP_B_OUTPUT2]=sum2;
+  );
+  sum;
+);
+
+function mb_harmonic_finish(st, base, count, cached)
+local(b, i, ptr, projection)
+(
+  b=st+MB_HARMONIC; projection=b[MB_HT_PROJECTION];
+  !cached ? (
+    projection=i=0; ptr=base;
+    loop(count,
+      projection+=b[MB_HT_PHI+i]*(-ptr[MB_M_ALPHA]*ptr[MB_M_R]-ptr[MB_M_OMEGA]*ptr[MB_M_I]);
+      ptr+=MB_MODE_STRIDE; i+=1;
+    );
+  );
+  mb_harmonic_apply(st,base,count,b[MB_HT_AMOUNT]*projection);
+  b[MB_HT_AGE]+=1;
+  b[MB_HT_AGE]>=b[MB_HT_TOTAL] ? b[MB_HT_ON]=0;
+  mb_contact_invalidate(st);
+);

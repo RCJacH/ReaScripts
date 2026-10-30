@@ -1,4 +1,4 @@
-// Memory ABI v32: coupled fretless contact uses spare per-string RAM.
+// Memory ABI v35: appended event-only channel articulation/style selections.
 @init
 // Imported @init contributes functions, not executable initialization.
 // Call explicitly from the instrument's @init adapter.
@@ -15,7 +15,7 @@ function mb_layout_init()
   MB_S_VELOCITY=9; MB_S_TAIL_SAMPLES=10;
   MB_S_LENGTH_A=11; MB_S_LENGTH_B=12;
   MB_S_F1=13;
-  MB_S_HARMONIC=14; // 0 = ordinary; 2..8 = captured ideal-touch partial.
+  MB_S_HARMONIC=14; // 0 = ordinary; 2..8 = captured touch partial.
   MB_HEADER_WORDS=16;
   // MB_C_* logical fields; slot 0 stores construction relative to Roundwound.
   MB_CONFIG=MB_HEADER_WORDS; MB_CONFIG_WORDS=29;
@@ -415,7 +415,7 @@ function mb_layout_init()
   MB_PK_ANGLE=26; MB_PK_ESCAPE_START=27; MB_PK_EDGE_SLOPE=28;
   MB_PK_VOICE=29; MB_PK_GAIN=30; MB_PK_GAIN_TARGET=31;
   // Shared post-pickup trim; retain the original Pick gain addresses.
-  MB_TRIM_PICK=1; MB_TRIM_TAP=2; // 0 = ordinary/unity target.
+  MB_TRIM_PICK=1; MB_TRIM_TAP=2; // Output flags: Pick, Tap/Harmonic; 0 = unity.
   MB_PK_PHI=MB_PK_HEADER; MB_PK_Q=MB_PK_PHI+MB_MAX_MODES;
   MB_PK_I=MB_PK_Q+MB_MAX_MODES; MB_PICK_WORDS=MB_PK_I+MB_MAX_MODES;
   MB_PALM=MB_PICK+MB_PICK_WORDS; MB_PM_HEADER=8;
@@ -478,6 +478,14 @@ function mb_layout_init()
   MB_BC_G0=40; MB_BC_H0=41; MB_BC_G1=42; MB_BC_H1=43; MB_BC_G2=44; MB_BC_H2=45;
   MB_BC_DLOSS=46; MB_BC_GRAD_SCRATCH=64;
   MB_BC_WORDS=MB_BC_HEADER+3*MB_BP_WORDS;
+  MB_HARMONIC=MB_BOARD_COUPLED+2*MB_BC_WORDS; MB_HT_HEADER=16;
+  MB_HT_ON=0; MB_HT_BANK=1; MB_HT_COUNT=2; MB_HT_AGE=3; MB_HT_TOTAL=4;
+  MB_HT_NORM=5; MB_HT_RATE=6; MB_HT_AMOUNT=7; MB_HT_KICK=8;
+  MB_HT_PROJECTION=9; MB_HT_OMEGA=10; MB_HT_LAST_OMEGA=11;
+  MB_HT_REQUEST=12; MB_HT_RELEASE=13; MB_HT_NODE=14; // numerator, measured from bridge
+  MB_HT_PHI=MB_HT_HEADER; MB_HT_WEIGHT=MB_HT_PHI+MB_MAX_MODES;
+  MB_HARMONIC_WORDS=MB_HT_WEIGHT+MB_MAX_MODES;
+  MB_HARMONIC_TOUCH_CYCLES=6; MB_HARMONIC_RELEASE_RATIO=0.25;
   MB_PN_RNG=0; MB_PN_POS=1; MB_PN_TARGET=2; MB_PN_LEFT=3;
   MB_PN_LAST_TIME=4; MB_PN_READY=5; MB_PN_CHANNEL=6;
   MB_PN_V=7; MB_PN_TARGET_V=8; MB_PN_LEVEL=9; MB_PN_TARGET_LEVEL=10;
@@ -615,6 +623,16 @@ function mb_layout_init()
   MB_LD_WORDS=MB_LD_HEADER+2*MB_LB_WORDS;
   MB_LANDING_END=MB_LANDING_STRINGS+MB_MAX_STRINGS*MB_LD_WORDS;
   MB_MEMORY_WORDS=MB_LANDING_END;
+  // Periodic node shapes: 70 sine evaluations at init, none during a gesture.
+  MB_HT_SHAPE_STRIDE=32; MB_HT_NODE_FRETS=16; MB_HT_SHAPE_WORDS=7*MB_HT_SHAPE_STRIDE;
+  MB_HARMONIC_SHAPES=MB_MEMORY_WORDS; MB_MEMORY_WORDS+=MB_HT_SHAPE_WORDS;
+  // Event-only channel selections. Existing physical/string addresses stay fixed.
+  MB_KS_FOLLOW_CHANNEL=17;
+  MB_ART_SCOPES=MB_MEMORY_WORDS; MB_ART_SCOPE_WORDS=4;
+  MB_PERF_SCOPES=MB_ART_SCOPES+MB_CHANNELS*MB_ART_SCOPE_WORDS; MB_PC_WORDS=8;
+  MB_PC_BASE_STYLE=0; MB_PC_BASE_STAMP=1; MB_PC_STYLE=2; MB_PC_STAMP=3;
+  MB_PC_STROKE=4; MB_PC_STROKE_STAMP=5; MB_PC_CHORD=6; MB_PC_CHORD_BASE=7;
+  MB_MEMORY_WORDS=MB_PERF_SCOPES+MB_CHANNELS*MB_PC_WORDS;
   MB_PF_LAND_1=12; MB_PF_LAND_2=13; // Hold kinds, not extra mapping slots.
 
   MB_FINGER_INDEX=0; MB_FINGER_MIDDLE=1; MB_FINGER_RESET_MS=2000;

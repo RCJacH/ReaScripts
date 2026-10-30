@@ -147,14 +147,22 @@ local(b, l, flag, masks, targets, damping, damper, mode_damper, coil, simple,
 );
 
 function mb_render_bank(st, base, weights, count)
-local(contact, flag, response, asleep, b, pick)
+local(contact, flag, response, asleep, b, pick, harmonic, fast_touch, signal)
 (
+  harmonic=(st+MB_HARMONIC)[MB_HT_ON] && base==st[MB_S_ACTIVE] &&
+    base==(st+MB_HARMONIC)[MB_HT_BANK] && count>0;
+  harmonic ? (mb_contact_lazy_flush(st,base); mb_harmonic_prepare(st,base,count););
   pick=(st+MB_PICK)[MB_PK_LEFT]>0 ? mb_pick_active(st,base) : 0;
   b=mb_contact_ptr(st,base);
   count<=0 && mb_contact_ptr(st, base)[MB_FP_RESPONSE_ACTIVE] ? mb_contact_response_clear(st, base);
   contact=mb_contact_enabled(st, base, count);
   response=mb_contact_ptr(st, base)[MB_FP_RESPONSE_ACTIVE];
   flag=base==st+MB_BANK_A ? (st+MB_LIVE)[MB_L_FLAG_A] : (st+MB_LIVE)[MB_L_FLAG_B];
+  fast_touch=harmonic && !contact && !response && !pick && !flag && !(st+MB_PICKUP_NL)[MB_NL_ON];
+  harmonic && !fast_touch ? (
+    mb_harmonic_apply(st,base,count,(st+MB_HARMONIC)[MB_HT_KICK]);
+    mb_contact_invalidate(st);
+  );
   asleep=contact && !pick ? mb_contact_sleep(st,base,count) : 0;
   asleep ? contact=0;
   !contact && !asleep && base==st[MB_S_ACTIVE] ? mb_contact_idle(st, base);
@@ -164,6 +172,7 @@ local(contact, flag, response, asleep, b, pick)
     (!contact || (b[MB_FP_READY] && (st+MB_SLAP)[MB_SL_LEFT]<=0)) ? (
     mb_contact_lazy_tick(st,base,count,contact && !(st+MB_CONTACT)[MB_K_SURFACE]); response=0;
   ) : mb_contact_lazy_flush(st,base);
+  signal=fast_touch ? mb_harmonic_render(st,base,weights,count) :
   contact && !pick && (!flag || ((st+MB_CONTACT)[MB_K_SURFACE] && !response)) &&
     (!(circuit_observe_current) || (st+MB_CONTACT)[MB_K_SURFACE]) &&
     !(st+MB_PICKUP_NL)[MB_NL_ON] ?
@@ -173,4 +182,6 @@ local(contact, flag, response, asleep, b, pick)
       mb_contact_render_fast(st, base, weights, count)) :
   pick || (st+MB_PICKUP_NL)[MB_NL_ON] || contact || response ? mb_render_general(st, base, weights, count) :
     mb_string_render_bank(st, base, weights, count);
+  harmonic ? mb_harmonic_finish(st,base,count,fast_touch);
+  signal;
 );

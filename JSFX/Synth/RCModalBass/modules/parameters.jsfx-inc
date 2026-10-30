@@ -35,7 +35,7 @@ function mb_parameters_request()
   hand_span_request=mb_clamp(floor(p_hand_span), 1, 12);
   hand_open_request=mb_clamp(floor(p_prefer_open_strings), MB_OPEN_FRETTED_FIRST, MB_OPEN_PREFER_ALL);
   hand_fretless_request=p_contact_surface>=0.5;
-  art_channel_request=mb_clamp(floor(p_keyswitch_channel), 0, 16);
+  art_channel_request=mb_clamp(floor(p_keyswitch_channel), 0, MB_KS_FOLLOW_CHANNEL);
   art_mapping_request=mb_midi_mapping_index(p_legato_slide_controller, MB_NOTE_CC_MAX);
   hopo_mapping_request=mb_midi_mapping_index(p_ho_po_controller, MB_NOTE_CC_MAX);
   ghost_mapping_request=mb_midi_mapping_index(p_ghost_controller, MB_NOTE_CC_MAX);
@@ -102,7 +102,7 @@ local(i, st, action_before, index, slot, surface, target, placement_changed, fre
   vibration_pitch_rise_current=vibration_pitch_rise_request;
   ghost_damping_current=ghost_damping_request;
   ghost_decay_ms_current=ghost_decay_ms_request;
-  tap_gain_current=tap_gain_request;
+  tap_harm_gain_current=tap_harm_gain_request;
   !memory_fault ? (
     mb_variation_apply();
     string_selection_current=string_selection_request;

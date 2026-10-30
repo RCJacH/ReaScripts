@@ -135,10 +135,10 @@ global(MB_LET_RING_CHANNELS, MB_CHANNELS, MB_LR_WORDS, let_ring_shared)
 
 function mb_ring_request()
 global(p_let_ring_controller, p_keyswitch_channel, let_ring_mapping_request, let_ring_channel_request,
-       MB_NOTE_CC_MAX)
+       MB_NOTE_CC_MAX, MB_KS_FOLLOW_CHANNEL)
 (
   let_ring_mapping_request=mb_midi_mapping_index(p_let_ring_controller, MB_NOTE_CC_MAX);
-  let_ring_channel_request=mb_clamp(floor(p_keyswitch_channel), 0, 16);
+  let_ring_channel_request=mb_clamp(floor(p_keyswitch_channel), 0, MB_KS_FOLLOW_CHANNEL);
 );
 
 function mb_ring_init()
@@ -175,7 +175,7 @@ global(p_let_ring_controller)
 function mb_ring_matches(channel, note)
 global(let_ring_mapping_current, let_ring_channel_current)
 (
-  (let_ring_channel_current==0 || let_ring_channel_current==channel+1) &&
+  mb_control_channel_matches(channel, let_ring_channel_current) &&
     let_ring_mapping_current<128 && note==let_ring_mapping_current;
 );
 
@@ -202,7 +202,7 @@ global(MB_LR_TOKEN, let_ring_channel_current, let_ring_mapping_current)
   controller==120 || controller==121 ||
     (controller==123 && mb_ring_channel(channel)[MB_LR_TOKEN]>0) ? mb_ring_set(channel, 0, 0);
   mb_midi_cc_supported(controller) &&
-    (let_ring_channel_current==0 || let_ring_channel_current==channel+1) &&
+    mb_control_channel_matches(channel, let_ring_channel_current) &&
     let_ring_mapping_current>=128 && controller==let_ring_mapping_current-127 ?
     mb_ring_set(channel, -1, value>=64);
 );

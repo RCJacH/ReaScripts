@@ -85,7 +85,7 @@ global(MB_O_KEY_DOWN, MB_O_STATE, MB_VOICE_RINGING, MB_O_SOURCE_CHANNEL)
 // Outputs are audio-only scratch scalars. Open strings never enlarge hand span.
 // At most six owners; source-key identity and release tails are not changed.
 function mb_hand_measure(excluded_index, candidate_fret)
-local(i, slot, fret, bit)
+local(i, slot, st, fret, bit)
 (
   hand_low=25;
   hand_high=-1;
@@ -95,7 +95,8 @@ local(i, slot, fret, bit)
   loop(MB_MAX_STRINGS,
     slot=mb_rack_slot(i);
     i!=excluded_index && slot[MB_RS_ENABLED] && mb_hand_occupied(i) ? (
-      fret=mb_hand_fret((mb_rack_string(i)+MB_LIVE)[MB_L_FRET_TARGET]);
+      st=mb_rack_string(i);
+      fret=mb_hand_fret(mb_harmonic_touch_fret((st+MB_LIVE)[MB_L_FRET_TARGET],st[MB_S_HARMONIC],(st+MB_HARMONIC)[MB_HT_NODE]));
       fret>0.000000001 ? (
         hand_low=min(hand_low, fret);
         hand_high=max(hand_high, fret);
@@ -125,7 +126,8 @@ local(i, slot, fret, bit)
 function mb_hand_release_unreachable(index, target_fret)
 local(start, end, i, st, fret)
 global(chord_mode_current, channel_mode_current, MB_RACK, MB_R_HAND_START,
-       hand_span_current, MB_MAX_STRINGS, MB_RS_ENABLED, MB_LIVE, MB_L_FRET_TARGET, p_mute_t60, fret_count_current)
+       hand_span_current, MB_MAX_STRINGS, MB_RS_ENABLED, MB_LIVE, MB_L_FRET_TARGET, p_mute_t60, fret_count_current,
+       MB_S_HARMONIC, MB_HARMONIC, MB_HT_NODE)
 (
   target_fret=mb_hand_fret(target_fret);
   !chord_mode_current && channel_mode_current==0 && mb_string_selection()==0 &&
@@ -134,7 +136,8 @@ global(chord_mode_current, channel_mode_current, MB_RACK, MB_R_HAND_START,
     end=min(fret_count_current, start+hand_span_current); i=0;
     loop(MB_MAX_STRINGS,
       i!=index && mb_rack_slot(i)[MB_RS_ENABLED] && mb_hand_occupied(i) ? (
-        st=mb_rack_string(i); fret=mb_hand_fret((st+MB_LIVE)[MB_L_FRET_TARGET]);
+        st=mb_rack_string(i);
+        fret=mb_hand_fret(mb_harmonic_touch_fret((st+MB_LIVE)[MB_L_FRET_TARGET],st[MB_S_HARMONIC],(st+MB_HARMONIC)[MB_HT_NODE]));
         fret>0.000000001 && (fret<start-0.000000001 || fret>end+0.000000001) ? (
           mb_notes_retire_string(i, 1);
           mb_friction_stop(st);

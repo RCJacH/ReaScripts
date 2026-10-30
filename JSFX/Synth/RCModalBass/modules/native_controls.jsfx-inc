@@ -71,7 +71,7 @@ local(page, subpage_mapping, subpage_pickups, subpage_instrument, subpage_noise,
     slider_show(p_pick_level,page==2);
     slider_show(p_slap_level,page==2);
     slider_show(p_pop_level,page==2);
-    slider_show(p_tap_level,page==2);
+    slider_show(p_tap_harm_level,page==2);
     slider_show(p_instrument_subpage,page==3);
     slider_show(p_contact_surface,page==3 && subpage_instrument==0);
     slider_show(p_string_count,page==3 && subpage_instrument==0);

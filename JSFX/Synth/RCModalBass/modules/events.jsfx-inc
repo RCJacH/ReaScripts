@@ -95,7 +95,8 @@ local(ep, status, channel, note, velocity, released, role)
         role>=MB_ROLE_PERF_FIRST ? mb_performance_note_on(channel,note,velocity,role) :
         role==MB_ROLE_LET_RING ? mb_ring_note_on(channel, note, velocity) :
         role ? mb_art_note_on(channel, note, velocity, role) :
-          (mb_performance_playing(); mb_routing_note_on(channel, note, velocity););
+          (mb_performance_playing();
+           mb_routing_note_on(channel, note, velocity) ? mb_performance_display(channel););
       ) : (
         status==$x80 || (status==$x90 && velocity==0) ? (
           released=mb_notes_off(channel, note, !mb_ring_active(channel));

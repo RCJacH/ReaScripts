@@ -8,7 +8,7 @@ function mb_passthrough_keyswitch(channel, note)
 local(found, k, mapping)
 (
   found=0;
-  p_keyswitch_channel==0 || floor(p_keyswitch_channel)==channel+1 ? (
+  mb_control_channel_matches(channel, floor(p_keyswitch_channel)) ? (
     found=(p_legato_slide_controller<128 && note==floor(p_legato_slide_controller)) ||
       (p_ho_po_controller<128 && note==floor(p_ho_po_controller)) ||
       (p_ghost_controller<128 && note==floor(p_ghost_controller)) ||

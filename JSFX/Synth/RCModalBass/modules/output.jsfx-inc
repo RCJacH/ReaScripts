@@ -4,16 +4,17 @@
 // ---- output ----
 // Gesture trim before electronics; per-string calibration before rack sum/meters.
 // Requests are scalars. Audio-owned gain offsets keep neutral reserved RAM zero.
-// Pick/Tap share one output ramp. New ordinary gestures restore unity without
+// Pick/Tap/Harmonic share one output ramp. New ordinary gestures restore unity without
 // scaling modal vibration; a style switch alone leaves ringing strings alone.
 function mb_gesture_voice_begin(st, kind)
 local(b)
 global(MB_PICK, MB_PK_VOICE, MB_PK_GAIN, MB_PK_GAIN_TARGET, MB_S_PREVIOUS_COUNT,
-       MB_S_PREVIOUS_LEFT, MB_TRIM_PICK, MB_TRIM_TAP, pick_gain_current, tap_gain_current)
+       MB_S_PREVIOUS_LEFT, MB_TRIM_PICK, MB_TRIM_TAP, pick_gain_current, tap_harm_gain_current)
 (
   b=st+MB_PICK;
   b[MB_PK_VOICE]=kind;
-  b[MB_PK_GAIN_TARGET]=kind==MB_TRIM_PICK ? pick_gain_current : kind==MB_TRIM_TAP ? tap_gain_current : 0;
+  b[MB_PK_GAIN_TARGET]=kind&MB_TRIM_PICK ? pick_gain_current : 0;
+  kind&MB_TRIM_TAP ? b[MB_PK_GAIN_TARGET]=(1+b[MB_PK_GAIN_TARGET])*(1+tap_harm_gain_current)-1;
   st[MB_S_PREVIOUS_COUNT]<=0 && st[MB_S_PREVIOUS_LEFT]<=0 ? b[MB_PK_GAIN]=b[MB_PK_GAIN_TARGET];
 );
 
@@ -34,7 +35,7 @@ global(MB_PICK, MB_PK_GAIN, MB_PK_GAIN_TARGET, MB_PICK_GAIN_SMOOTH,
 
 function mb_output_request()
 (
-  tap_gain_request=10^(mb_clamp(p_tap_level, -24, 12)/20)-1;
+  tap_harm_gain_request=10^(mb_clamp(p_tap_harm_level, -24, 12)/20)-1;
   trim6_request=10^(mb_clamp(p_string_6_output_trim, -24, 24)/20)-1;
   trim5_request=10^(mb_clamp(p_string_5_output_trim, -24, 24)/20)-1;
   trim4_request=10^(mb_clamp(p_string_4_output_trim, -24, 24)/20)-1;
@@ -54,14 +55,16 @@ global(trim1_request, trim2_request, trim3_request, trim4_request, trim5_request
 function mb_output_configure(st, index, immediate)
 local(out, target, voice)
 global(MB_OUTPUT, MB_OUT_CURRENT, MB_OUT_TARGET, output_smooth, srate,
-       MB_PICK, MB_PK_VOICE, MB_PK_GAIN_TARGET, MB_TRIM_TAP, tap_gain_current)
+       MB_PICK, MB_PK_VOICE, MB_PK_GAIN_TARGET, MB_TRIM_TAP, MB_TRIM_PICK,
+       tap_harm_gain_current, pick_gain_current)
 (
   output_smooth=1-exp(-1/(0.005*srate));
   out=st+MB_OUTPUT; target=mb_output_requested(index);
   out[MB_OUT_TARGET]=target;
   immediate ? out[MB_OUT_CURRENT]=target;
   voice=st+MB_PICK;
-  voice[MB_PK_VOICE]==MB_TRIM_TAP ? voice[MB_PK_GAIN_TARGET]=tap_gain_current;
+  voice[MB_PK_VOICE]&MB_TRIM_TAP ? voice[MB_PK_GAIN_TARGET]=voice[MB_PK_VOICE]&MB_TRIM_PICK ?
+    (1+pick_gain_current)*(1+tap_harm_gain_current)-1 : tap_harm_gain_current;
 );
 
 function mb_output_render(st, signal)

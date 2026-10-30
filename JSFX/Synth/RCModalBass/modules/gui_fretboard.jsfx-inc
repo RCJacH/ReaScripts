@@ -114,6 +114,8 @@ function mb_gui_string_view(number)
     number==4 ? pub_s4_ghost : number==5 ? pub_s5_ghost : pub_s6_ghost;
   ui_view_harmonic=number==1 ? pub_s1_harmonic : number==2 ? pub_s2_harmonic : number==3 ? pub_s3_harmonic :
     number==4 ? pub_s4_harmonic : number==5 ? pub_s5_harmonic : pub_s6_harmonic;
+  ui_view_harmonic_node=number==1 ? pub_s1_harmonic_node : number==2 ? pub_s2_harmonic_node : number==3 ? pub_s3_harmonic_node :
+    number==4 ? pub_s4_harmonic_node : number==5 ? pub_s5_harmonic_node : pub_s6_harmonic_node;
   ui_view_pending=number==1 ? pub_s1_pending : number==2 ? pub_s2_pending : number==3 ? pub_s3_pending :
     number==4 ? pub_s4_pending : number==5 ? pub_s5_pending : pub_s6_pending;
   ui_view_ho_from=number==1 ? pub_s1_ho_from : number==2 ? pub_s2_ho_from : number==3 ? pub_s3_ho_from :
@@ -316,7 +318,7 @@ local(nut, bridge, span, top, bottom, rows, number, row, yy, fret, xx, selected,
             gfx_line(xx-4*ui_scale, yy+4*ui_scale, xx+4*ui_scale, yy-4*ui_scale, 1);
           ) : gfx_circle(xx, yy, 4*ui_scale, 1, 1);
           ui_view_harmonic ? (
-            touch=xx+(bridge-xx)/ui_view_harmonic;
+            touch=bridge-(bridge-xx)*ui_view_harmonic_node/ui_view_harmonic;
             gfx_line(touch-4*ui_scale, yy, touch, yy-4*ui_scale, 1);
             gfx_line(touch, yy-4*ui_scale, touch+4*ui_scale, yy, 1);
             gfx_line(touch+4*ui_scale, yy, touch, yy+4*ui_scale, 1);
