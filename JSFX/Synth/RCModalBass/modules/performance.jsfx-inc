@@ -186,17 +186,16 @@ global(MB_PERF_MAPS, MB_CTRL_PRESSURE, MB_CTRL_CC_FIRST, MB_PF_CHORD)
 function mb_performance_level(channel, kind)
 local(i, h, input, stamp, level, ch, newest)
 (
-  newest=0; level=0; ch=0;
-  loop(MB_CHANNELS,
-    channel_mode_current==0 || ch==channel ? (
-      input=MB_PERF_INPUTS+ch*MB_PI_WORDS;
-      stamp=input[kind==MB_PF_PRESSURE ? MB_PI_PRESSURE_STAMP : MB_PI_NOISE_STAMP];
-      stamp>newest ? (newest=stamp; level=input[kind==MB_PF_PRESSURE ? MB_PI_PRESSURE : MB_PI_NOISE];);
-    );
+  newest=0; level=0; ch=channel_mode_current==0 ? 0 : channel;
+  loop(channel_mode_current==0 ? MB_CHANNELS : channel>=0 && channel<MB_CHANNELS ? 1 : 0,
+    input=MB_PERF_INPUTS+ch*MB_PI_WORDS;
+    stamp=input[kind==MB_PF_PRESSURE ? MB_PI_PRESSURE_STAMP : MB_PI_NOISE_STAMP];
+    stamp>newest ? (newest=stamp; level=input[kind==MB_PF_PRESSURE ? MB_PI_PRESSURE : MB_PI_NOISE];);
     ch+=1;
   );
   i=0;
-  loop(MB_PF_HOLD_LIMIT,
+  // Extent includes holes; releases trim only the empty tail of the fixed pool.
+  loop(performance_hold_extent,
     h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
     h[MB_PH_SERIAL]>0 && h[MB_PH_KIND]==kind &&
     (channel_mode_current==0 || h[MB_PH_CHANNEL]==channel) && h[MB_PH_STAMP]>newest ? (
@@ -329,7 +328,7 @@ local(i, p, ch, amount, h, newest, style, held_style, stroke_stamp, chord, scope
   style=performance_style_base; newest=performance_style_stamp; i=0;
   chord=performance_chord_base;
   stroke_override_current=stroke_stamp=0;
-  loop(MB_PF_HOLD_LIMIT,
+  loop(performance_hold_extent,
     h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
     p=mb_performance_channel(h[MB_PH_CHANNEL]);
     h[MB_PH_SERIAL]>0 && h[MB_PH_KIND]==MB_PF_CHORD ? (
@@ -410,10 +409,14 @@ local(i, h, p)
   mb_style_clear(channel);
   mb_landing_release(channel,-1);
   i=0;
-  loop(MB_PF_HOLD_LIMIT,
+  loop(performance_hold_extent,
     h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
     channel<0 || h[MB_PH_CHANNEL]==channel ? h[MB_PH_SERIAL]=0;
     i+=1;
+  );
+  while(performance_hold_extent>0 &&
+    !(MB_PERF_HOLDS+(performance_hold_extent-1)*MB_PF_HOLD_WORDS)[MB_PH_SERIAL]) (
+    performance_hold_extent-=1;
   );
   channel<0 ? memset(MB_PERF_INPUTS,0,MB_CHANNELS*MB_PI_WORDS) :
     memset(MB_PERF_INPUTS+channel*MB_PI_WORDS,0,MB_PI_WORDS);
@@ -439,6 +442,7 @@ function mb_performance_init()
 local(i, p)
 (
   memset(MB_PERF,0,MB_PERF_END-MB_PERF);
+  performance_hold_extent=0;
   mb_landing_reset();
   mb_style_init();
   performance_gain_smooth=1-exp(-1/(0.002*srate));
@@ -548,13 +552,13 @@ local(record, kind, i, h, free, style, gain, landing, p)
         p[MB_PC_BASE_STYLE]=style; p[MB_PC_BASE_STAMP]=mb_art_stamp();
       ) : (performance_style_base=style; performance_style_stamp=mb_art_stamp(););
     ) : (
-      free=-1; i=0;
-      loop(MB_PF_HOLD_LIMIT,
-        h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
-        !h[MB_PH_SERIAL] && free<0 ? free=h;
+      i=0;
+      while(i<performance_hold_extent && (MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS)[MB_PH_SERIAL]>0) (
         i+=1;
       );
+      free=i<MB_PF_HOLD_LIMIT ? MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS : -1;
       free>=0 ? (
+        performance_hold_extent=max(performance_hold_extent,i+1);
         free[MB_PH_SERIAL]=mb_note_ptr(record)[MB_N_SERIAL];
         free[MB_PH_KIND]=landing ? MB_PF_LAND_1+kind-MB_PF_STROKE_1 : kind;
         free[MB_PH_CHANNEL]=channel; free[MB_PH_VALUE]=velocity; free[MB_PH_STAMP]=mb_art_stamp();
@@ -568,14 +572,18 @@ local(record, kind, i, h, free, style, gain, landing, p)
 
 function mb_performance_note_off(channel, serial)
 local(i, h)
-global(MB_PERF_HOLDS, MB_PF_HOLD_LIMIT, MB_PF_HOLD_WORDS, MB_PH_SERIAL, MB_PH_CHANNEL)
+global(MB_PERF_HOLDS, MB_PF_HOLD_WORDS, MB_PH_SERIAL, MB_PH_CHANNEL, performance_hold_extent)
 (
   mb_landing_release(channel,serial);
   i=0;
-  loop(MB_PF_HOLD_LIMIT,
+  loop(performance_hold_extent,
     h=MB_PERF_HOLDS+i*MB_PF_HOLD_WORDS;
     h[MB_PH_SERIAL]==serial && h[MB_PH_CHANNEL]==channel ? h[MB_PH_SERIAL]=0;
     i+=1;
+  );
+  while(performance_hold_extent>0 &&
+    !(MB_PERF_HOLDS+(performance_hold_extent-1)*MB_PF_HOLD_WORDS)[MB_PH_SERIAL]) (
+    performance_hold_extent-=1;
   );
   mb_performance_refresh();
   mb_performance_display(channel);

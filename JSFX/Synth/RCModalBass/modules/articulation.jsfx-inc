@@ -23,36 +23,38 @@ function mb_art_mapping(kind)
 ( kind == MB_ROLE_HARMONIC ? harmonic_mapping_current : kind == MB_ROLE_TAP ? tap_mapping_current : kind == MB_ROLE_GHOST ? ghost_mapping_current :
   kind == MB_ROLE_HOPO ? hopo_mapping_current : art_mapping_current; );
 
-// Latest still-active action/channel wins, including CC; release restores a hold.
-function mb_art_refresh()
-local(channel, kind, entry, newest, scope)
+// Rebuild the changed channel, then select the shared winner from 16 caches.
+// Latest active action/channel still wins, including repeated nonzero CC input.
+function mb_art_refresh(channel)
+local(kind, entry, newest, scope, ch)
 global(MB_ARTICULATION, MB_A_VALUE, MB_A_KIND, MB_A_SOURCE_CHANNEL,
        MB_ROLE_LEGATO, MB_CHANNELS, MB_AC_VALUE, MB_AC_STAMP, MB_ART_KINDS,
        MB_ART_SCOPES, MB_ART_SCOPE_WORDS, MB_A_STAMP)
 (
-  newest = 0;
-  memset(MB_ART_SCOPES, 0, MB_CHANNELS*MB_ART_SCOPE_WORDS);
-  MB_ARTICULATION[MB_A_VALUE] = MB_ARTICULATION[MB_A_KIND] = 0;
-  MB_ARTICULATION[MB_A_SOURCE_CHANNEL] = -1;
+  scope=MB_ART_SCOPES+channel*MB_ART_SCOPE_WORDS;
+  memset(scope, 0, MB_ART_SCOPE_WORDS);
   kind = MB_ROLE_LEGATO;
   loop(MB_ART_KINDS,
-    channel = 0;
-    loop(MB_CHANNELS,
-      entry = mb_art_channel(channel, kind);
-      scope=MB_ART_SCOPES+channel*MB_ART_SCOPE_WORDS;
-      entry[MB_AC_VALUE]>0 && entry[MB_AC_STAMP]>scope[MB_A_STAMP] ? (
-        scope[MB_A_STAMP]=entry[MB_AC_STAMP];
-        scope[MB_A_KIND]=kind; scope[MB_A_VALUE]=entry[MB_AC_VALUE];
-      );
-      entry[MB_AC_VALUE] > 0 && entry[MB_AC_STAMP] > newest ? (
-        newest = entry[MB_AC_STAMP];
-        MB_ARTICULATION[MB_A_VALUE] = entry[MB_AC_VALUE];
-        MB_ARTICULATION[MB_A_KIND] = kind;
-        MB_ARTICULATION[MB_A_SOURCE_CHANNEL] = channel;
-      );
-      channel += 1;
+    entry = mb_art_channel(channel, kind);
+    entry[MB_AC_VALUE]>0 && entry[MB_AC_STAMP]>scope[MB_A_STAMP] ? (
+      scope[MB_A_STAMP]=entry[MB_AC_STAMP];
+      scope[MB_A_KIND]=kind; scope[MB_A_VALUE]=entry[MB_AC_VALUE];
     );
     kind += 1;
+  );
+  newest=ch=0;
+  MB_ARTICULATION[MB_A_VALUE]=MB_ARTICULATION[MB_A_KIND]=0;
+  MB_ARTICULATION[MB_A_SOURCE_CHANNEL]=-1;
+  loop(MB_CHANNELS,
+    scope=MB_ART_SCOPES+ch*MB_ART_SCOPE_WORDS;
+    scope[MB_A_STAMP]>newest || (scope[MB_A_STAMP]>0 && scope[MB_A_STAMP]==newest &&
+      scope[MB_A_KIND]<MB_ARTICULATION[MB_A_KIND]) ? (
+      newest=scope[MB_A_STAMP];
+      MB_ARTICULATION[MB_A_VALUE]=scope[MB_A_VALUE];
+      MB_ARTICULATION[MB_A_KIND]=scope[MB_A_KIND];
+      MB_ARTICULATION[MB_A_SOURCE_CHANNEL]=ch;
+    );
+    ch+=1;
   );
 );
 
@@ -150,7 +152,7 @@ global(MB_N_ROLE, MB_N_ACTIVE, MB_AC_TOKEN, MB_N_SERIAL,
     entry[MB_AC_STAMP] = mb_art_stamp();
     entry[MB_AC_VALUE] = velocity;
     MB_ARTICULATION[MB_A_SWITCHES] += 1;
-    kind >= MB_ROLE_FORCE_FIRST ? mb_force_refresh() : mb_art_refresh();
+    kind >= MB_ROLE_FORCE_FIRST ? mb_force_refresh() : mb_art_refresh(channel);
   );
 );
 
@@ -161,33 +163,37 @@ global(MB_AC_TOKEN, MB_ART_CHANNEL_WORDS, MB_ROLE_FORCE_FIRST)
   entry = mb_art_channel(channel, kind);
   entry[MB_AC_TOKEN] == token ? (
     memset(entry, 0, MB_ART_CHANNEL_WORDS);
-    kind >= MB_ROLE_FORCE_FIRST ? mb_force_refresh() : mb_art_refresh();
+    kind >= MB_ROLE_FORCE_FIRST ? mb_force_refresh() : mb_art_refresh(channel);
   );
 );
 
 function mb_art_controller(channel, controller, value)
-local(kind, entry, mapping)
+local(kind, entry, mapping, changed, supported)
 global(MB_ROLE_LEGATO, MB_ART_CHANNEL_WORDS, MB_AC_TOKEN, art_channel_current,
        MB_AC_STAMP, MB_AC_VALUE, MB_ARTICULATION, MB_A_SWITCHES, MB_ART_KINDS,
        MB_ROLE_TAP)
 (
+  changed=0;
+  supported=mb_midi_cc_supported(controller) && mb_control_channel_matches(channel, art_channel_current);
   kind = MB_ROLE_LEGATO;
   loop(MB_ART_KINDS,
     entry = mb_art_channel(channel, kind);
     mapping = mb_art_mapping(kind);
-    controller == 120 || (controller == 123 && entry[MB_AC_TOKEN] > 0) ?
+    controller == 120 || (controller == 123 && entry[MB_AC_TOKEN] > 0) ? (
+      changed=changed || entry[MB_AC_VALUE]>0;
       memset(entry, 0, MB_ART_CHANNEL_WORDS);
-    mb_midi_cc_supported(controller) &&
+    );
+    supported &&
     kind!=MB_ROLE_TAP &&
-    mb_control_channel_matches(channel, art_channel_current) &&
     mapping >= 128 && controller == mapping - 127 ? (
       entry[MB_AC_TOKEN] = -1;
       entry[MB_AC_STAMP] = value > 0 ? mb_art_stamp() : 0;
       entry[MB_AC_VALUE] = value;
       MB_ARTICULATION[MB_A_SWITCHES] += 1;
+      changed=1;
     );
     kind += 1;
   );
   controller == 120 || controller == 123 ? mb_force_release_channel(channel);
-  mb_art_refresh();
+  changed ? mb_art_refresh(channel);
 );

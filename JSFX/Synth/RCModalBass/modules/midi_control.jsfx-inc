@@ -185,7 +185,7 @@ function mb_midi_bend_init()
   bend_controller_current=bend_controller_request=mb_midi_selector_source(p_bend_controller);
   slide_controller_current=slide_controller_request=mb_midi_selector_source(p_slide_controller);
   channel_mode_current=channel_mode_request=mb_clamp(floor(p_midi_channel_mode), 0, 2);
-  midi_bend_range_current=midi_bend_range_request=mb_clamp(p_midi_pitch_bend_range, 0, 2);
+  midi_bend_range_current=midi_bend_range_request=mb_clamp(p_midi_pitch_bend_range, 0, 5);
   midi_slide_range_current=midi_slide_range_request=mb_clamp(p_midi_slide_range, 0, 24);
   midi_bend_count_current=MB_RACK[MB_R_COUNT];
 );

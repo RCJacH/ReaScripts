@@ -50,7 +50,7 @@ function mb_parameters_request()
   channel_mode_request=mb_clamp(floor(p_midi_channel_mode), 0, 2);
   bend_controller_request=mb_midi_selector_source(p_bend_controller);
   slide_controller_request=mb_midi_selector_source(p_slide_controller);
-  midi_bend_range_request=mb_clamp(p_midi_pitch_bend_range, 0, 2);
+  midi_bend_range_request=mb_clamp(p_midi_pitch_bend_range, 0, 5);
   midi_slide_range_request=mb_clamp(p_midi_slide_range, 0, 24);
   contact_amount_request=p_fret_contact;
   contact_level_request=p_fret_noise_level;
