@@ -23,7 +23,7 @@ local(index, st, slot)
 );
 
 function mb_instrument_publish_strings()
-local(i, number, st, slot, owner, hp, view, display_until, frequency, note_active)
+local(i, number, st, slot, owner, hp, view, display_until, frequency, note_active, held)
 (
   mb_instrument_publish_status();
   !memory_fault ? (
@@ -59,6 +59,8 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
       // Rack busy also includes friction-only movement. Note markers need modes.
       note_active=st[MB_S_COUNT]>0 || (st[MB_S_PREVIOUS_LEFT]>0 && st[MB_S_PREVIOUS_COUNT]>0);
       mb_landing_string(st)[MB_LD_ONLY] && owner[MB_O_SERIAL]<=0 ? note_active=0;
+      // Held-note markers end on matching note-off; vibration/meters may continue.
+      held=owner[MB_O_SERIAL]>0 && owner[MB_O_KEY_DOWN];
       frequency=mb_harmonic_frequency(st);
       frequency=mb_magnet_frequency(st, frequency);
       number=mb_string_number(i);
@@ -76,6 +78,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s1_level=slot[MB_RS_LEVEL];
         pub_s1_busy=slot[MB_RS_BUSY];
         pub_s1_note_active=note_active;
+        pub_s1_held=held;
         pub_s1_rh_finger=view[MB_FV_FINGER];
         pub_s1_rh_position=view[MB_FV_POSITION];
         pub_s1_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
@@ -100,6 +103,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s2_level=slot[MB_RS_LEVEL];
         pub_s2_busy=slot[MB_RS_BUSY];
         pub_s2_note_active=note_active;
+        pub_s2_held=held;
         pub_s2_rh_finger=view[MB_FV_FINGER];
         pub_s2_rh_position=view[MB_FV_POSITION];
         pub_s2_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
@@ -124,6 +128,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s3_level=slot[MB_RS_LEVEL];
         pub_s3_busy=slot[MB_RS_BUSY];
         pub_s3_note_active=note_active;
+        pub_s3_held=held;
         pub_s3_rh_finger=view[MB_FV_FINGER];
         pub_s3_rh_position=view[MB_FV_POSITION];
         pub_s3_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
@@ -148,6 +153,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s4_level=slot[MB_RS_LEVEL];
         pub_s4_busy=slot[MB_RS_BUSY];
         pub_s4_note_active=note_active;
+        pub_s4_held=held;
         pub_s4_rh_finger=view[MB_FV_FINGER];
         pub_s4_rh_position=view[MB_FV_POSITION];
         pub_s4_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
@@ -172,6 +178,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s5_level=slot[MB_RS_LEVEL];
         pub_s5_busy=slot[MB_RS_BUSY];
         pub_s5_note_active=note_active;
+        pub_s5_held=held;
         pub_s5_rh_finger=view[MB_FV_FINGER];
         pub_s5_rh_position=view[MB_FV_POSITION];
         pub_s5_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;
@@ -196,6 +203,7 @@ local(i, number, st, slot, owner, hp, view, display_until, frequency, note_activ
         pub_s6_level=slot[MB_RS_LEVEL];
         pub_s6_busy=slot[MB_RS_BUSY];
         pub_s6_note_active=note_active;
+        pub_s6_held=held;
         pub_s6_rh_finger=view[MB_FV_FINGER];
         pub_s6_rh_position=view[MB_FV_POSITION];
         pub_s6_ghost=(st+MB_LIVE)[MB_L_GHOST_DAMP]>0;

@@ -104,6 +104,8 @@ function mb_gui_string_view(number)
     number==4 ? pub_s4_busy : number==5 ? pub_s5_busy : pub_s6_busy;
   ui_view_note_active=number==1 ? pub_s1_note_active : number==2 ? pub_s2_note_active : number==3 ? pub_s3_note_active :
     number==4 ? pub_s4_note_active : number==5 ? pub_s5_note_active : pub_s6_note_active;
+  ui_view_held=number==1 ? pub_s1_held : number==2 ? pub_s2_held : number==3 ? pub_s3_held :
+    number==4 ? pub_s4_held : number==5 ? pub_s5_held : pub_s6_held;
   ui_view_rh_finger=number==1 ? pub_s1_rh_finger : number==2 ? pub_s2_rh_finger : number==3 ? pub_s3_rh_finger :
     number==4 ? pub_s4_rh_finger : number==5 ? pub_s5_rh_finger : pub_s6_rh_finger;
   ui_view_rh_position=number==1 ? pub_s1_rh_position : number==2 ? pub_s2_rh_position : number==3 ? pub_s3_rh_position :
@@ -308,7 +310,7 @@ local(nut, bridge, span, top, bottom, rows, number, row, yy, fret, xx, selected,
         xx=ui_view_note_active ? nut+(1-2^(-ui_view_fret/12))*span : nut;
         mb_gui_color(MB_UI_BASE+ui_tab*MB_UI_THEME_STRIDE+MB_UI_ACCENT, 0.5+activity*0.5);
         ui_view_note_active || ui_view_level*pub_output_gain>MB_UI_METER_FLOOR ? gfx_line(xx, yy, bridge, yy, 1);
-        ui_view_note_active ? (
+        ui_view_note_active && ui_view_held ? (
           ui_view_ghost ? (
             gfx_line(xx-4*ui_scale, yy-4*ui_scale, xx+4*ui_scale, yy+4*ui_scale, 1);
             gfx_line(xx-4*ui_scale, yy+4*ui_scale, xx+4*ui_scale, yy-4*ui_scale, 1);

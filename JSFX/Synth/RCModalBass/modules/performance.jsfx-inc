@@ -111,7 +111,9 @@ local(selection, last)
     kind==6 ? p_noise_controller : kind==7 ? p_rh_pluck_pos_controller :
     kind==8 ? p_slap_pop_style_controller : kind==9 ? p_tapping_style_controller :
     kind==10 ? p_pick_style_controller : p_chord_mode_controller;
-  last=kind==3 ? MB_PRESSURE_SELECTOR_MAX : kind==1 || kind==2 || kind==4 ? 127 : MB_NOTE_CC_MAX;
+  // Reserve notes for every fret 0..24, even on instruments with fewer frets.
+  last=kind==3 ? MB_PRESSURE_SELECTOR_MAX : kind==MB_PF_LH_KEYS ? 127-24 :
+    kind==1 || kind==2 ? 127 : MB_NOTE_CC_MAX;
   selection=mb_midi_mapping_index(selection, last);
   // LH base 0 is no longer valid: reserve a real MIDI note immediately below.
   kind==MB_PF_LH_KEYS && selection<1 ? -1 : selection;

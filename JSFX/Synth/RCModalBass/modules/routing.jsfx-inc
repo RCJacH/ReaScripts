@@ -149,7 +149,7 @@ global()
 
 // Ordinary excitation is separate from the legato path above it.
 function mb_routing_pluck(record, index, channel, note, velocity)
-local(slot, fret, bend, played_fret, accepted, allowed)
+local(slot, fret, bend, played_fret, accepted, allowed, partial)
 global(MB_CTRL_BEND, MB_CTRL_SLIDE, MB_R_LAST_ROUTE, MB_RACK, MB_REJECT_DISABLED, MB_RS_OPEN,
        midi_bend_range_current, midi_slide_range_current, MB_ARTICULATION, MB_A_KIND, MB_ROLE_GHOST,
        MB_REJECT_ROUTING, MB_ROLE_HARMONIC, MB_A_VALUE, fret_count_current)
@@ -162,8 +162,10 @@ global(MB_CTRL_BEND, MB_CTRL_SLIDE, MB_R_LAST_ROUTE, MB_RACK, MB_REJECT_DISABLED
   accepted = allowed ? mb_rack_excite_tuned(index, velocity, played_fret, bend, note, channel) : 0;
   accepted ? (
     MB_ARTICULATION[MB_A_KIND] == MB_ROLE_GHOST ? mb_ghost_excite(mb_rack_string(index));
-    MB_ARTICULATION[MB_A_KIND] == MB_ROLE_HARMONIC ?
-      mb_harmonic_excite(mb_rack_string(index), mb_harmonic_partial(MB_ARTICULATION[MB_A_VALUE]));
+    MB_ARTICULATION[MB_A_KIND] == MB_ROLE_HARMONIC ? (
+      partial=mb_harmonic_partial(MB_ARTICULATION[MB_A_VALUE]);
+      partial ? mb_harmonic_excite(mb_rack_string(index), partial);
+    );
     mb_notes_bind(record, index);
     mb_midi_bend_bind(index, channel, fret);
     mb_hand_release_unreachable(index, played_fret);

@@ -125,12 +125,12 @@ global()
 // Ideal nodal touch, applied to a new gesture's speaking span. Keep the
 // original length, coefficients and pickup geometry; never transpose the fret.
 // Switch velocity / CC value chooses the NEXT gesture's partial. Zero releases
-// the articulation. Most of the range selects the familiar octave harmonic.
+// the articulation. Centers 16,32,...,112 select partials 2..8; 0..7 is ordinary.
 function mb_harmonic_partial(value)
 global()
 (
   value=floor(mb_clamp(value, 0, 127));
-  value<=0 ? 0 : value<=100 ? 2 : value<=114 ? 3 : value<=123 ? 4 : 5;
+  value<8 ? 0 : min(8, 2+floor((value-8)/16));
 );
 
 function mb_harmonic_excite(st, partial)
@@ -138,7 +138,7 @@ local(i, ptr)
 global(MB_S_ACTIVE, MB_S_COUNT, MB_MODE_STRIDE, MB_M_R, MB_M_I, MB_M_INITIAL,
        MB_S_HARMONIC, MB_PICK, MB_PK_LEFT, MB_CONTACT, MB_K_SURFACE)
 (
-  partial=mb_clamp(floor(partial), 2, 5);
+  partial=mb_clamp(floor(partial), 2, 8);
   // A touch at 1/partial of the span retains modes partial,2*partial,... .
   // Removing other modes' q/v is passive; never normalize/boost the survivors.
   i=0;

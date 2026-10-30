@@ -15,7 +15,7 @@ function mb_layout_init()
   MB_S_VELOCITY=9; MB_S_TAIL_SAMPLES=10;
   MB_S_LENGTH_A=11; MB_S_LENGTH_B=12;
   MB_S_F1=13;
-  MB_S_HARMONIC=14; // 0 = ordinary; 2..5 = captured ideal-touch partial.
+  MB_S_HARMONIC=14; // 0 = ordinary; 2..8 = captured ideal-touch partial.
   MB_HEADER_WORDS=16;
   // MB_C_* logical fields; slot 0 stores construction relative to Roundwound.
   MB_CONFIG=MB_HEADER_WORDS; MB_CONFIG_WORDS=29;
