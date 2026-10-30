@@ -325,6 +325,68 @@ local(p0, p1, p2, i, ptr, q, im, rr, ri, nr, ni, sum, velocity, damper,
   ) : mb_modal_render_continue(base+prefix*MB_MODE_STRIDE,weights+prefix,count-prefix,damper,sum);
 );
 
+// Moving spans/bends retain the same masks, forces and summation order as the
+// general renderer. Only the contact prefix needs geometric projections; the
+// remaining modes need observation/rotation and their existing Nyquist fade.
+function mb_board_render_live(st, base, weights, count, bc)
+local(l, p0, p1, p2, low, prefix, split, hard, dmode, damping, masks, targets,
+      f0, f1, f2, i, ptr, q, im, v, rr, ri, nr, ni, mask, damper, md,
+      free0, free1, free2, dq0, dq1, dq2, velocity, sum, sum1, sum2, circuit1, circuit2, h)
+(
+  l=st+MB_LIVE;damper=st[MB_S_MUTE];mb_board_solve(bc,damper);
+  p0=mb_board_site(bc,0);p1=mb_board_site(bc,1);p2=mb_board_site(bc,2);
+  f0=p0[MB_BP_FORCE];f1=p1[MB_BP_FORCE];f2=p2[MB_BP_FORCE];
+  low=p0[MB_BP_COUNT];prefix=bc[MB_BC_PREFIX];split=bc[MB_BC_MODE]==3;
+  hard=!bc[MB_BC_SLEEP] && p2[MB_BP_COUNT]>0;dmode=l[MB_L_DAMP_LEFT]>0;
+  base==st+MB_BANK_A ? (
+    masks=st+MB_MASK_A;targets=st+MB_MASK_TARGET_A;damping=st+MB_BEND_DAMP_A;
+  ) : (
+    masks=st+MB_MASK_B;targets=st+MB_MASK_TARGET_B;damping=st+MB_BEND_DAMP_B;
+  );
+  circuit_observe_current ? (circuit1=mb_circuit_pickup_ptr(st,weights,0);circuit2=mb_circuit_pickup_ptr(st,weights,1););
+  sum=sum1=sum2=velocity=free0=free1=free2=dq0=dq1=dq2=i=0;ptr=base;
+  loop(prefix,
+    q=ptr[MB_M_R];im=ptr[MB_M_I];v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;
+    masks[i]+=(targets[i]-masks[i])*l[MB_L_MASK_SMOOTH];mask=masks[i];sum+=v*weights[i]*mask;
+    circuit_observe_current ? (sum1+=v*circuit1[i]*mask;sum2+=v*circuit2[i]*mask;);
+    rr=ptr[MB_M_ROT_R];ri=ptr[MB_M_ROT_I];md=dmode ? damper*damping[i] : damper;
+    nr=(q*rr-im*ri)*md;ni=(q*ri+im*rr)*md;
+    i<low ? (
+      nr+=f0*p0[MB_BP_Q_RESPONSE+i];ni+=f0*p0[MB_BP_I_RESPONSE+i];
+      split ? (nr+=f1*p1[MB_BP_Q_RESPONSE+i];ni+=f1*p1[MB_BP_I_RESPONSE+i];);
+    );
+    f2!==0 ? (nr+=f2*p2[MB_BP_Q_RESPONSE+i];ni+=f2*p2[MB_BP_I_RESPONSE+i];);
+    ptr[MB_M_R]=nr;ptr[MB_M_I]=ni;
+    i<low ? (
+      free0+=p0[MB_BP_AR+i]*nr+p0[MB_BP_AI+i]*ni;
+      velocity+=p0[MB_BP_PHI+i]*(-ptr[MB_M_ALPHA]*nr-ptr[MB_M_OMEGA]*ni);
+      split ? free1+=p1[MB_BP_AR+i]*nr+p1[MB_BP_AI+i]*ni;
+      bc[MB_BC_DAMP_MODE] ? (dq0+=p0[MB_BP_DPHI+i]*nr;split ? dq1+=p1[MB_BP_DPHI+i]*nr;);
+    );
+    hard ? (
+      free2+=p2[MB_BP_AR+i]*nr+p2[MB_BP_AI+i]*ni;
+      bc[MB_BC_DAMP_MODE] ? dq2+=p2[MB_BP_DPHI+i]*nr;
+    );
+    i+=1;ptr+=MB_MODE_STRIDE;
+  );
+  loop(max(0,count-prefix),
+    q=ptr[MB_M_R];im=ptr[MB_M_I];v=-ptr[MB_M_ALPHA]*q-ptr[MB_M_OMEGA]*im;
+    masks[i]+=(targets[i]-masks[i])*l[MB_L_MASK_SMOOTH];mask=masks[i];sum+=v*weights[i]*mask;
+    circuit_observe_current ? (sum1+=v*circuit1[i]*mask;sum2+=v*circuit2[i]*mask;);
+    rr=ptr[MB_M_ROT_R];ri=ptr[MB_M_ROT_I];md=dmode ? damper*damping[i] : damper;
+    ptr[MB_M_R]=(q*rr-im*ri)*md;ptr[MB_M_I]=(q*ri+im*rr)*md;
+    ptr[MB_M_FREQ]>=0.48*srate && mask<0.000000001 ? (ptr[MB_M_R]=ptr[MB_M_I]=0;);
+    i+=1;ptr+=MB_MODE_STRIDE;
+  );
+  circuit_observe_current ? (
+    h=st+MB_CIR_PICKUP;
+    h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT1 : MB_CP_B_OUTPUT1]=sum1;
+    h[base==st+MB_BANK_A ? MB_CP_A_OUTPUT2 : MB_CP_B_OUTPUT2]=sum2;
+  );
+  mb_board_finish(st,base,count,bc,free0,free1,free2,dq0,dq1,dq2,velocity);
+  sum;
+);
+
 // Cache validation is shared by the fast and general renderers. The scalar
 // reduction is an active CPU optimization, not an obsolete prototype path.
 function mb_board_render_fast(st, base, weights, count)

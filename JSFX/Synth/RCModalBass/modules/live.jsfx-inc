@@ -256,6 +256,12 @@ local(l, cfg, g, source, dest, source_count, count, i, ptr, src, q, v, masks, ta
     ptr[MB_M_R]=q; ptr[MB_M_I]=-(v+ptr[MB_M_ALPHA]*q)/ptr[MB_M_OMEGA];
     masks[i]=targets[i]; i+=1;
   );
+  // Fresh span masks are already settled. Below the taper band, with no motion
+  // loss, the ordinary renderer is exact; a slide need not leave it disabled.
+  (st+MB_CONTACT)[MB_K_SURFACE] && count>0 &&
+    (dest+(count-1)*MB_MODE_STRIDE)[MB_M_FREQ]<=0.42*srate &&
+    !(l[MB_L_DAMP_LEFT]>0 && l[MB_L_DAMP_DB]>0) ?
+    l[dest==st+MB_BANK_A ? MB_L_FLAG_A : MB_L_FLAG_B]=0;
   energy_raw=mb_bank_energy(dest, count, g[MB_G_LENGTH]);
   scale=energy_raw>energy_before && energy_raw>0 ? sqrt(energy_before/energy_raw) : 1;
   i=0; loop(count,

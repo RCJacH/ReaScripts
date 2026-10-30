@@ -164,9 +164,12 @@ local(contact, flag, response, asleep, b, pick)
     (!contact || (b[MB_FP_READY] && (st+MB_SLAP)[MB_SL_LEFT]<=0)) ? (
     mb_contact_lazy_tick(st,base,count,contact && !(st+MB_CONTACT)[MB_K_SURFACE]); response=0;
   ) : mb_contact_lazy_flush(st,base);
-  contact && !pick && !flag && (!(circuit_observe_current) || (st+MB_CONTACT)[MB_K_SURFACE]) &&
+  contact && !pick && (!flag || ((st+MB_CONTACT)[MB_K_SURFACE] && !response)) &&
+    (!(circuit_observe_current) || (st+MB_CONTACT)[MB_K_SURFACE]) &&
     !(st+MB_PICKUP_NL)[MB_NL_ON] ?
-    ((st+MB_CONTACT)[MB_K_SURFACE] ? mb_board_render_fast(st,base,weights,count) :
+    ((st+MB_CONTACT)[MB_K_SURFACE] ?
+      (flag ? mb_board_render_live(st,base,weights,count,mb_board_contact_cache(st,base,count)) :
+        mb_board_render_fast(st,base,weights,count)) :
       mb_contact_render_fast(st, base, weights, count)) :
   pick || (st+MB_PICKUP_NL)[MB_NL_ON] || contact || response ? mb_render_general(st, base, weights, count) :
     mb_string_render_bank(st, base, weights, count);

@@ -10,12 +10,14 @@ License:
   Commercial music and audio production are permitted. These restrictions
   do not apply to music or audio created using the software.
   This software is provided "as is", without warranty of any kind.
-Version:0.2.1
+Version:0.2.2
 Link: https://github.com/RCJacH/ReaScripts
 Provides:
   modules/*.jsfx-inc
 Release Date: Oct 2026
 Changelog:
+  0.2.2:
+    reduced fretless slide CPU usage without reducing the mode count
   0.2.1:
     extended harmonics to the 8th partial, with selection centered on 16-step values
     limited LH fret range start to Note 103 so all frets remain reachable

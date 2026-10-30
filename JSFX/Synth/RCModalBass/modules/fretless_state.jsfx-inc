@@ -206,8 +206,9 @@ local(b, f, bc, cfg, g, l, length, end, mass, shape, coefficients, fresh, damp_m
   f[MB_FB_COMPLIANCE]=bc[MB_BC_C00];f[MB_FB_STORED]=bc[MB_BC_U];
   shape || coefficients ? b[MB_FP_UPDATES]+=1;
   // A passive energy bound avoids high-mode observation even on the first
-  // sample of a weak pluck. Later playing work always wakes the hard region.
-  fresh && p2[MB_BP_COUNT]>0 ? (
+  // sample of a weak pluck and after a geometry/rotation edit. Moving the
+  // finger must not keep an unreachable hard region awake. New work wakes it.
+  coefficients && p2[MB_BP_COUNT]>0 ? (
     energy=mass*mb_bank_energy(base,count,length)/(2*length)+bc[MB_BC_U];
     energy<bc[MB_BC_TOUCH_ENERGY]*0.999 && max(0,-p2[MB_BP_Q]-p2[MB_BP_GAP])<=0 ? bc[MB_BC_SLEEP]=1;
   );
