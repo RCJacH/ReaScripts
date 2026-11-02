@@ -6,6 +6,8 @@ jobs:
     steps:
     - name: Fetch repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
     - name: Install dependencies
       run: |-
         sudo apt-get update
@@ -18,3 +20,14 @@ jobs:
       run:  gem install reapack-index --pre
     - name: Validate packages
       run:  reapack-index --check
+    - name: Configure git
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+      run: |-
+        git config user.name 'github-actions[bot]'
+        git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+    - name: Update index
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+      run: reapack-index --commit
+    - name: Push changes
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+      run: git push
