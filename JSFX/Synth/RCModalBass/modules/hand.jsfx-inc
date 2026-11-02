@@ -9,37 +9,16 @@ global(hand_fretless_current, fret_count_current)
   hand_fretless_current ? mb_clamp(fret, 0, fret_count_current) : mb_clamp(floor(fret+0.5), 0, fret_count_current);
 );
 
-// One audio position, mirrored by the native parameter. Request/seen values are
-// synchronization mailboxes, not an independent saved starting preference.
+// Runtime hand motion is independent of the persistent manual slider request.
 function mb_hand_position_store(position)
-global(hand_position_dirty, hand_position_request, hand_position_seen, MB_R_HAND_START, MB_RACK,
-       p_playing_position)
+global(MB_R_HAND_START, MB_RACK)
 (
   position=mb_hand_fret(position);
   MB_RACK[MB_R_HAND_START]=position;
-  // A newer GUI/host edit wins at the next block. Do not overwrite its value
-  // with a MIDI-driven update before the request has been captured/applied.
-  abs(p_playing_position-hand_position_seen)<0.000000001 &&
-  abs(hand_position_request-hand_position_seen)<0.000000001 ? (
-    hand_position_seen=hand_position_request=position;
-    abs(p_playing_position-position)>0.000000001 ? (
-      p_playing_position=position;
-      hand_position_dirty=1;
-    );
-  );
-);
-
-// Refresh the native display at most once per block; automatic following does
-// not call slider_automate or create a GUI parameter request.
-function mb_hand_position_notify()
-global(hand_position_dirty, p_playing_position)
-(
-  hand_position_dirty ? (hand_position_dirty=0; sliderchange(p_playing_position););
 );
 
 function mb_hand_init()
 (
-  hand_position_dirty=1;
   hand_fretless_current=hand_fretless_request=p_contact_surface>=0.5;
   hand_span_current=hand_span_request=mb_clamp(floor(p_hand_span), 1, 12);
   p_playing_position=mb_hand_fret(p_playing_position);

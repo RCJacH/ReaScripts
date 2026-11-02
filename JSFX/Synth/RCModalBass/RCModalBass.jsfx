@@ -10,12 +10,15 @@ License:
   Commercial music and audio production are permitted. These restrictions
   do not apply to music or audio created using the software.
   This software is provided "as is", without warranty of any kind.
-Version:0.2.4
+Version:0.2.5
 Link: https://github.com/RCJacH/ReaScripts
 Provides:
   modules/*.jsfx-inc
 Release Date: Oct 2026
 Changelog:
+  0.2.5:
+    fix string selection being latched from midi input
+    fix fretboard not showing "T" for tapping
   0.2.4:
     extended MIDI bend-up range to 5 semitones
     reduced MIDI controller and articulation selection work
@@ -84,8 +87,6 @@ tags:instrument synthesis bass physical-model
 in_pin:none
 out_pin:Mono L
 out_pin:Mono R
-// Native parameter ABI v62: declare all 256 slots; hide empty reserves.
-
 
 
 // Navigation

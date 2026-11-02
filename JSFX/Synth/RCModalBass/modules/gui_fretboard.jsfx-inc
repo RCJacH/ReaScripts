@@ -146,7 +146,7 @@ local(source_x, target_x, center, opacity)
     gfx_rect(center-16*ui_scale, yy-23*ui_scale, 32*ui_scale, 14*ui_scale, 1);
     mb_gui_color(theme+MB_UI_PANEL_TEXT, opacity);
     gfx_setfont(1, "Arial", 11*ui_scale);
-    mb_gui_text(ui_view_ho_kind==MB_TAP_KIND ? "tap" : ui_view_ho_kind>0 ? "h.o." : "p.o.", center-16*ui_scale, yy-23*ui_scale,
+    mb_gui_text(ui_view_ho_kind==MB_TAP_KIND ? "T" : ui_view_ho_kind>0 ? "h.o." : "p.o.", center-16*ui_scale, yy-23*ui_scale,
       32*ui_scale, 14*ui_scale, 1);
     gfx_setfont(1, "Arial", 12*ui_scale);
   );

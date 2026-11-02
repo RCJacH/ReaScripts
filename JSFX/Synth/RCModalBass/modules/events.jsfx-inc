@@ -51,8 +51,8 @@ global(memory_fault)
   mb_parameters_apply();
   !memory_fault ? mb_passthrough_sync(0);
   !memory_fault ? (
-    mb_hand_refresh(); mb_hand_position_notify(); mb_ring_notify();
-    mb_performance_notify(); mb_force_notify(); mb_pick_scrape_notify();
+    mb_hand_refresh(); mb_ring_notify();
+    mb_performance_notify(); mb_pick_scrape_notify();
     mb_palm_notify(); mb_instrument_cc_notify();
   );
 );

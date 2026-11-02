@@ -1,4 +1,4 @@
-// Independent momentary routing override. No excitation or articulation change.
+// MIDI force keyswitches override routing without changing the saved slider.
 @init
 function mb_force_channel(channel, role)
 global(MB_FORCE_CHANNELS, MB_ROLE_FORCE_FIRST, MB_CHANNELS, MB_ART_CHANNEL_WORDS)
@@ -13,35 +13,11 @@ global(channel_mode_current, forced_string_current, string_selection_current)
   channel_mode_current==0 && forced_string_current>0 ? 7-forced_string_current : string_selection_current;
 );
 
-// A temporary display value must not become the saved manual selection when
-// another slider changes. Native edits still update the background request.
+// Only native slider edits update the saved manual selection request.
 function mb_force_selection_request()
-local(value)
-global(p_string_selection, string_selection_display_ready, string_selection_display_value,
-       string_selection_request, MB_MAX_STRINGS)
+global(p_string_selection, string_selection_request, MB_MAX_STRINGS)
 (
-  value=mb_clamp(floor(p_string_selection),0,MB_MAX_STRINGS);
-  !string_selection_display_ready || value!=string_selection_display_value ? string_selection_request=value;
-);
-
-function mb_force_selection_display()
-local(value)
-global(p_string_selection, string_selection_display_ready, string_selection_display_value,
-       string_selection_display_dirty)
-(
-  value=mb_string_selection();
-  string_selection_display_ready=1; string_selection_display_value=value;
-  p_string_selection!=value ? (
-    p_string_selection=value; string_selection_display_dirty=1;
-  );
-);
-
-function mb_force_notify()
-global(p_string_selection, string_selection_display_dirty)
-(
-  string_selection_display_dirty ? (
-    string_selection_display_dirty=0; sliderchange(p_string_selection);
-  );
+  string_selection_request=mb_clamp(floor(p_string_selection),0,MB_MAX_STRINGS);
 );
 
 function mb_force_mapping(number)
@@ -72,7 +48,6 @@ global(forced_string_current, MB_MAX_STRINGS, MB_CHANNELS, MB_ROLE_FORCE_FIRST,
     );
     number+=1;
   );
-  mb_force_selection_display();
 );
 
 function mb_force_clear()
@@ -81,7 +56,6 @@ global(MB_FORCE_CHANNELS, MB_MAX_STRINGS, MB_CHANNELS, MB_ART_CHANNEL_WORDS,
 (
   memset(MB_FORCE_CHANNELS, 0, MB_MAX_STRINGS*MB_CHANNELS*MB_ART_CHANNEL_WORDS);
   forced_string_current=0;
-  mb_force_selection_display();
 );
 
 function mb_force_request()
@@ -107,14 +81,12 @@ function mb_force_apply_requests()
     force_e_current=force_e_request; force_b_current=force_b_request;
     mb_force_clear();
   );
-  mb_force_selection_display();
 );
 
 function mb_force_init()
 global(force_c_current, force_g_current, force_d_current, force_a_current,
-       force_e_current, force_b_current, string_selection_display_ready, string_selection_display_dirty)
+       force_e_current, force_b_current)
 (
-  string_selection_display_ready=string_selection_display_dirty=0;
   force_c_current=force_g_current=force_d_current=force_a_current=force_e_current=force_b_current=-1;
   mb_force_request();
   mb_force_apply_requests();
