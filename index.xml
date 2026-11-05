@@ -177,26 +177,12 @@ Potential Addition:
         <changelog><![CDATA[* v1.1 (2018-02-13)
   + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
   * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
-  * Renamed to RCBitRangeGain
-* v1.0a (2017-01-31)
-  + Renamed to BitRangeGain
-* v1.0 (2017-01-11)
-  + Initial Release]]></changelog>
+  * Renamed to RCBitRangeGain]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/3ec444f25cef1206d09bff82bbe48200da3ddb71/JSFX/Audio/RCBitRangeGain.jsfx</source>
       </version>
       <version name="1.3" author="RCJacH" time="2022-03-04T15:54:27Z">
         <changelog><![CDATA[* v1.3 (2018-09-27)
-  + Using PurestGain Fader algorithm to change pan, so panning should be smoother now.
-* v1.2 (2018-04-12)
-  + Added Pan controls
-* v1.1 (2018-02-13)
-  + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
-  * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
-  * Renamed to RCBitRangeGain
-* v1.0a (2017-01-31)
-  + Renamed to BitRangeGain
-* v1.0 (2017-01-11)
-  + Initial Release]]></changelog>
+  + Using PurestGain Fader algorithm to change pan, so panning should be smoother now.]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/bbea8c94c1061da0c55576e83dcc45338d78cc67/JSFX/Audio/RCBitRangeGain.jsfx</source>
       </version>
     </reapack>
@@ -227,19 +213,7 @@ Potential Addition:
       <version name="1.5" author="RCJacH" time="2022-03-04T15:53:16Z">
         <changelog><![CDATA[* v1.5 (2022-03-04)
   + Add Trim controls
-  + Renamed to RCEveryGain
-* v1.3 (2018-09-27)
-  + Using PurestGain Fader algorithm to change pan, so panning should be smoother now.
-* v1.2 (2018-04-12)
-  + Added Pan controls
-* v1.1 (2018-02-13)
-  + Implemented the actual algorithm of AirWindows OpenSourced PurestGain with variables.
-  * Changed fader action, NOT BACKWARD COMPATIBLE if you used fader
-  * Renamed to RCBitRangeGain
-* v1.0a (2017-01-31)
-  + Renamed to BitRangeGain
-* v1.0 (2017-01-11)
-  + Initial Release]]></changelog>
+  + Renamed to RCEveryGain]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/dc233c3cf6fd00e5e492a848c637b095a8634d5d/JSFX/Audio/RCEveryGain.jsfx</source>
       </version>
     </reapack>
@@ -264,106 +238,23 @@ Potential Addition:
       <version name="0.5.2" author="RCJacH" time="2021-08-13T14:55:00Z">
         <changelog><![CDATA[* v0.5.2 (2021-08-13)
   + Applies in/output gain to dry signal
-  + Refactor for less CPU usage
-* v0.5.1 (2021-08-13)
-  * Fix unsymmetrical waveshaping
-* v0.5 (2021-08-13)
-  + Refactor code
-  + Add absolute clipping at 6dB.
-  + Add waveshapeOvershoot
-* v0.4 (2021-08-13)
-  + Accurate decibel to float conversion.
-  + Wrap waveshaper above 0dB.
-  + Refactor waveshaper into function.
-* v0.3 (2021-08-11)
-  + Apply waveshaper symmetrically.
-  * Fix sign Error.
-* v0.2 (2021-08-09)
-  * Cleaned up code.
-* v0.1 (2021-02-06)
-  + Initial alpha release.]]></changelog>
+  + Refactor for less CPU usage]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/544e82e87f5c70c0d3869da3df2764833f7e0dee/JSFX/Audio/RCInflator.jsfx</source>
       </version>
       <version name="0.5.3" author="RCJacH" time="2021-08-15T09:36:17Z">
         <changelog><![CDATA[* v0.5.3 (2021-08-15)
-  + Applies second clipping before output gain
-* v0.5.2 (2021-08-13)
-  + Applies in/output gain to dry signal
-  + Refactor for less CPU usage
-* v0.5.1 (2021-08-13)
-  * Fix unsymmetrical waveshaping
-* v0.5 (2021-08-13)
-  + Refactor code
-  + Add absolute clipping at 6dB.
-  + Add waveshapeOvershoot
-* v0.4 (2021-08-13)
-  + Accurate decibel to float conversion.
-  + Wrap waveshaper above 0dB.
-  + Refactor waveshaper into function.
-* v0.3 (2021-08-11)
-  + Apply waveshaper symmetrically.
-  * Fix sign Error.
-* v0.2 (2021-08-09)
-  * Cleaned up code.
-* v0.1 (2021-02-06)
-  + Initial alpha release.]]></changelog>
+  + Applies second clipping before output gain]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/ae468ad9e84da8e3720ac0903f4de4b2b09f97d4/JSFX/Audio/RCInflator.jsfx</source>
       </version>
       <version name="0.5.4" author="RCJacH" time="2021-08-15T16:18:07Z">
         <changelog><![CDATA[* v0.5.4 (2021-08-15)
-  + Match slider range and steps to the original
-* v0.5.3 (2021-08-15)
-  + Applies second clipping before output gain
-* v0.5.2 (2021-08-13)
-  + Applies in/output gain to dry signal
-  + Refactor for less CPU usage
-* v0.5.1 (2021-08-13)
-  * Fix unsymmetrical waveshaping
-* v0.5 (2021-08-13)
-  + Refactor code
-  + Add absolute clipping at 6dB.
-  + Add waveshapeOvershoot
-* v0.4 (2021-08-13)
-  + Accurate decibel to float conversion.
-  + Wrap waveshaper above 0dB.
-  + Refactor waveshaper into function.
-* v0.3 (2021-08-11)
-  + Apply waveshaper symmetrically.
-  * Fix sign Error.
-* v0.2 (2021-08-09)
-  * Cleaned up code.
-* v0.1 (2021-02-06)
-  + Initial alpha release.]]></changelog>
+  + Match slider range and steps to the original]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/9133c2ae55d7482e15472352b74c745651a2ad86/JSFX/Audio/RCInflator.jsfx</source>
       </version>
       <version name="0.6" author="RCJacH" time="2021-08-15T16:22:23Z">
         <changelog><![CDATA[* v0.6 (2021-08-15)
   + Refactor integers to floats
-  + Clip dry signal before summing
-* v0.5.4 (2021-08-15)
-  + Match slider range and steps to the original
-* v0.5.3 (2021-08-15)
-  + Applies second clipping before output gain
-* v0.5.2 (2021-08-13)
-  + Applies in/output gain to dry signal
-  + Refactor for less CPU usage
-* v0.5.1 (2021-08-13)
-  * Fix unsymmetrical waveshaping
-* v0.5 (2021-08-13)
-  + Refactor code
-  + Add absolute clipping at 6dB.
-  + Add waveshapeOvershoot
-* v0.4 (2021-08-13)
-  + Accurate decibel to float conversion.
-  + Wrap waveshaper above 0dB.
-  + Refactor waveshaper into function.
-* v0.3 (2021-08-11)
-  + Apply waveshaper symmetrically.
-  * Fix sign Error.
-* v0.2 (2021-08-09)
-  * Cleaned up code.
-* v0.1 (2021-02-06)
-  + Initial alpha release.]]></changelog>
+  + Clip dry signal before summing]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/3da5db2a1c1d27ccf19c64dfd2d3fc9fbe39285e/JSFX/Audio/RCInflator.jsfx</source>
       </version>
     </reapack>
@@ -386,19 +277,8 @@ Potential Addition:
         <link rel="website">https://github.com/RCJacH/ReaScripts</link>
       </metadata>
       <version name="1.1" author="RCJacH" time="2018-03-09T07:48:41Z">
-        <changelog><![CDATA[* v1.3 (2018-03-08)
- + Brown Noise Type.
- + MIDI Trigger.
- * Fixed sustain.
- * Renamed to RCNoiseBuzz since the update broke backward compatibility.
-* v1.2 (2017-04-08)
- + Width Control.
-* v1.1 (2017-03-11)
- + Decay & Sustain Control.
-* v1.0a (2017-01-31)
- * Renamed to NoiseBuzz.
-* v1.0 (2017-01-22)
- + Initial Release.]]></changelog>
+        <changelog><![CDATA[* v1.1 (2017-03-11)
+ + Decay & Sustain Control.]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/dceb56a072678f61ae6a4b6f869c9e57de8d5563/JSFX/Audio/RCNoiseBuzz.jsfx</source>
       </version>
       <version name="1.3" author="RCJacH" time="2018-03-09T07:56:20Z">
@@ -406,15 +286,7 @@ Potential Addition:
  + Brown Noise Type.
  + MIDI Trigger.
  * Fixed sustain.
- * Renamed to RCNoiseBuzz since the update broke backward compatibility.
-* v1.2 (2017-04-08)
- + Width Control.
-* v1.1 (2017-03-11)
- + Decay & Sustain Control.
-* v1.0a (2017-01-31)
- * Renamed to NoiseBuzz.
-* v1.0 (2017-01-22)
- + Initial Release.]]></changelog>
+ * Renamed to RCNoiseBuzz since the update broke backward compatibility.]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/816dd1874831b2dc6b0ded3a6e6edf670973d0ed/JSFX/Audio/RCNoiseBuzz.jsfx</source>
       </version>
     </reapack>
@@ -446,9 +318,7 @@ Potential Addition:
         <changelog><![CDATA[* v1.1.0 (2025-12-14)
   + Add Morph Parameter to filters
   * Fix double click to add filter
-  * Fix Invert button position
-* v1.0.0 (2025-08-01)
-  + Initial Release]]></changelog>
+  * Fix Invert button position]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/RCModEQ.jsfx</source>
         <source file="dependencies/eq_node.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/dependencies/eq_node.jsfx-inc</source>
         <source file="dependencies/hsl_colors.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/36c3532ea23e300050d3ec8eaa38b0643cde86af/JSFX/Audio/RCModEQ/dependencies/hsl_colors.jsfx-inc</source>
@@ -462,13 +332,7 @@ Potential Addition:
   + Add Threshold and RMS to Sidechain
   * Fix bandwidth being modulated instead of gain
   * Fix lfo spread
-  * Fix BandPass and Unity-gain BandPass icons being swapped
-* v1.1.0 (2025-12-14)
-  + Add Morph Parameter to filters
-  * Fix double click to add filter
-  * Fix Invert button position
-* v1.0.0 (2025-08-01)
-  + Initial Release]]></changelog>
+  * Fix BandPass and Unity-gain BandPass icons being swapped]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/ceec7774d2ddb67c2624bec14356a0d0c2ef8e25/JSFX/Audio/RCModEQ/RCModEQ.jsfx</source>
         <source file="dependencies/eq_node.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/ceec7774d2ddb67c2624bec14356a0d0c2ef8e25/JSFX/Audio/RCModEQ/dependencies/eq_node.jsfx-inc</source>
         <source file="dependencies/hsl_colors.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/ceec7774d2ddb67c2624bec14356a0d0c2ef8e25/JSFX/Audio/RCModEQ/dependencies/hsl_colors.jsfx-inc</source>
@@ -480,18 +344,7 @@ Potential Addition:
       <version name="1.2.1" author="RCJacH" time="2026-01-27T17:00:05Z">
         <changelog><![CDATA[* v1.2.1 (2026-01-28)
   + Fix sc rms converted value not updated when srate changes
-  * Fix 1.1 migration function
-* v1.2.0 (2026-01-27)
-  + Add Threshold and RMS to Sidechain
-  * Fix bandwidth being modulated instead of gain
-  * Fix lfo spread
-  * Fix BandPass and Unity-gain BandPass icons being swapped
-* v1.1.0 (2025-12-14)
-  + Add Morph Parameter to filters
-  * Fix double click to add filter
-  * Fix Invert button position
-* v1.0.0 (2025-08-01)
-  + Initial Release]]></changelog>
+  * Fix 1.1 migration function]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/1fee74e894dcfd58678e5db07dad6741d29cbbf6/JSFX/Audio/RCModEQ/RCModEQ.jsfx</source>
         <source file="dependencies/eq_node.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/1fee74e894dcfd58678e5db07dad6741d29cbbf6/JSFX/Audio/RCModEQ/dependencies/eq_node.jsfx-inc</source>
         <source file="dependencies/hsl_colors.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/1fee74e894dcfd58678e5db07dad6741d29cbbf6/JSFX/Audio/RCModEQ/dependencies/hsl_colors.jsfx-inc</source>
@@ -504,21 +357,7 @@ Potential Addition:
         <changelog><![CDATA[* v1.2.2 (2026-02-21)
   * Fix LFO amp offset with unipolar routing
   * Fix LFO bar reset
-  * Fix MIDI note on not parsed
-* v1.2.1 (2026-01-28)
-  + Fix sc rms converted value not updated when srate changes
-  * Fix 1.1 migration function
-* v1.2.0 (2026-01-27)
-  + Add Threshold and RMS to Sidechain
-  * Fix bandwidth being modulated instead of gain
-  * Fix lfo spread
-  * Fix BandPass and Unity-gain BandPass icons being swapped
-* v1.1.0 (2025-12-14)
-  + Add Morph Parameter to filters
-  * Fix double click to add filter
-  * Fix Invert button position
-* v1.0.0 (2025-08-01)
-  + Initial Release]]></changelog>
+  * Fix MIDI note on not parsed]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/RCModEQ.jsfx</source>
         <source file="dependencies/eq_node.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/dependencies/eq_node.jsfx-inc</source>
         <source file="dependencies/hsl_colors.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/c3277388cff6eecd050e33d8d5608cecc5b4064d/JSFX/Audio/RCModEQ/dependencies/hsl_colors.jsfx-inc</source>
@@ -529,25 +368,7 @@ Potential Addition:
       </version>
       <version name="1.2.3" author="RCJacH" time="2026-02-20T19:23:27Z">
         <changelog><![CDATA[* v1.2.3 (2026-02-21)
-  * Remove version migration function since it doesn't work well
-* v1.2.2 (2026-02-21)
-  * Fix LFO amp offset with unipolar routing
-  * Fix LFO bar reset
-  * Fix MIDI note on not parsed
-* v1.2.1 (2026-01-28)
-  + Fix sc rms converted value not updated when srate changes
-  * Fix 1.1 migration function
-* v1.2.0 (2026-01-27)
-  + Add Threshold and RMS to Sidechain
-  * Fix bandwidth being modulated instead of gain
-  * Fix lfo spread
-  * Fix BandPass and Unity-gain BandPass icons being swapped
-* v1.1.0 (2025-12-14)
-  + Add Morph Parameter to filters
-  * Fix double click to add filter
-  * Fix Invert button position
-* v1.0.0 (2025-08-01)
-  + Initial Release]]></changelog>
+  * Remove version migration function since it doesn't work well]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/3375add95a53b83d5cf615246de821e79b1f4129/JSFX/Audio/RCModEQ/RCModEQ.jsfx</source>
         <source file="dependencies/eq_node.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/3375add95a53b83d5cf615246de821e79b1f4129/JSFX/Audio/RCModEQ/dependencies/eq_node.jsfx-inc</source>
         <source file="dependencies/hsl_colors.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/3375add95a53b83d5cf615246de821e79b1f4129/JSFX/Audio/RCModEQ/dependencies/hsl_colors.jsfx-inc</source>
@@ -625,9 +446,7 @@ Potential Addition:
  + Renamed
  + Added Gate Function (Note Length)
  + Added Sync to grid function
- # Fixed Note On accuracy
-* v1.0 (2016-07-24)
- + Initial Release]]></changelog>
+ # Fixed Note On accuracy]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/bee92c21a11db6084007db0d7c233799a3017059/JSFX/MIDI/midi_note_beat_repeater.jsfx</source>
       </version>
     </reapack>
@@ -848,9 +667,7 @@ Potential Addition:
       <version name="0.1.1" author="RCJacH" time="2026-10-23T23:30:15Z">
         <changelog><![CDATA[0.1.1:
   rename remap sliders
-  finetune slider defaults
-0.1.0:
-  initial release]]></changelog>
+  finetune slider defaults]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/bcde0e8c8b23d36a7ecf7e1416e612fd276297e7/JSFX/Synth/RCModalBass/RCModalBass.jsfx</source>
         <source file="modules/active.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/bcde0e8c8b23d36a7ecf7e1416e612fd276297e7/JSFX/Synth/RCModalBass/modules/active.jsfx-inc</source>
         <source file="modules/articulation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/bcde0e8c8b23d36a7ecf7e1416e612fd276297e7/JSFX/Synth/RCModalBass/modules/articulation.jsfx-inc</source>
@@ -915,12 +732,7 @@ Potential Addition:
         <changelog><![CDATA[0.1.2:
   finetune mapping defaults
   add stop-all-notes ks, 1 note below lh range start
-  add landing noise control
-0.1.1:
-  rename remap sliders
-  finetune slider defaults
-0.1.0:
-  initial release]]></changelog>
+  add landing noise control]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/f9102e307ac173195fceece83e7665e616e9fc86/JSFX/Synth/RCModalBass/RCModalBass.jsfx</source>
         <source file="modules/active.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/f9102e307ac173195fceece83e7665e616e9fc86/JSFX/Synth/RCModalBass/modules/active.jsfx-inc</source>
         <source file="modules/articulation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/f9102e307ac173195fceece83e7665e616e9fc86/JSFX/Synth/RCModalBass/modules/articulation.jsfx-inc</source>
@@ -987,16 +799,7 @@ Potential Addition:
   limited fretless board contact to the remaining fingerboard length
   replaced the Muting input with Fretting Pressure (aftertouch by default)
   increased right-hand landing noise level
-  cleaned up contact processing
-0.1.2:
-  finetune mapping defaults
-  add stop-all-notes ks, 1 note below lh range start
-  add landing noise control
-0.1.1:
-  rename remap sliders
-  finetune slider defaults
-0.1.0:
-  initial release]]></changelog>
+  cleaned up contact processing]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/ac8492a18f5dc0a19fda9eddc255ee25c4c8985f/JSFX/Synth/RCModalBass/RCModalBass.jsfx</source>
         <source file="modules/active.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/ac8492a18f5dc0a19fda9eddc255ee25c4c8985f/JSFX/Synth/RCModalBass/modules/active.jsfx-inc</source>
         <source file="modules/articulation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/ac8492a18f5dc0a19fda9eddc255ee25c4c8985f/JSFX/Synth/RCModalBass/modules/articulation.jsfx-inc</source>
@@ -1063,22 +866,7 @@ Potential Addition:
         <changelog><![CDATA[0.2.1:
   extended harmonics to the 8th partial, with selection centered on 16-step values
   limited LH fret range start to Note 103 so all frets remain reachable
-  cleared fretting markers on matching note-off while meters follow string decay
-0.2.0:
-  improved fretless tone and harmonic bloom ("mwah")
-  limited fretless board contact to the remaining fingerboard length
-  replaced the Muting input with Fretting Pressure (aftertouch by default)
-  increased right-hand landing noise level
-  cleaned up contact processing
-0.1.2:
-  finetune mapping defaults
-  add stop-all-notes ks, 1 note below lh range start
-  add landing noise control
-0.1.1:
-  rename remap sliders
-  finetune slider defaults
-0.1.0:
-  initial release]]></changelog>
+  cleared fretting markers on matching note-off while meters follow string decay]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/55ada9f0fab2ec87649156b5dc150f36ebc58eba/JSFX/Synth/RCModalBass/RCModalBass.jsfx</source>
         <source file="modules/active.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/55ada9f0fab2ec87649156b5dc150f36ebc58eba/JSFX/Synth/RCModalBass/modules/active.jsfx-inc</source>
         <source file="modules/articulation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/55ada9f0fab2ec87649156b5dc150f36ebc58eba/JSFX/Synth/RCModalBass/modules/articulation.jsfx-inc</source>
@@ -1143,26 +931,7 @@ Potential Addition:
       </version>
       <version name="0.2.2" author="RCJacH" time="2026-10-30T01:21:50Z">
         <changelog><![CDATA[0.2.2:
-  reduced fretless slide CPU usage without reducing the mode count
-0.2.1:
-  extended harmonics to the 8th partial, with selection centered on 16-step values
-  limited LH fret range start to Note 103 so all frets remain reachable
-  cleared fretting markers on matching note-off while meters follow string decay
-0.2.0:
-  improved fretless tone and harmonic bloom ("mwah")
-  limited fretless board contact to the remaining fingerboard length
-  replaced the Muting input with Fretting Pressure (aftertouch by default)
-  increased right-hand landing noise level
-  cleaned up contact processing
-0.1.2:
-  finetune mapping defaults
-  add stop-all-notes ks, 1 note below lh range start
-  add landing noise control
-0.1.1:
-  rename remap sliders
-  finetune slider defaults
-0.1.0:
-  initial release]]></changelog>
+  reduced fretless slide CPU usage without reducing the mode count]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/87fc2058537661f312319a49f51469450117bbf5/JSFX/Synth/RCModalBass/RCModalBass.jsfx</source>
         <source file="modules/active.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/87fc2058537661f312319a49f51469450117bbf5/JSFX/Synth/RCModalBass/modules/active.jsfx-inc</source>
         <source file="modules/articulation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/87fc2058537661f312319a49f51469450117bbf5/JSFX/Synth/RCModalBass/modules/articulation.jsfx-inc</source>
@@ -1231,28 +1000,7 @@ Potential Addition:
   selected harmonic touch nodes from the current left-hand span
   shared Tap/Harmonic output level in the existing slider slot
   added finite harmonic touch and velocity-dependent harmonic release
-  change tapping indicator on the fretboard from "tap" to "T"
-0.2.2:
-  reduced fretless slide CPU usage without reducing the mode count
-0.2.1:
-  extended harmonics to the 8th partial, with selection centered on 16-step values
-  limited LH fret range start to Note 103 so all frets remain reachable
-  cleared fretting markers on matching note-off while meters follow string decay
-0.2.0:
-  improved fretless tone and harmonic bloom ("mwah")
-  limited fretless board contact to the remaining fingerboard length
-  replaced the Muting input with Fretting Pressure (aftertouch by default)
-  increased right-hand landing noise level
-  cleaned up contact processing
-0.1.2:
-  finetune mapping defaults
-  add stop-all-notes ks, 1 note below lh range start
-  add landing noise control
-0.1.1:
-  rename remap sliders
-  finetune slider defaults
-0.1.0:
-  initial release]]></changelog>
+  change tapping indicator on the fretboard from "tap" to "T"]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/RCModalBass.jsfx</source>
         <source file="modules/active.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/active.jsfx-inc</source>
         <source file="modules/articulation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4636e82f9ad7761165fbea6c26cf7f24a2aaf231/JSFX/Synth/RCModalBass/modules/articulation.jsfx-inc</source>
@@ -1318,34 +1066,7 @@ Potential Addition:
       <version name="0.2.4" author="RCJacH" time="2026-10-30T14:23:24Z">
         <changelog><![CDATA[0.2.4:
   extended MIDI bend-up range to 5 semitones
-  reduced MIDI controller and articulation selection work
-0.2.3:
-  added channel-scoped articulations and styles with Follow channel mode
-  selected harmonic touch nodes from the current left-hand span
-  shared Tap/Harmonic output level in the existing slider slot
-  added finite harmonic touch and velocity-dependent harmonic release
-  change tapping indicator on the fretboard from "tap" to "T"
-0.2.2:
-  reduced fretless slide CPU usage without reducing the mode count
-0.2.1:
-  extended harmonics to the 8th partial, with selection centered on 16-step values
-  limited LH fret range start to Note 103 so all frets remain reachable
-  cleared fretting markers on matching note-off while meters follow string decay
-0.2.0:
-  improved fretless tone and harmonic bloom ("mwah")
-  limited fretless board contact to the remaining fingerboard length
-  replaced the Muting input with Fretting Pressure (aftertouch by default)
-  increased right-hand landing noise level
-  cleaned up contact processing
-0.1.2:
-  finetune mapping defaults
-  add stop-all-notes ks, 1 note below lh range start
-  add landing noise control
-0.1.1:
-  rename remap sliders
-  finetune slider defaults
-0.1.0:
-  initial release]]></changelog>
+  reduced MIDI controller and articulation selection work]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/4bae51116e7ffb0b7e6ecdcc28a79bbe24f5d66d/JSFX/Synth/RCModalBass/RCModalBass.jsfx</source>
         <source file="modules/active.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4bae51116e7ffb0b7e6ecdcc28a79bbe24f5d66d/JSFX/Synth/RCModalBass/modules/active.jsfx-inc</source>
         <source file="modules/articulation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/4bae51116e7ffb0b7e6ecdcc28a79bbe24f5d66d/JSFX/Synth/RCModalBass/modules/articulation.jsfx-inc</source>
@@ -1411,37 +1132,7 @@ Potential Addition:
       <version name="0.2.5" author="RCJacH" time="2026-11-02T18:35:38Z">
         <changelog><![CDATA[0.2.5:
   fix string selection being latched from midi input
-  fix fretboard not showing "T" for tapping
-0.2.4:
-  extended MIDI bend-up range to 5 semitones
-  reduced MIDI controller and articulation selection work
-0.2.3:
-  added channel-scoped articulations and styles with Follow channel mode
-  selected harmonic touch nodes from the current left-hand span
-  shared Tap/Harmonic output level in the existing slider slot
-  added finite harmonic touch and velocity-dependent harmonic release
-  change tapping indicator on the fretboard from "tap" to "T"
-0.2.2:
-  reduced fretless slide CPU usage without reducing the mode count
-0.2.1:
-  extended harmonics to the 8th partial, with selection centered on 16-step values
-  limited LH fret range start to Note 103 so all frets remain reachable
-  cleared fretting markers on matching note-off while meters follow string decay
-0.2.0:
-  improved fretless tone and harmonic bloom ("mwah")
-  limited fretless board contact to the remaining fingerboard length
-  replaced the Muting input with Fretting Pressure (aftertouch by default)
-  increased right-hand landing noise level
-  cleaned up contact processing
-0.1.2:
-  finetune mapping defaults
-  add stop-all-notes ks, 1 note below lh range start
-  add landing noise control
-0.1.1:
-  rename remap sliders
-  finetune slider defaults
-0.1.0:
-  initial release]]></changelog>
+  fix fretboard not showing "T" for tapping]]></changelog>
         <source>https://github.com/RCJacH/ReaScripts/raw/b94c659eb9f518ee2e9d457b4e90b5933dd037fe/JSFX/Synth/RCModalBass/RCModalBass.jsfx</source>
         <source file="modules/active.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/b94c659eb9f518ee2e9d457b4e90b5933dd037fe/JSFX/Synth/RCModalBass/modules/active.jsfx-inc</source>
         <source file="modules/articulation.jsfx-inc">https://github.com/RCJacH/ReaScripts/raw/b94c659eb9f518ee2e9d457b4e90b5933dd037fe/JSFX/Synth/RCModalBass/modules/articulation.jsfx-inc</source>
